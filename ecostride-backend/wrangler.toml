@@ -1,0 +1,11 @@
+name = "ecostride-backend"
+main = "src/index.ts"
+compatibility_date = "2024-09-09"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ecostride-db"
+database_id = "817f8335-71bd-4064-b516-664204b6ca76"
+
+[vars]
+FIREBASE_PROJECT_ID = "ecostride-0"
