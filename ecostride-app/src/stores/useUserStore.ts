@@ -14,6 +14,7 @@ interface UserState {
   firstName: string
   lastName: string
   email: string
+  player_id?: string
   bio: string
   nationality: string
   totalTreesPlanted: number

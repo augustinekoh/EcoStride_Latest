@@ -9,3 +9,6 @@ database_id = "817f8335-71bd-4064-b516-664204b6ca76"
 
 [vars]
 FIREBASE_PROJECT_ID = "ecostride-0"
+
+[triggers]
+crons = ["0 * * * *"]

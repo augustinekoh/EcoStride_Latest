@@ -31,8 +31,15 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
             {player.avatar || '👤'}
           </div>
           <div>
-            <h3 className="text-2xl font-black text-[#1d3539]">{player.name || player.email}</h3>
-            <p className="text-sm font-bold text-[#5496a2]">{player.guildName || 'Independent Explorer'}</p>
+            <h3 className="text-2xl font-black text-[#1d3539] flex items-center justify-center gap-2">
+              {player.username || player.name || player.email?.split('@')[0]}
+            </h3>
+            {player.player_id && (
+              <div className="bg-[#1d3539]/10 rounded-full px-3 py-1 inline-block mt-1">
+                <span className="text-sm font-black text-[#5496a2]">UID: {player.player_id}</span>
+              </div>
+            )}
+            <p className="text-sm font-bold text-[#5496a2] mt-2">{player.guild_id || player.guildName || 'Independent Explorer'}</p>
           </div>
           
           <div className="bg-white/50 border-2 border-[#1d3539] border-dashed rounded-xl p-4 w-full mt-4 opacity-70">

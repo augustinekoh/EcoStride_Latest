@@ -18,6 +18,11 @@ app.use('/api/*', async (c, next) => {
   if (c.req.method === 'OPTIONS') {
     return next();
   }
+  
+  // Public routes
+  if (c.req.path === '/api/check-username') {
+    return next();
+  }
 
   const authHeader = c.req.header('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -41,6 +46,15 @@ app.use('/api/*', async (c, next) => {
   } catch (err) {
     return c.json({ error: 'Invalid token' }, 401);
   }
+});
+
+// Check Username Uniqueness
+app.get('/api/check-username', async (c) => {
+  const username = c.req.query('username');
+  if (!username) return c.json({ error: 'Username is required' }, 400);
+  
+  const existing = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
+  return c.json({ available: !existing });
 });
 
 // GET user
@@ -72,9 +86,24 @@ app.post('/api/users/:id', async (c) => {
   // Basic upsert or update
   const user = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(id).first();
   if (!user) {
+    if (!body.username) return c.json({ error: 'Username is required for new users' }, 400);
+    
+    // Check if username is already taken
+    const existingUsername = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(body.username).first();
+    if (existingUsername) return c.json({ error: 'Username is already taken' }, 400);
+
+    // Generate unique 8-digit player_id
+    let playerId = '';
+    let isUnique = false;
+    while (!isUnique) {
+      playerId = Math.floor(10000000 + Math.random() * 90000000).toString(); // 8 digits
+      const existing = await c.env.DB.prepare('SELECT id FROM users WHERE player_id = ?').bind(playerId).first();
+      if (!existing) isUnique = true;
+    }
+
     await c.env.DB.prepare(
-      'INSERT INTO users (id, email, username, role, created_at, coins, total_distance_km) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).bind(id, body.email || '', body.username || '', body.role || 'user', Date.now(), body.coins || 0, body.totalDistanceKm || 0).run();
+      'INSERT INTO users (id, email, username, player_id, role, created_at, coins, total_distance_km) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(id, body.email || '', body.username, playerId, body.role || 'user', Date.now(), body.coins || 0, body.totalDistanceKm || 0).run();
   } else {
     // Dynamic update
     const updates: string[] = [];
@@ -95,13 +124,97 @@ app.post('/api/users/:id', async (c) => {
   return c.json({ success: true });
 });
 
+// DELETE user
+app.delete('/api/users/:id', async (c) => {
+  const id = c.req.param('id');
+  const jwtUser = c.get('user') as any;
+  
+  if (!jwtUser) return c.json({ error: 'Unauthorized' }, 401);
+  const requestingDbUser = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(jwtUser.sub).first();
+  const isAdmin = requestingDbUser && requestingDbUser.role === 'admin';
+  
+  if (jwtUser.sub !== id && !isAdmin) {
+    return c.json({ error: 'Forbidden: Cannot delete other user data' }, 403);
+  }
+  
+  try {
+    // Check if the user is a merchant
+    const userRoleCheck = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(id).first();
+  if (userRoleCheck && userRoleCheck.role === 'merchant') {
+    const merchant: any = await c.env.DB.prepare('SELECT store_name FROM merchants WHERE owner_id = ?').bind(id).first();
+    const storeName = merchant ? merchant.store_name : 'a merchant';
+    
+    // 1. Find all items owned by this merchant
+    const items = await c.env.DB.prepare('SELECT id, name, price FROM point_store WHERE merchant_id = ?').bind(id).all();
+    const itemIds = items.results.map((i: any) => i.id);
+    
+    // 2. Soft delete their items from point_store
+    await c.env.DB.prepare('UPDATE point_store SET status = ? WHERE merchant_id = ?').bind('disabled', id).run();
+    
+    // 3. Process active purchases
+    if (itemIds.length > 0) {
+      for (const itemId of itemIds) {
+        const item = items.results.find((i: any) => i.id === itemId);
+        const purchases = await c.env.DB.prepare('SELECT id, user_id FROM purchases WHERE item_id = ? AND status = ?').bind(itemId, 'active').all();
+        
+        for (const p of purchases.results as any[]) {
+          // Refund user
+          await c.env.DB.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(item.price, p.user_id).run();
+          
+          // Disable purchase
+          await c.env.DB.prepare('UPDATE purchases SET status = ? WHERE id = ?').bind('disabled_by_admin', p.id).run();
+          
+          // Send mail
+          const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2,7)}`;
+          const content = `We're sorry, but the voucher "${item.name}" from ${storeName} has been disabled because the merchant has closed their account. Your ${item.price} Eco-Coins have been refunded to your account.`;
+          await c.env.DB.prepare(
+            'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+          ).bind(mailId, 'Voucher Disabled & Refunded', content, 'System Admin', 'user', p.user_id, 0, Date.now()).run();
+        }
+      }
+    }
+    
+    // 4. Delete the merchant record and their pending applications
+    await c.env.DB.prepare('DELETE FROM merchants WHERE owner_id = ?').bind(id).run();
+    await c.env.DB.prepare('DELETE FROM applications WHERE owner_id = ?').bind(id).run();
+  }
+
+  // Delete from related tables first
+  await c.env.DB.prepare('DELETE FROM activity_history WHERE user_id = ?').bind(id).run();
+  
+  // To avoid SQLite FOREIGN KEY constraint violations, we must reassign trees and signposts 
+  // rather than just leaving them pointing to a deleted user ID.
+  await c.env.DB.prepare(`
+    INSERT OR IGNORE INTO users (id, email, username, player_id, role, created_at, coins, total_distance_km) 
+    VALUES ('deleted_user', 'deleted@ecostride.app', 'Unknown Player', '00000000', 'user', 0, 0, 0)
+  `).run();
+  
+  await c.env.DB.prepare('UPDATE trees SET author_id = ? WHERE author_id = ?').bind('deleted_user', id).run();
+  await c.env.DB.prepare('UPDATE signposts SET author_id = ? WHERE author_id = ?').bind('deleted_user', id).run();
+  
+  // ONLY delete purchases from the system point store. 
+  // Purchases from a merchant store (merchant_id IS NOT NULL) are retained so the merchant can still see their sales history.
+  // Reassign retained purchases to 'deleted_user' to avoid FK violation
+  await c.env.DB.prepare('UPDATE purchases SET user_id = ? WHERE user_id = ? AND merchant_id IS NOT NULL').bind('deleted_user', id).run();
+  await c.env.DB.prepare('DELETE FROM purchases WHERE user_id = ? AND merchant_id IS NULL').bind(id).run();
+  
+    // Then delete user
+    await c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(id).run();
+    
+    return c.json({ success: true });
+  } catch (err: any) {
+    console.error("DELETE user error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 app.get('/api/map-data', async (c) => {
   // Ensure columns exist (fail silently if they already exist)
   try { await c.env.DB.prepare('ALTER TABLE signposts ADD COLUMN likes INTEGER DEFAULT 0').run(); } catch(e) {}
   try { await c.env.DB.prepare('ALTER TABLE signposts ADD COLUMN liked_by TEXT DEFAULT "[]"').run(); } catch(e) {}
 
-  const trees = await c.env.DB.prepare('SELECT * FROM trees').all();
-  const signposts = await c.env.DB.prepare('SELECT * FROM signposts').all();
+  const trees = await c.env.DB.prepare('SELECT trees.*, users.username as authorUsername, users.email as authorEmail FROM trees LEFT JOIN users ON trees.author_id = users.id').all();
+  const signposts = await c.env.DB.prepare('SELECT signposts.*, users.username as authorUsername, users.email as authorEmail FROM signposts LEFT JOIN users ON signposts.author_id = users.id').all();
   return c.json({ trees: trees.results, signposts: signposts.results });
 });
 
@@ -124,7 +237,7 @@ app.delete('/api/trees/:id', async (c) => {
   const tree = await c.env.DB.prepare('SELECT author_id FROM trees WHERE id = ?').bind(id).first();
   if (tree) {
     await c.env.DB.prepare('DELETE FROM trees WHERE id = ?').bind(id).run();
-    await c.env.DB.prepare('UPDATE users SET coins = coins + 150, total_trees_planted = total_trees_planted - 1 WHERE id = ?').bind(tree.author_id).run();
+    await c.env.DB.prepare('UPDATE users SET coins = coins + 100, total_trees_planted = total_trees_planted - 1 WHERE id = ?').bind(tree.author_id).run();
   }
   return c.json({ success: true });
 });
@@ -322,15 +435,31 @@ app.post('/api/activity', async (c) => {
 
 // Mail
 app.get('/api/mail', async (c) => {
+  try { await c.env.DB.prepare('ALTER TABLE mail ADD COLUMN recipient_name TEXT').run(); } catch(e) {}
   const mail = await c.env.DB.prepare('SELECT * FROM mail ORDER BY created_at DESC').all();
   return c.json({ mail: mail.results });
 });
 app.post('/api/mail', async (c) => {
   const body = await c.req.json();
   const id = `mail-${Date.now()}`;
+  
+  try { await c.env.DB.prepare('ALTER TABLE mail ADD COLUMN recipient_name TEXT').run(); } catch(e) {}
+
+  let finalRecipientId = body.recipientId || null;
+  let finalRecipientName = null;
+
+  if (body.recipientType === 'user' && body.recipientId) {
+    const user: any = await c.env.DB.prepare('SELECT id, username FROM users WHERE username = ? OR player_id = ? OR id = ?').bind(body.recipientId, body.recipientId, body.recipientId).first();
+    if (!user) {
+      return c.json({ success: false, error: 'User not found matching Username or UID' }, 404);
+    }
+    finalRecipientId = user.id;
+    finalRecipientName = user.username;
+  }
+
   await c.env.DB.prepare(
-    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(id, body.title, body.content, body.sender, body.recipientType, body.recipientId || null, body.expiresForNewUsers ? 1 : 0, Date.now()).run();
+    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, recipient_name, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(id, body.title, body.content, body.sender, body.recipientType, finalRecipientId, finalRecipientName, body.expiresForNewUsers ? 1 : 0, Date.now()).run();
   return c.json({ success: true });
 });
 app.delete('/api/mail/:id', async (c) => {
@@ -454,9 +583,10 @@ app.delete('/api/merchants/:id', async (c) => {
       await c.env.DB.prepare(
         'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
       ).bind(mailId, 'Shop Taken Down', content, 'System Admin', 'user', merchant.owner_id, 0, Date.now()).run();
+      // Hard delete merchant record so it disappears from Admin Dashboard and Map
+      await c.env.DB.prepare('DELETE FROM merchants WHERE id = ?').bind(id).run();
     }
     
-    await c.env.DB.prepare('UPDATE merchants SET status = ? WHERE id = ?').bind('disabled', id).run();
     return c.json({ success: true });
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500);
@@ -644,7 +774,7 @@ app.delete('/api/store/:id', async (c) => {
 
 app.get('/api/merchants/sales/:ownerId', async (c) => {
   const ownerId = c.req.param('ownerId');
-  const purchases = await c.env.DB.prepare('SELECT * FROM purchases WHERE merchant_id = ? ORDER BY purchased_at DESC').bind(ownerId).all();
+  const purchases = await c.env.DB.prepare('SELECT purchases.*, users.username as buyerUsername, users.player_id as buyerUid FROM purchases LEFT JOIN users ON purchases.user_id = users.id WHERE merchant_id = ? ORDER BY purchased_at DESC').bind(ownerId).all();
   return c.json({ purchases: purchases.results });
 });
 
@@ -656,4 +786,27 @@ app.post('/api/merchants/redeem/:purchaseId', async (c) => {
   return c.json({ success: true });
 });
 
-export default app;
+app.post('/api/users/:uid/verify', async (c) => {
+  const uid = c.req.param('uid');
+  await c.env.DB.prepare('UPDATE users SET verified_email = 1 WHERE id = ?').bind(uid).run();
+  return c.json({ success: true });
+});
+
+export default {
+  fetch: app.fetch,
+  async scheduled(event: any, env: Bindings, ctx: any) {
+    // 24 hours ago
+    const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+    
+    try {
+      // Delete users from D1 who are older than 24h and unverified.
+      // This frees up their username and player_id.
+      await env.DB.prepare('DELETE FROM users WHERE verified_email = 0 AND created_at < ?')
+        .bind(twentyFourHoursAgo)
+        .run();
+      console.log('Successfully ran unverified user cleanup cron job.');
+    } catch (e) {
+      console.error('Cron job error:', e);
+    }
+  }
+};

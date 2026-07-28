@@ -82,18 +82,23 @@ export const AdminDashboard: React.FC = () => {
         
         const user = res.users.find((u: any) => u.id === a.owner_id);
         return { 
-          id: a.id, merchantId: a.owner_id, storeName: details.storeName || 'Unknown Store', menuLink: details.menuLink, type: a.type, vouchers: details.vouchers || [], merchantEmail: user ? user.email : 'Unknown', category: details.category, location: details.location, subscriptionPlan: details.subscriptionPlan || 'N/A'
+          id: a.id, merchantId: a.owner_id, storeName: details.storeName || 'Unknown Store', menuLink: details.menuLink, type: a.type, vouchers: details.vouchers || [], merchantEmail: user ? user.email : 'Unknown', category: details.category, location: details.location, subscriptionPlan: details.subscriptionPlan || 'N/A', applicantUsername: details.username || 'Unknown', applicantUid: user?.player_id || details.uid || a.owner_id
         };
       }));
       setDemoRequests(res.demoRequests.filter((d: any) => d.status === 'pending'));
-      setSentMails(res.sentMails.map((m: any) => ({ 
-        id: m.id, 
-        title: m.title, 
-        content: m.content, 
-        recipientType: m.recipient_type, 
-        expiresForNewUsers: m.expires_for_new_users === 1,
-        createdAt: m.created_at 
-      })));
+      setSentMails(res.sentMails.map((m: any) => {
+        const u = res.users.find((user: any) => user.id === m.recipient_id);
+        return { 
+          id: m.id, 
+          title: m.title, 
+          content: m.content, 
+          recipientType: m.recipient_type, 
+          recipientId: u?.player_id || m.recipient_id,
+          recipientName: m.recipient_name,
+          expiresForNewUsers: m.expires_for_new_users === 1,
+          createdAt: m.created_at 
+        };
+      }));
     } catch (err) {
       console.error(err);
     }
@@ -194,20 +199,24 @@ export const AdminDashboard: React.FC = () => {
       return;
     }
 
-    await apiClient('/mail', { method: 'POST', body: JSON.stringify({
-      recipientType: mailTarget,
-      recipientId: mailTarget === 'all' || mailTarget === 'merchant_all' ? null : mailTargetId,
-      title: mailTitle,
-      content: mailContent,
-      sender: 'Admin',
-      expiresForNewUsers: mailTarget !== 'user' ? expiresForNewUsers : false
-    })});
+    try {
+      await apiClient('/mail', { method: 'POST', body: JSON.stringify({
+        recipientType: mailTarget,
+        recipientId: mailTarget === 'all' || mailTarget === 'merchant_all' ? null : mailTargetId,
+        title: mailTitle,
+        content: mailContent,
+        sender: 'Admin',
+        expiresForNewUsers: mailTarget !== 'user' ? expiresForNewUsers : false
+      })});
 
-    setMailTitle('');
-    setMailContent('');
-    setMailTargetId('');
-    alert("Message sent successfully!");
-    fetchDashboardData();
+      setMailTitle('');
+      setMailContent('');
+      setMailTargetId('');
+      alert("Message sent successfully!");
+      fetchDashboardData();
+    } catch (err: any) {
+      alert(`Failed to send mail: ${err.message || 'Unknown error'}`);
+    }
   };
 
   const handleDeleteMail = async (id: string) => {
@@ -269,11 +278,7 @@ export const AdminDashboard: React.FC = () => {
         recipientType: 'user', 
         recipientId: ownerId
       })});
-      // 3. Demote their role to user
-      const user = users.find(u => u.id === ownerId);
-      if (user) {
-         await apiClient(`/users/${ownerId}`, { method: 'PUT', body: JSON.stringify({ role: 'user' }) });
-      }
+      // Role demotion removed per user request: merchants keep their role to apply for a new shop.
       alert('Merchant deleted and notified successfully.');
       fetchDashboardData();
     } catch (err) {
@@ -339,9 +344,9 @@ export const AdminDashboard: React.FC = () => {
     setNewItemStock(item.stock);
     setNewItemIcon(item.icon);
     setNewItemCategory(item.category || '');
-    setNewItemMerchant(item.merchant_id || '');
+    setNewItemMerchant(item.merchantId || '');
     setNewItemLink(item.link || '');
-    setNewItemProfile(!item.merchant_id);
+    setNewItemProfile(!item.merchantId);
   };
 
   const handleDeleteStoreItem = async (item: any) => {
@@ -494,6 +499,7 @@ export const AdminDashboard: React.FC = () => {
                         <div className="flex-1">
                             <h4 className="font-black text-xl text-[#1d3539]">{app.storeName} <span className="text-sm font-bold text-[#5496a2] ml-2 px-2 py-1 bg-[#5496a2]/10 rounded-full">{app.type === 'modification' ? 'Modification' : 'New Merchant'} - {app.category}</span></h4>
                           <p className="text-sm text-slate-500 font-bold mt-2">Plan: <span className="text-slate-800">{app.subscriptionPlan}</span></p>
+                          <p className="text-sm text-slate-500 font-bold mt-1">Applicant: <span className="text-slate-800">{app.applicantUsername}</span> <span className="text-xs text-slate-400 font-mono">({app.applicantUid})</span></p>
                           <p className="text-sm text-slate-500 font-bold mt-1">Email: <span className="text-slate-800">{app.merchantEmail}</span></p>
                           <p className="text-sm text-slate-500 font-bold mt-1 mb-3">Link: <span className="text-slate-800">{app.menuLink || 'N/A'}</span></p>
                           
@@ -615,7 +621,9 @@ export const AdminDashboard: React.FC = () => {
                             )}
                           </div>
                           <div className="flex gap-2 shrink-0">
-                            <button onClick={() => handleDeleteMerchant(m.id, m.ownerId)} className="bg-white border border-red-200 text-red-600 font-bold px-4 py-2 rounded-lg hover:bg-red-50 transition-colors shadow-sm active:translate-y-0.5">Take Down Shop</button>
+                            {m.status !== 'disabled' && (
+                              <button onClick={() => handleDeleteMerchant(m.id, m.ownerId)} className="bg-white border border-red-200 text-red-600 font-bold px-4 py-2 rounded-lg hover:bg-red-50 transition-colors shadow-sm active:translate-y-0.5">Take Down Shop</button>
+                            )}
                           </div>
                         </div>
                       );
@@ -853,7 +861,7 @@ export const AdminDashboard: React.FC = () => {
                             type="text" 
                             value={mailTargetId}
                             onChange={(e) => setMailTargetId(e.target.value)}
-                            placeholder={mailTarget === 'user' ? "User UID..." : "Guild ID..."}
+                            placeholder={mailTarget === 'user' ? "Username or UID..." : "Guild ID..."}
                             className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-teal-950 font-bold outline-none focus:border-teal-500"
                           />
                         </div>
@@ -952,7 +960,9 @@ export const AdminDashboard: React.FC = () => {
                                 <span className="text-[9px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-black uppercase tracking-wider whitespace-nowrap shrink-0">Current & Future</span>
                               )}
                             </h4>
-                            <p className="text-xs text-teal-700/70 mt-1 font-mono">To: {mail.recipientType} {mail.recipientId ? `(${mail.recipientId})` : ''}</p>
+                            <p className="text-xs text-teal-700/70 mt-1 font-bold">
+                              To: {mail.recipientType === 'all' ? 'All Users' : mail.recipientType === 'merchant_all' ? 'All Merchants' : mail.recipientType === 'user' || mail.recipientType === 'specific_user' ? `${mail.recipientName || 'Unknown User'} (${mail.recipientId || 'N/A'})` : mail.recipientType}
+                            </p>
                             <p className="text-sm text-slate-600 mt-3 line-clamp-3 leading-relaxed">{mail.content}</p>
                             <p className="text-[10px] font-bold text-teal-700/70 mt-3 uppercase tracking-wider">{new Date(mail.createdAt).toLocaleString()}</p>
                           </div>

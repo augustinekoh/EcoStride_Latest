@@ -12,6 +12,7 @@ import { MapView } from './components/map/MapView';
 import { ImpactReportModal } from './components/modals/ImpactReportModal';
 import { MerchantOnboardingForm } from './components/merchant/MerchantOnboardingForm';
 import { AuthModal } from './components/modals/AuthModal';
+import { VerificationPending } from './components/landing/VerificationPending';
 import { AdminLogin } from './components/admin/AdminLogin';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { useAuthStore } from './stores/useAuthStore';
@@ -29,6 +30,16 @@ function PublicApp() {
     return (
       <div className="w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500">
         <AuthModal />
+      </div>
+    );
+  }
+
+  // Google sign-ins and other verified users will have emailVerified = true.
+  // We only block if they explicitly registered with Email/Password and haven't verified.
+  if (!auth.currentUser?.emailVerified) {
+    return (
+      <div className="w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500">
+        <VerificationPending />
       </div>
     );
   }
@@ -101,6 +112,7 @@ function App() {
                 totalDistanceKm: data.user.total_distance_km || 0,
                 username: data.user.username || 'EcoExplorer',
                 email: data.user.email || user.email || '',
+                player_id: data.user.player_id,
                 totalTreesPlanted: data.user.total_trees_planted || 0,
                 createdAt: data.user.created_at || Date.now(), // fallback to now if not set
                 activityHistory: data.user.activityHistory || []

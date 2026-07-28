@@ -31,7 +31,7 @@ const getDistanceForDate = (date: Date, history: any[]) => {
 };
 
 export const LandingPage: React.FC = () => {
-  const { activityHistory, notifications, clearNotifications, totalCarbonSaved, totalDistanceKm, hasReadAlerts, setHasReadAlerts } = useUserStore();
+  const { activityHistory, notifications, clearNotifications, totalCarbonSaved, totalDistanceKm, hasReadAlerts, setHasReadAlerts, username } = useUserStore();
   const { user, role } = useAuthStore();
   const { unreadCount } = useMailStore();
   const { setActiveView } = useDemoStore();
@@ -171,7 +171,7 @@ export const LandingPage: React.FC = () => {
     return days;
   };
 
-  const displayName = user?.email?.split('@')[0] || 'Explorer';
+  const displayName = username || user?.email?.split('@')[0] || 'Explorer';
   const capitalizedName = displayName.charAt(0).toUpperCase() + displayName.slice(1);
 
   const selectedDateHistory = selectedDate 

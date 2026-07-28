@@ -5,9 +5,11 @@ import { useDemoStore } from '../../stores/useDemoStore';
 import { Store, Tag, Plus, Edit2, Trash2, Clock, AlertCircle, ChevronLeft, ShoppingBag, CheckCircle, XCircle, Gift, DollarSign, MapPin, Search } from 'lucide-react';
 import Map, { Marker } from 'react-map-gl/mapbox';
 import { MAPBOX_TOKEN } from '../../lib/mapboxAPI';
+import { useUserStore } from '../../stores/useUserStore';
 
 export const MerchantDashboard: React.FC = () => {
   const { user } = useAuthStore();
+  const { userData } = useUserStore();
   const { setActiveView } = useDemoStore();
   
   const [merchantData, setMerchantData] = useState<any>(null);
@@ -74,7 +76,7 @@ export const MerchantDashboard: React.FC = () => {
     
     try {
       const res = await apiClient('/admin/dashboard');
-      const mData = res.merchants.find((m: any) => m.owner_id === user.uid);
+      const mData = res.merchants.find((m: any) => m.owner_id === user.uid && m.status !== 'disabled');
       
       const apps = res.applications.filter((a: any) => a.owner_id === user.uid).sort((a: any, b: any) => b.created_at - a.created_at);
       const modApp = apps.find((a: any) => a.type === 'modification' && a.status === 'pending');
@@ -134,6 +136,8 @@ export const MerchantDashboard: React.FC = () => {
           ownerId: user.uid,
           type: 'modification',
           details: JSON.stringify({
+            username: userData?.username || user.email?.split('@')[0] || 'Unknown',
+            uid: user.uid,
             storeName: editStoreName,
             menuLink: editMenuLink,
             location: editLocation,
@@ -251,7 +255,7 @@ export const MerchantDashboard: React.FC = () => {
     if (!confirm) return;
     try {
       await apiClient(`/merchants/${merchantData.id}`, { method: 'DELETE' });
-      await apiClient(`/users/${user?.uid}`, { method: 'POST', body: JSON.stringify({ role: 'user' }) });
+      // Role demotion removed: merchants keep their role to apply for a new shop.
       alert('Shop taken down successfully.');
       window.location.reload();
     } catch (err) {
@@ -475,6 +479,9 @@ export const MerchantDashboard: React.FC = () => {
                     </div>
                     <p className="text-xl font-black text-[#1d3539]">{sale.item_name}</p>
                     <p className="text-sm font-bold text-slate-500">Purchase ID: <span className="font-mono text-xs">{sale.id.split('-')[1]}</span></p>
+                    <p className="text-sm font-bold text-[#5496a2] mt-1">
+                      Buyer: {sale.buyerUsername || 'Unknown User'} <span className="font-mono text-xs text-slate-400 ml-1">({sale.buyerUid || sale.user_id})</span>
+                    </p>
                   </div>
                   <div className="flex items-center gap-6 w-full md:w-auto justify-between md:justify-end">
                     <p className="font-black text-orange-500 text-xl flex items-center">✨{sale.price}</p>

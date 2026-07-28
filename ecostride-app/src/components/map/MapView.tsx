@@ -290,8 +290,8 @@ export const MapView: React.FC = () => {
         setIsPlantingMode(false);
         return;
       }
-      if (userCoins >= 150) {
-        deductCoins(150);
+      if (userCoins >= 100) {
+        deductCoins(100);
         
         // Optimistic UI Update
         const newTree = {
@@ -426,9 +426,10 @@ export const MapView: React.FC = () => {
 
   const handleDeleteTree = async (treeId: string) => {
     try {
-      await apiClient(`/trees/${treeId}`, { method: 'DELETE' });
-      addCoins(150); // Refund optimistically
+      setTrees(prev => prev.filter(t => t.id !== treeId));
+      addCoins(100); // Refund optimistically
       setActiveTree(null);
+      await apiClient(`/trees/${treeId}`, { method: 'DELETE' });
     } catch (err) {
       console.error("Failed to delete tree", err);
     }
@@ -559,7 +560,7 @@ export const MapView: React.FC = () => {
               <div className="flex items-center gap-2">
                 <span className="text-2xl bg-slate-100 p-1.5 rounded-xl border border-slate-300">{activeSignpost.emoji}</span>
                 <div className="flex-1">
-                  <p className="text-xs text-slate-500 font-bold truncate max-w-[120px]">{activeSignpost.authorEmail || 'Guest'}</p>
+                  <p className="text-xs text-slate-500 font-bold truncate max-w-[120px]">{activeSignpost.authorUsername || activeSignpost.authorEmail || 'Guest'}</p>
                   <p className="text-sm font-black text-slate-900">{activeSignpost.message}</p>
                 </div>
               </div>
@@ -643,7 +644,7 @@ export const MapView: React.FC = () => {
                   onClick={() => handleDeleteTree(activeTree.id)}
                   className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-2 rounded-lg text-xs"
                 >
-                  Recall Tree (Refund 150)
+                  Recall Tree (Refund 100)
                 </button>
               ) : (
                 <p className="text-xs text-slate-500">Planted a tree for the territory!</p>
@@ -717,7 +718,7 @@ export const MapView: React.FC = () => {
             </button>
             <div className="absolute right-16 top-1/2 -translate-y-1/2 whitespace-nowrap bg-white text-slate-900 border border-slate-900 shadow-[2px_2px_0px_0px_#0f172a] text-xs font-black px-3 py-1.5 rounded-xl flex flex-col items-end opacity-0 group-hover:opacity-100 transition-opacity">
               <span>Plant Tree for {(user as any)?.guildId && (user as any).guildId !== 'None' ? (user as any).guildId : 'Your Guild'}</span>
-              <span className="text-[10px] text-brand-green font-bold flex items-center gap-1 mt-0.5"><span className="w-1.5 h-1.5 rounded-full bg-brand-green"></span>150 Coins</span>
+              <span className="text-[10px] text-brand-green font-bold flex items-center gap-1 mt-0.5"><span className="w-1.5 h-1.5 rounded-full bg-brand-green"></span>100 Coins</span>
             </div>
           </div>
         </div>

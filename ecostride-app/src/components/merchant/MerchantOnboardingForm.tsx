@@ -4,9 +4,11 @@ import { useAuthStore } from '../../stores/useAuthStore';
 import Map, { Marker } from 'react-map-gl/mapbox';
 import { MAPBOX_TOKEN } from '../../lib/mapboxAPI';
 import { Store, Tag, MapPin, CheckCircle, Search, DollarSign } from 'lucide-react';
+import { useUserStore } from '../../stores/useUserStore';
 
 export const MerchantOnboardingForm: React.FC = () => {
   const { user } = useAuthStore();
+  const { username } = useUserStore();
   const [formData, setFormData] = useState({
     storeName: '',
     category: 'Food & Beverage',
@@ -122,6 +124,8 @@ export const MerchantOnboardingForm: React.FC = () => {
           ownerId: user.uid,
           type: 'new_merchant',
           details: JSON.stringify({
+            username: username || user.email?.split('@')[0] || 'Unknown',
+            uid: user.uid,
             storeName: formData.storeName,
             category: formData.category,
             menuLink: formData.menuLink,

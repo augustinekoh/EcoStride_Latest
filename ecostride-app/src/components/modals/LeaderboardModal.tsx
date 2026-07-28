@@ -90,8 +90,9 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
               {player.avatar}
             </div>
             <div className="flex-1 overflow-hidden">
-              <h3 className="font-bold text-[#1d3539] text-lg truncate">
-                {player.name}
+              <h3 className="font-bold text-[#1d3539] text-lg truncate flex items-center gap-1">
+                <span>{player.username || player.name}</span>
+                {player.player_id && <span className="text-xs text-[#80abb1]">#{player.player_id}</span>}
               </h3>
               <p className="text-sm font-bold text-[#5496a2] truncate">{player.guildName}</p>
             </div>

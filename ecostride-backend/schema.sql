@@ -8,8 +8,13 @@ CREATE TABLE IF NOT EXISTS users (
   coins INTEGER DEFAULT 0,
   total_distance_km REAL DEFAULT 0,
   total_trees_planted INTEGER DEFAULT 0,
-  created_at INTEGER
+  player_id TEXT,
+  created_at INTEGER,
+  verified_email INTEGER DEFAULT 0
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_player_id ON users(player_id);
 
 CREATE TABLE IF NOT EXISTS activity_history (
   id TEXT PRIMARY KEY,

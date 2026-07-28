@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { apiClient } from '../../lib/api';
 import { useMapStore } from '../../stores/useMapStore';
+import { useUserStore } from '../../stores/useUserStore';
 
 interface Props {
   isOpen: boolean;
@@ -13,6 +14,7 @@ const EMOJI_LIST = ['🚴', '💪', '📸', '☕', '⚠️', '🌳', '🏆'];
 
 export const CreateSignpostModal: React.FC<Props> = ({ isOpen, onClose, currentLocation }) => {
   const { user } = useAuthStore();
+  const { username } = useUserStore();
   const { signposts, setSignposts } = useMapStore();
   const [selectedEmoji, setSelectedEmoji] = useState('🚴');
   const [message, setMessage] = useState('');
@@ -41,6 +43,7 @@ export const CreateSignpostModal: React.FC<Props> = ({ isOpen, onClose, currentL
         message: message.substring(0, 50),
         emoji: selectedEmoji,
         authorId: user?.uid || 'anonymous',
+        authorUsername: username || user?.email?.split('@')[0] || 'Unknown',
         authorEmail: user?.email || 'Guest',
         category: 'General',
         likes: 0
