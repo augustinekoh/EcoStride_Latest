@@ -1,0 +1,139 @@
+import React, { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
+
+interface Props {
+  signpost: any;
+  images: string[];
+  onClose: () => void;
+  onLike: (e: React.MouseEvent, sp: any) => void;
+  onViewProfile: (authorId: string, username: string) => void;
+  onFullScreen: (img: string) => void;
+}
+
+export const SignpostStoryViewer: React.FC<Props> = ({ 
+  signpost, 
+  images, 
+  onClose, 
+  onLike, 
+  onViewProfile,
+  onFullScreen
+}) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+
+  useEffect(() => {
+    setCurrentIndex(0);
+    setProgress(0);
+  }, [signpost.id]);
+
+  useEffect(() => {
+    if (isPaused) return;
+    const interval = setInterval(() => {
+      setProgress(p => (p >= 100 ? 100 : p + 2));
+    }, 100);
+    return () => clearInterval(interval);
+  }, [isPaused]);
+
+  // Handle progression when progress reaches 100
+  useEffect(() => {
+    if (progress >= 100) {
+      if (currentIndex < images.length - 1) {
+        setCurrentIndex(i => i + 1);
+        setProgress(0);
+      } else {
+        setTimeout(onClose, 300);
+      }
+    }
+  }, [progress, currentIndex, images.length, onClose]);
+
+  const handlePrev = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    if (currentIndex > 0) {
+      setCurrentIndex(i => i - 1);
+      setProgress(0);
+    }
+  };
+
+  const handleNext = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    if (currentIndex < images.length - 1) {
+      setCurrentIndex(i => i + 1);
+      setProgress(0);
+    }
+  };
+
+  const currentImg = images[currentIndex] || images[0];
+  const authorName = signpost.authorUsername || signpost.authorEmail || 'Guest';
+
+  return (
+    <div 
+      className="relative w-[240px] h-[360px] bg-black rounded-2xl overflow-hidden shadow-2xl flex flex-col pointer-events-auto"
+      onMouseDown={() => setIsPaused(true)}
+      onMouseUp={() => setIsPaused(false)}
+      onMouseLeave={() => setIsPaused(false)}
+      onTouchStart={() => setIsPaused(true)}
+      onTouchEnd={() => setIsPaused(false)}
+    >
+      {/* Progress Bars */}
+      <div className="absolute top-2 left-2 right-2 flex gap-1 z-20">
+        {images.map((_, idx) => (
+          <div key={idx} className="flex-1 h-1 bg-white/30 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-white transition-none"
+              style={{ 
+                width: idx < currentIndex ? '100%' : idx === currentIndex ? `${progress}%` : '0%' 
+              }}
+            />
+          </div>
+        ))}
+      </div>
+      
+      {/* Close Button */}
+      <button 
+        onClick={(e) => { e.stopPropagation(); onClose(); }}
+        className="absolute top-4 right-3 z-30 text-white drop-shadow-md hover:scale-110"
+      >
+        <X size={20} />
+      </button>
+
+      {/* Image Background */}
+      <img 
+        src={currentImg} 
+        alt="Signpost Story" 
+        className="absolute inset-0 w-full h-full object-cover"
+        onClick={(e) => { e.stopPropagation(); onFullScreen(currentImg); }}
+      />
+
+      {/* Click Zones for Prev/Next (z-20) */}
+      <div className="absolute top-0 bottom-1/3 left-0 w-1/3 z-20 cursor-pointer" onClick={handlePrev} />
+      <div className="absolute top-0 bottom-1/3 right-0 w-1/3 z-20 cursor-pointer" onClick={handleNext} />
+
+      {/* Gradient Overlay for Text */}
+      <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-black/90 via-black/50 to-transparent z-10 pointer-events-none" />
+
+      {/* Text & Like Button Container */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 z-30 flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xl bg-white/20 backdrop-blur-sm p-1.5 rounded-xl border border-white/30 text-white">{signpost.emoji}</span>
+          <div className="flex-1 drop-shadow-md">
+            <p 
+              className="text-xs text-white/90 font-bold truncate max-w-[140px] cursor-pointer hover:underline pointer-events-auto"
+              onClick={(e) => { e.stopPropagation(); onViewProfile(signpost.authorId, authorName); }}
+            >
+              {authorName}
+            </p>
+            <p className="text-sm font-black text-white">{signpost.message}</p>
+          </div>
+        </div>
+        
+        <button 
+          onClick={(e) => { e.stopPropagation(); onLike(e, signpost); }}
+          className="w-full bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/40 rounded-xl py-2 font-bold text-white text-sm transition-colors flex items-center justify-center gap-1 active:scale-95 mt-1 pointer-events-auto"
+        >
+          👍 Energy <span className="bg-white/90 px-1.5 rounded-full text-slate-900 text-xs ml-1 font-black">{signpost.likes || 0}</span>
+        </button>
+      </div>
+    </div>
+  );
+};

@@ -73,7 +73,7 @@ export const PointsStoreModal: React.FC<PointsStoreModalProps> = ({ onClose, mer
       });
 
       deductCoins(item.price);
-      alert(`Successfully purchased ${item.name}! Check your Profile (coming soon) for your vouchers.`);
+      alert(`Successfully purchased ${item.name}! Check your Profile for your vouchers.`);
       
       // Optimistically update stock locally
       setStoreItems(prev => prev.map(i => i.id === item.id ? { ...i, stock: i.stock - 1 } : i));

@@ -1,65 +1,181 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useUserStore } from '../../stores/useUserStore';
 import { useDemoStore } from '../../stores/useDemoStore';
-import { Settings, Edit2, Check, Globe, Building2, TreePine, Users, Award } from 'lucide-react';
+import { useAuthStore } from '../../stores/useAuthStore';
+import { Settings, Edit2, Check, Globe, Building2, TreePine, Users, Award, Ticket, X, QrCode, Clock, Store, Camera, Loader2 } from 'lucide-react';
+import { apiClient } from '../../lib/api';
+import QRCode from 'react-qr-code';
+import imageCompression from 'browser-image-compression';
+import { AvatarCropModal } from '../modals/AvatarCropModal';
 
 export const ProfileView: React.FC = () => {
   const { 
     username, 
+    player_id,
     bio, 
     nationality, 
     totalTreesPlanted, 
     streaks, 
     unlockedBadges,
+    avatar,
     setUserData
   } = useUserStore();
   
+  const { user } = useAuthStore();
   const { setActiveView } = useDemoStore();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isEditingBio, setIsEditingBio] = useState(false);
-  const [editBioText, setEditBioText] = useState(bio);
+  const [editBioText, setEditBioText] = useState(bio || '');
+  const [isSavingBio, setIsSavingBio] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  
+  const [vouchers, setVouchers] = useState<any[]>([]);
+  const [loadingVouchers, setLoadingVouchers] = useState(true);
+  const [activeTab, setActiveTab] = useState<'overview' | 'vouchers'>('overview');
+  const [selectedVoucher, setSelectedVoucher] = useState<any | null>(null);
+  
+  // Redeem State
+  const [showRedeemModal, setShowRedeemModal] = useState(false);
+  const [redeemLoading, setRedeemLoading] = useState(false);
+  const [countdown, setCountdown] = useState<number>(0);
 
-  const saveBio = () => {
-    setUserData({ bio: editBioText });
-    setIsEditingBio(false);
+  useEffect(() => {
+    if (user?.uid) {
+      fetchVouchers();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    let timer: any;
+    if (showRedeemModal && countdown > 0) {
+      timer = setInterval(() => {
+        setCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            fetchVouchers(); // Refresh status
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [showRedeemModal, countdown]);
+
+  const fetchVouchers = async () => {
+    try {
+      const res = await apiClient(`/users/${user?.uid}/vouchers`);
+      setVouchers(res.vouchers || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingVouchers(false);
+    }
   };
 
-  return (
-    <div className="h-full w-full p-4 md:p-8 pb-32 overflow-y-auto relative bg-brand-cream">
-      {/* Background Orbs */}
-      <div className="absolute top-0 right-0 w-64 h-64 bg-[var(--color-pastel-yellow)] rounded-full mix-blend-overlay filter blur-3xl opacity-60 animate-pulse pointer-events-none"></div>
+  const saveBio = async () => {
+    setIsSavingBio(true);
+    try {
+      if (user) {
+        await apiClient(`/users/${user.uid}`, {
+          method: 'POST',
+          body: JSON.stringify({ bio: editBioText })
+        });
+      }
+      setUserData({ bio: editBioText });
+      setIsEditingBio(false);
+    } catch (e) {
+      console.error(e);
+      alert('Failed to save bio');
+    } finally {
+      setIsSavingBio(false);
+    }
+  };
+
+  const handleStartRedeem = async () => {
+    if (!selectedVoucher) return;
+    setRedeemLoading(true);
+    try {
+      const res = await apiClient(`/purchases/${selectedVoucher.id}/redeem-start`, { method: 'PUT' });
+      const timeLeft = Math.floor((res.expiresAt - Date.now()) / 1000);
+      setCountdown(timeLeft > 0 ? timeLeft : 0);
+      setShowRedeemModal(true);
+      fetchVouchers(); // Refresh state to get updated expires_at if modal closed
+    } catch (e: any) {
+      alert(e.message || 'Failed to start redemption');
+    } finally {
+      setRedeemLoading(false);
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCropImageSrc(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+    
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleAvatarCropped = async (croppedBlob: Blob) => {
+    if (!user) return;
+    setCropImageSrc(null);
+    setIsUploadingAvatar(true);
+    
+    try {
+      const fileToCompress = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
+      const options = {
+        maxSizeMB: 0.05,
+        maxWidthOrHeight: 400,
+        useWebWorker: true,
+      };
       
-      {/* Top Navigation */}
-      <div className="flex justify-end mb-4 relative z-10">
-        <button 
-          onClick={() => setActiveView('settings')}
-          className="w-12 h-12 glass-card rounded-full flex items-center justify-center hover:scale-105 transition-transform"
-        >
-          <Settings size={24} className="text-[var(--color-text-main)]" />
-        </button>
-      </div>
+      const compressedFile = await imageCompression(fileToCompress, options);
+      
+      const formData = new FormData();
+      formData.append('file', compressedFile, compressedFile.name);
+      
+      const res = await apiClient(`/users/${user.uid}/avatar`, {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (res.avatarUrl) {
+         setUserData({ avatar: res.avatarUrl });
+      }
+    } catch (e) {
+      console.error('Error uploading avatar:', e);
+      alert('Failed to upload avatar.');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
 
-      {/* Profile Header (Large Avatar & Username) */}
-      <div className="flex flex-col items-center mb-8 relative z-10">
-        <div className="w-32 h-32 rounded-full overflow-hidden bg-white/50 backdrop-blur-sm shrink-0 border-4 border-white/80 shadow-md flex items-center justify-center p-2 mb-4">
-          <img 
-            src="https://api.dicebear.com/7.x/bottts/svg?seed=EcoStride" 
-            alt="Profile" 
-            className="w-full h-full object-cover rounded-full"
-          />
-        </div>
-        <h2 className="text-3xl font-black tracking-tight text-[var(--color-text-main)]">{username}</h2>
-      </div>
-
+  const renderOverview = () => (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
       {/* Bio Section */}
-      <div className="glass-card p-6 mb-6 relative z-10">
-        <div className="flex justify-between items-center mb-2">
+      <div className="glass-card p-6 relative z-10">
+        <div className="flex justify-between items-center mb-4">
           <h3 className="text-sm font-black text-[var(--color-text-muted)] uppercase tracking-widest">About Me</h3>
           {isEditingBio ? (
-            <button onClick={saveBio} className="w-8 h-8 glass-active rounded-full flex items-center justify-center text-[var(--color-teal-dark)] hover:scale-105">
+            <button onClick={saveBio} disabled={isSavingBio} className="w-8 h-8 glass-active rounded-full flex items-center justify-center text-[var(--color-teal-dark)] hover:-translate-y-1 transition-transform disabled:opacity-50">
               <Check size={16} />
             </button>
           ) : (
-            <button onClick={() => setIsEditingBio(true)} className="w-8 h-8 glass-active rounded-full flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text-main)] hover:scale-105">
+            <button onClick={() => setIsEditingBio(true)} className="w-8 h-8 glass-card rounded-full flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text-main)] hover:-translate-y-1 transition-transform border border-white/60 shadow-sm">
               <Edit2 size={14} />
             </button>
           )}
@@ -69,65 +185,289 @@ export const ProfileView: React.FC = () => {
           <textarea 
             value={editBioText}
             onChange={(e) => setEditBioText(e.target.value)}
-            className="w-full bg-white/40 border border-white/50 rounded-xl p-3 text-[var(--color-text-main)] text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[var(--color-teal-dark)] resize-none"
+            className="w-full glass-active border border-white/80 rounded-xl p-3 text-[var(--color-text-main)] text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[var(--color-teal-dark)] resize-none transition-all"
             rows={3}
             autoFocus
+            disabled={isSavingBio}
           />
         ) : (
-          <p className="text-[var(--color-text-main)] font-bold text-sm leading-relaxed">{bio}</p>
+          <p className="text-[var(--color-text-main)] font-bold text-sm leading-relaxed whitespace-pre-wrap">{bio || <span className="text-[var(--color-text-muted)] italic font-medium">No bio added yet...</span>}</p>
         )}
       </div>
 
-      {/* Overview Grid */}
-      <h3 className="text-sm font-black text-[var(--color-text-muted)] uppercase tracking-widest mb-3 pl-2 relative z-10">Overview</h3>
-      <div className="grid grid-cols-2 gap-4 mb-8 relative z-10">
-        <div className="glass-card p-4 flex flex-col gap-2">
-          <div className="w-8 h-8 glass-active rounded-full flex items-center justify-center text-[var(--color-teal-dark)]"><Globe size={16}/></div>
-          <span className="text-xs font-bold text-[var(--color-text-muted)]">Nationality</span>
-          <span className="text-lg font-black text-[var(--color-text-main)] truncate">{nationality}</span>
+      {/* Friends & Group (Social) */}
+      <div className="grid grid-cols-2 gap-4 relative z-10">
+        <div onClick={() => alert("Friend List feature coming soon!")} className="glass-card p-4 flex flex-col gap-2 cursor-pointer hover:shadow-md hover:-translate-y-1 transition-transform group border border-white/60">
+          <div className="w-10 h-10 bg-indigo-100/50 rounded-full flex items-center justify-center text-indigo-500 group-hover:scale-110 transition-transform"><Users size={20}/></div>
+          <span className="text-xs font-bold text-[var(--color-text-muted)]">Friends</span>
+          <span className="text-xl font-black text-[var(--color-text-main)]">0</span>
+          <span className="text-[10px] text-[var(--color-teal-dark)] font-bold mt-1 group-hover:underline">View List &rarr;</span>
         </div>
-        <div className="glass-card p-4 flex flex-col gap-2">
-          <div className="w-8 h-8 glass-active rounded-full flex items-center justify-center text-orange-500"><Building2 size={16}/></div>
+        <div className="glass-card p-4 flex flex-col gap-2 group cursor-pointer hover:shadow-md hover:-translate-y-1 transition-transform border border-white/60">
+          <div className="w-10 h-10 bg-blue-100/50 rounded-full flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform"><Users size={20}/></div>
+          <span className="text-xs font-bold text-[var(--color-text-muted)]">Group</span>
+          <span className="text-xl font-black text-[var(--color-text-main)] truncate">TestGroup</span>
+        </div>
+      </div>
+
+      {/* Activity Stats */}
+      <h3 className="text-sm font-black text-[var(--color-text-muted)] uppercase tracking-widest pl-2 relative z-10 mt-6">Activity Stats</h3>
+      <div className="grid grid-cols-2 gap-4 relative z-10">
+        <div className="glass-card p-4 flex flex-col gap-2 border border-white/60">
+          <div className="w-10 h-10 bg-orange-100/50 rounded-full flex items-center justify-center text-orange-500"><Building2 size={20}/></div>
           <span className="text-xs font-bold text-[var(--color-text-muted)]">Cases Reported</span>
-          <span className="text-lg font-black text-[var(--color-text-main)]">{streaks}</span>
+          <span className="text-xl font-black text-[var(--color-text-main)]">{streaks}</span>
         </div>
         <div 
           onClick={() => setActiveView('map')}
-          className="glass-card p-4 flex flex-col gap-2 cursor-pointer hover:-translate-y-1 hover:shadow-md transition-all group"
+          className="glass-card p-4 flex flex-col gap-2 cursor-pointer hover:shadow-md hover:-translate-y-1 transition-transform group border border-white/60"
         >
-          <div className="w-8 h-8 glass-active rounded-full flex items-center justify-center text-green-600 group-hover:bg-green-100 transition-colors"><TreePine size={16}/></div>
+          <div className="w-10 h-10 bg-[var(--color-soft-green)] rounded-full flex items-center justify-center text-[var(--color-teal-dark)] group-hover:scale-110 transition-transform"><TreePine size={20}/></div>
           <span className="text-xs font-bold text-[var(--color-text-muted)]">Trees Planted</span>
-          <span className="text-lg font-black text-[var(--color-text-main)]">{totalTreesPlanted}</span>
-          <span className="text-[10px] text-[var(--color-teal-dark)] font-bold mt-1">Go to Let's Walk &rarr;</span>
-        </div>
-        <div className="glass-card p-4 flex flex-col gap-2">
-          <div className="w-8 h-8 glass-active rounded-full flex items-center justify-center text-blue-500"><Users size={16}/></div>
-          <span className="text-xs font-bold text-[var(--color-text-muted)]">Group Joined</span>
-          <span className="text-lg font-black text-[var(--color-text-main)] truncate">TestGroup</span>
+          <span className="text-xl font-black text-[var(--color-text-main)]">{totalTreesPlanted}</span>
         </div>
       </div>
 
       {/* Achievement Badges */}
-      <h3 className="text-sm font-black text-[var(--color-text-muted)] uppercase tracking-widest mb-3 pl-2 relative z-10">Achievements</h3>
-      <div className="glass-card p-5 relative z-10 mb-8">
-        <div className="flex flex-wrap gap-3">
+      <h3 className="text-sm font-black text-[var(--color-text-muted)] uppercase tracking-widest pl-2 relative z-10 mt-6">Achievements</h3>
+      <div className="glass-card p-5 relative z-10 border border-white/60">
+        <div className="flex flex-wrap gap-4">
           {unlockedBadges.length > 0 ? (
             unlockedBadges.map((badge, idx) => (
-              <div key={idx} className="w-16 h-16 glass-active rounded-2xl flex flex-col items-center justify-center border border-white/50 shadow-sm hover:-translate-y-1 transition-transform">
-                <Award size={24} className="text-[var(--color-teal-dark)] mb-1" />
-                <span className="text-[10px] font-bold text-[var(--color-text-main)]">Pioneer</span>
+              <div key={idx} className="w-20 h-20 bg-gradient-to-br from-[var(--color-soft-green)] to-white rounded-2xl flex flex-col items-center justify-center border border-white shadow-sm hover:shadow-md hover:-translate-y-1 transition-transform">
+                <Award size={28} className="text-[var(--color-teal-dark)] mb-1" />
+                <span className="text-[10px] font-bold text-[var(--color-text-main)] text-center uppercase tracking-wider">{badge.replace('_', ' ')}</span>
               </div>
             ))
           ) : (
             <p className="text-sm font-bold text-[var(--color-text-muted)] py-4 w-full text-center">No badges unlocked yet.</p>
           )}
-          
-          {/* Add a placeholder empty badge slot to show there's more to unlock */}
-          <div className="w-16 h-16 glass-card rounded-2xl flex items-center justify-center border-dashed border-2 border-white/40 opacity-50">
-            <Award size={24} className="text-[var(--color-text-muted)]" />
+          <div className="w-20 h-20 bg-white/40 rounded-2xl flex items-center justify-center border-dashed border-2 border-white/80 opacity-60">
+            <Award size={28} className="text-[var(--color-text-muted)]" />
           </div>
         </div>
       </div>
+
+      {/* Avatar Cropper Modal */}
+      <AvatarCropModal 
+        isOpen={!!cropImageSrc}
+        onClose={() => setCropImageSrc(null)}
+        imageSrc={cropImageSrc}
+        onConfirm={handleAvatarCropped}
+      />
+    </div>
+  );
+
+  const renderVouchers = () => (
+    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 relative z-10">
+      {loadingVouchers ? (
+        <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-[var(--color-teal-dark)] border-t-transparent rounded-full animate-spin"></div></div>
+      ) : vouchers.length === 0 ? (
+        <div className="glass-card p-12 flex flex-col items-center justify-center text-center border-dashed border-2 border-white/80">
+          <Ticket size={48} className="text-[var(--color-text-muted)] mb-4 opacity-50" />
+          <h3 className="text-lg font-black text-[var(--color-text-muted)] mb-2">No Vouchers Found</h3>
+          <p className="text-sm text-[var(--color-text-muted)] font-medium">You haven't purchased any vouchers from the Point Store yet.</p>
+        </div>
+      ) : (
+        vouchers.map((v, i) => {
+          let statusColor = 'glass-card border-white/60';
+          let statusBadge = 'bg-[var(--color-teal-dark)] text-white';
+          if (v.status === 'redeemed') {
+            statusColor = 'glass-active border-white/40 opacity-70';
+            statusBadge = 'bg-[var(--color-text-muted)] text-white';
+          } else if (v.status === 'expired' || v.status === 'disabled' || v.status === 'disabled_by_admin') {
+            statusColor = 'bg-red-50/50 backdrop-blur-md border border-red-200/50 opacity-80';
+            statusBadge = 'bg-red-500 text-white shadow-sm';
+          } else if (v.expires_at && Date.now() < v.expires_at) {
+            statusColor = 'bg-orange-50/50 backdrop-blur-md border border-orange-200/50';
+            statusBadge = 'bg-orange-500 text-white shadow-sm';
+          }
+
+          return (
+            <div 
+              key={i} 
+              onClick={() => {
+                if (v.status === 'active' || (v.status === 'active' && v.expires_at && Date.now() < v.expires_at)) {
+                  setSelectedVoucher(v);
+                  if (v.expires_at && Date.now() < v.expires_at) {
+                    setCountdown(Math.floor((v.expires_at - Date.now()) / 1000));
+                    setShowRedeemModal(true);
+                  }
+                }
+              }}
+              className={`border p-4 rounded-[1.5rem] flex flex-col gap-3 relative overflow-hidden transition-all shadow-sm ${(v.status === 'active' && (!v.expires_at || Date.now() > v.expires_at)) ? 'hover:-translate-y-1 hover:shadow-md cursor-pointer' : ''} ${statusColor}`}
+            >
+              <div className="absolute top-3 right-3 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full flex items-center gap-1">
+                <span className={`px-2 py-1 rounded-full ${statusBadge}`}>
+                  {v.status === 'active' && v.expires_at && Date.now() < v.expires_at ? 'PENDING REDEEM' : v.status.replace(/_/g, ' ')}
+                </span>
+              </div>
+              
+              <div className="flex items-start gap-4 pr-24">
+                <div className="w-16 h-16 bg-white/60 backdrop-blur-md rounded-2xl flex items-center justify-center text-3xl shadow-sm border border-white/80 shrink-0">
+                  {v.icon || '🎟️'}
+                </div>
+                <div>
+                  <h4 className="font-black text-[var(--color-text-main)] text-base leading-tight mb-1">{v.item_name}</h4>
+                  <p className="text-xs font-bold text-[var(--color-text-muted)] flex items-center gap-1 mb-1">
+                    <Store size={12}/> {v.store_name}
+                  </p>
+                  <p className="text-xs text-[var(--color-text-main)] opacity-80 line-clamp-2 leading-relaxed">{v.item_desc}</p>
+                </div>
+              </div>
+            </div>
+          )
+        })
+      )}
+    </div>
+  );
+
+  return (
+    <div className="h-full w-full pb-32 overflow-y-auto relative">
+      {/* 3D Ethereal Floating Tree Illusion Component (Abstract representation) */}
+      <div className="absolute top-20 right-0 w-64 h-64 bg-[var(--color-pastel-yellow)] rounded-full mix-blend-overlay filter blur-3xl opacity-60 animate-pulse pointer-events-none"></div>
+      <div className="absolute bottom-40 left-[-2rem] w-80 h-80 bg-[var(--color-soft-green-2)] rounded-full mix-blend-overlay filter blur-3xl opacity-40 pointer-events-none"></div>
+      
+      {/* Header Nav */}
+      <div className="flex justify-between items-center p-4 md:p-8 relative z-20">
+        <div className="flex items-center gap-2 px-3 py-1.5 glass-card rounded-full shadow-sm border border-white/60">
+          <Globe size={14} className="text-[var(--color-teal-dark)]"/>
+          <span className="text-xs font-black text-[var(--color-text-main)] uppercase tracking-widest">{nationality || 'Global Citizen'}</span>
+        </div>
+        <button 
+          onClick={() => setActiveView('settings')}
+          className="w-10 h-10 glass-card rounded-full flex items-center justify-center hover:-translate-y-1 transition-transform border border-white/60 shadow-sm"
+        >
+          <Settings size={20} className="text-[var(--color-text-main)]" />
+        </button>
+      </div>
+
+      <div className="px-4 md:px-8 mt-2">
+        {/* Profile Info */}
+        <div className="flex flex-col items-center mb-8 relative z-20">
+          <label className={`w-28 h-28 rounded-full overflow-hidden glass-card shrink-0 flex items-center justify-center p-1 mb-4 shadow-lg border border-white/60 hover:-translate-y-1 transition-transform duration-300 relative group ${isUploadingAvatar ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}>
+            <input 
+              type="file" 
+              accept="image/*" 
+              className="hidden" 
+              onChange={handleFileSelect}
+              ref={fileInputRef}
+              disabled={isUploadingAvatar}
+            />
+            <img 
+              src={avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`} 
+              alt="Avatar" 
+              className="w-full h-full object-cover rounded-full bg-white/30 backdrop-blur-sm"
+            />
+            {/* Upload Overlay */}
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full m-1 backdrop-blur-[2px]">
+              {isUploadingAvatar ? <Loader2 className="text-white animate-spin" size={24} /> : <Camera className="text-white" size={24} />}
+            </div>
+          </label>
+          <h2 className="text-2xl font-black tracking-tight text-[var(--color-text-main)] flex flex-col items-center gap-1">
+            {username}
+            <span className="text-sm font-bold text-[var(--color-teal-dark)] bg-white/50 backdrop-blur-md px-3 py-1 rounded-full uppercase tracking-widest border border-white/60 shadow-sm">#{player_id}</span>
+          </h2>
+        </div>
+
+        {/* Custom Tabs */}
+        <div className="flex glass-card p-1.5 rounded-2xl border border-white/60 shadow-sm mb-6 relative z-20">
+          <button 
+            onClick={() => setActiveTab('overview')}
+            className={`flex-1 py-2.5 text-sm font-black rounded-xl transition-all ${activeTab === 'overview' ? 'bg-[var(--color-teal-dark)] text-white shadow-md' : 'text-[var(--color-text-muted)] hover:bg-white/40'}`}
+          >
+            Overview
+          </button>
+          <button 
+            onClick={() => setActiveTab('vouchers')}
+            className={`flex-1 py-2.5 text-sm font-black rounded-xl transition-all ${activeTab === 'vouchers' ? 'bg-[var(--color-teal-dark)] text-white shadow-md' : 'text-[var(--color-text-muted)] hover:bg-white/40'}`}
+          >
+            My Vouchers
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'overview' ? renderOverview() : renderVouchers()}
+      </div>
+
+      {/* Redeem Confirmation / QR Modal */}
+      {selectedVoucher && (
+        <div className={`fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4 pointer-events-none transition-opacity duration-300 ${activeTab === 'vouchers' && selectedVoucher && !showRedeemModal ? 'opacity-100' : 'opacity-0'}`}>
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm pointer-events-auto" onClick={() => setSelectedVoucher(null)}></div>
+          <div className="glass-card w-full max-w-md rounded-[2rem] p-6 pb-12 sm:pb-6 relative z-10 pointer-events-auto transform transition-transform duration-300 translate-y-0 shadow-2xl border-2 border-white/60">
+            <div className="w-12 h-1.5 bg-white/50 rounded-full mx-auto mb-6 sm:hidden backdrop-blur-md"></div>
+            
+            <div className="text-center mb-6">
+              <div className="w-20 h-20 bg-[var(--color-soft-green)] rounded-2xl flex items-center justify-center text-4xl mx-auto mb-4 shadow-inner border border-white/80">
+                {selectedVoucher.icon}
+              </div>
+              <h3 className="text-2xl font-black text-[var(--color-text-main)] mb-2">{selectedVoucher.item_name}</h3>
+              <p className="text-sm font-bold text-[var(--color-text-muted)] mb-1 flex items-center justify-center gap-1"><Store size={14}/> {selectedVoucher.store_name}</p>
+            </div>
+            
+            <div className="glass-active p-4 rounded-2xl mb-8 border border-white/40">
+              <p className="text-sm font-bold text-[var(--color-text-main)] text-center">Are you sure you want to redeem this voucher? Once started, you have 15 minutes to scan it at the shop.</p>
+            </div>
+
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setSelectedVoucher(null)}
+                className="flex-1 py-4 font-black rounded-2xl text-[var(--color-text-muted)] glass-active hover:text-[var(--color-text-main)] hover:bg-white/40 transition-colors border border-white/40"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleStartRedeem}
+                disabled={redeemLoading}
+                className="flex-1 py-4 font-black rounded-2xl text-white bg-[var(--color-teal-dark)] hover:bg-teal-700 transition-colors shadow-lg disabled:opacity-50 border border-[var(--color-teal-dark)]"
+              >
+                {redeemLoading ? 'Starting...' : 'Confirm Redeem'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live QR Modal */}
+      {showRedeemModal && selectedVoucher && (
+        <div className="fixed inset-0 z-[110] flex flex-col items-center justify-center bg-slate-900/95 backdrop-blur-xl p-4 animate-in fade-in">
+          <button 
+            onClick={() => { setShowRedeemModal(false); setSelectedVoucher(null); fetchVouchers(); }}
+            className="absolute top-6 right-6 w-12 h-12 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white transition-colors"
+          >
+            <X size={24} />
+          </button>
+          
+          <div className="text-center mb-8 animate-in slide-in-from-bottom-4">
+            <h3 className="text-2xl font-black text-white mb-2">{selectedVoucher.item_name}</h3>
+            <p className="text-[var(--color-pastel-yellow)] font-bold flex items-center justify-center gap-2"><Store size={16}/> {selectedVoucher.store_name}</p>
+          </div>
+
+          <div className="bg-white/90 p-6 rounded-[2rem] shadow-[0_0_40px_rgba(20,184,166,0.2)] mb-8 relative animate-in zoom-in-95 border-4 border-white/50">
+            <QRCode value={selectedVoucher.id} size={250} level="H" fgColor="#0f172a" bgColor="transparent" />
+            
+            {/* Countdown Overlay */}
+            {countdown === 0 && (
+              <div className="absolute inset-0 bg-white/95 backdrop-blur-md rounded-[2rem] flex flex-col items-center justify-center border-2 border-red-100">
+                <X size={48} className="text-red-500 mb-2"/>
+                <h4 className="font-black text-xl text-[var(--color-text-main)]">QR Expired</h4>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3 glass-card px-6 py-3 rounded-full border border-white/20">
+            <Clock size={20} className={countdown > 60 ? 'text-[var(--color-pastel-yellow)]' : 'text-red-400 animate-pulse'} />
+            <span className={`font-black tracking-widest text-xl ${countdown > 60 ? 'text-white' : 'text-red-400'}`}>
+              {formatTime(countdown)}
+            </span>
+          </div>
+          
+          <p className="text-slate-300 text-sm font-bold mt-6 text-center max-w-xs leading-relaxed">
+            Present this QR code to the cashier to scan before the timer runs out.
+          </p>
+        </div>
+      )}
     </div>
   );
 };
+

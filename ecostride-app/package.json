@@ -12,6 +12,8 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@turf/turf": "^7.3.5",
+    "@yudiel/react-qr-scanner": "^2.6.0",
+    "browser-image-compression": "^2.0.2",
     "canvas-confetti": "^1.9.4",
     "firebase": "^12.16.0",
     "git": "^0.1.5",
@@ -19,7 +21,9 @@
     "mapbox-gl": "^3.26.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "react-easy-crop": "^6.2.3",
     "react-map-gl": "^8.1.1",
+    "react-qr-code": "^2.2.0",
     "react-router-dom": "^7.18.1",
     "tailwindcss": "^4.3.3",
     "zustand": "^5.0.14"

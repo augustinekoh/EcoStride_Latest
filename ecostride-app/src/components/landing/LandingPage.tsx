@@ -31,7 +31,7 @@ const getDistanceForDate = (date: Date, history: any[]) => {
 };
 
 export const LandingPage: React.FC = () => {
-  const { activityHistory, notifications, clearNotifications, totalCarbonSaved, totalDistanceKm, hasReadAlerts, setHasReadAlerts, username } = useUserStore();
+  const { activityHistory, notifications, clearNotifications, totalCarbonSaved, totalDistanceKm, hasReadAlerts, setHasReadAlerts, username, avatar } = useUserStore();
   const { user, role } = useAuthStore();
   const { unreadCount } = useMailStore();
   const { setActiveView } = useDemoStore();
@@ -190,7 +190,7 @@ export const LandingPage: React.FC = () => {
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-full glass-card p-1 flex items-center justify-center">
             <img 
-              src="https://api.dicebear.com/7.x/bottts/svg?seed=EcoStride" 
+              src={avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${username || 'EcoStride'}`} 
               alt="Profile" 
               className="w-full h-full object-cover rounded-full bg-white/30 backdrop-blur-sm"
             />

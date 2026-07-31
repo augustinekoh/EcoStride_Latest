@@ -157,7 +157,7 @@ function App() {
           }
         };
 
-        if (user.email?.toLowerCase() === 'ecostride_demo@gmail.com') {
+        if (user.email?.toLowerCase() === 'ecostride0@gmail.com') {
           // Poll demo request status every 3 seconds
           const checkDemoStatus = async () => {
             try {

@@ -259,7 +259,7 @@ export const AdminDashboard: React.FC = () => {
 
   const handleRejectDemo = async (id: string) => {
     try {
-      await apiClient(`/demo-requests/${id}`, { method: 'PUT', body: JSON.stringify({ status: 'rejected' }) });
+      await apiClient(`/demo_requests/${id}`, { method: 'PUT', body: JSON.stringify({ status: 'rejected' }) });
       fetchDashboardData();
     } catch (err) { console.error(err); }
   };

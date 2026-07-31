@@ -3,6 +3,8 @@ import { useAuthStore } from '../../stores/useAuthStore';
 import { apiClient } from '../../lib/api';
 import { useMapStore } from '../../stores/useMapStore';
 import { useUserStore } from '../../stores/useUserStore';
+import { Camera, X } from 'lucide-react';
+import { compressImage } from '../../lib/imageUtils';
 
 interface Props {
   isOpen: boolean;
@@ -18,6 +20,8 @@ export const CreateSignpostModal: React.FC<Props> = ({ isOpen, onClose, currentL
   const { signposts, setSignposts } = useMapStore();
   const [selectedEmoji, setSelectedEmoji] = useState('🚴');
   const [message, setMessage] = useState('');
+  const [images, setImages] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
@@ -35,6 +39,18 @@ export const CreateSignpostModal: React.FC<Props> = ({ isOpen, onClose, currentL
 
     setIsSubmitting(true);
     try {
+      let uploadedUrls: string[] = [];
+      if (images.length > 0) {
+        for (const img of images) {
+          const formData = new FormData();
+          formData.append('file', img);
+          const res = await apiClient('/signposts/images', {
+            method: 'POST',
+            body: formData
+          });
+          if (res.url) uploadedUrls.push(res.url);
+        }
+      }
       const newSignpost = {
         id: `temp-${Date.now()}`,
         lng: currentLocation[0],
@@ -46,7 +62,8 @@ export const CreateSignpostModal: React.FC<Props> = ({ isOpen, onClose, currentL
         authorUsername: username || user?.email?.split('@')[0] || 'Unknown',
         authorEmail: user?.email || 'Guest',
         category: 'General',
-        likes: 0
+        likes: 0,
+        images: uploadedUrls
       };
       
       // Optimistic Update
@@ -60,10 +77,13 @@ export const CreateSignpostModal: React.FC<Props> = ({ isOpen, onClose, currentL
           message: message.substring(0, 50),
           emoji: selectedEmoji,
           authorId: user?.uid || 'anonymous',
-          category: 'General'
+          category: 'General',
+          images: uploadedUrls
         })
       });
       setMessage('');
+      setImages([]);
+      setImagePreviews([]);
       onClose();
     } catch (err) {
       console.error(err);
@@ -112,6 +132,55 @@ export const CreateSignpostModal: React.FC<Props> = ({ isOpen, onClose, currentL
               onChange={(e) => setMessage(e.target.value)}
               className="w-full bg-slate-50 border-2 border-slate-300 focus:border-slate-900 rounded-xl px-4 py-3 font-bold text-slate-900 outline-none transition-colors"
             />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-bold text-slate-700 uppercase">Attach Photos ({images.length}/3)</label>
+              <label className={`cursor-pointer ${images.length >= 3 ? 'opacity-50 pointer-events-none' : 'hover:scale-110'} transition-transform bg-[#1d3539] text-white p-2 rounded-full`}>
+                <Camera size={18} />
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  capture="environment"
+                  className="hidden" 
+                  onChange={async (e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      if (images.length >= 3) return;
+                      const file = e.target.files[0];
+                      try {
+                        const compressedFile = await compressImage(file, 1200, 1200, 0.8);
+                        setImages([...images, compressedFile]);
+                        setImagePreviews([...imagePreviews, URL.createObjectURL(compressedFile)]);
+                      } catch (err) {
+                        alert("Failed to process photo.");
+                      }
+                      e.target.value = '';
+                    }
+                  }} 
+                />
+              </label>
+            </div>
+            
+            {imagePreviews.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                {imagePreviews.map((preview, idx) => (
+                  <div key={idx} className="relative w-20 h-20 shrink-0 rounded-xl overflow-hidden border-2 border-slate-300">
+                    <img src={preview} alt="Preview" className="w-full h-full object-cover" />
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        const newImgs = [...images]; newImgs.splice(idx, 1); setImages(newImgs);
+                        const newPrevs = [...imagePreviews]; URL.revokeObjectURL(newPrevs[idx]); newPrevs.splice(idx, 1); setImagePreviews(newPrevs);
+                      }}
+                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <button 

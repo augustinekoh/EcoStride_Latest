@@ -26,7 +26,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
             return {
               id: u.id,
               name: u.username || (u.email ? u.email.split('@')[0] : 'Unknown Player'),
-              avatar: '👤',
+              avatar: u.avatar || null,
               location: [103.64 + (emailSum % 100) * 0.0001, 1.56 + (emailSum % 100) * 0.0001],
               weeklyPoints: u.coins || 0,
               monthlyPoints: u.coins || 0,
@@ -86,8 +86,12 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
             <div className="w-10 h-10 rounded-full flex items-center justify-center font-black text-white bg-[#5496a2] shadow-sm">
               {idx + 1}
             </div>
-            <div className="w-12 h-12 rounded-full bg-[#fff4d6] flex items-center justify-center text-2xl shadow-inner">
-              {player.avatar}
+            <div className="w-12 h-12 rounded-full bg-[#fff4d6] flex items-center justify-center text-2xl shadow-inner overflow-hidden shrink-0">
+              {player.avatar ? (
+                <img src={player.avatar} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <img src={`https://api.dicebear.com/7.x/bottts/svg?seed=${player.username || player.name}`} alt="Avatar" className="w-full h-full object-cover" />
+              )}
             </div>
             <div className="flex-1 overflow-hidden">
               <h3 className="font-bold text-[#1d3539] text-lg truncate flex items-center gap-1">

@@ -64,7 +64,7 @@ export const AuthModal: React.FC = () => {
     try {
       let userCredential;
 
-      if (email.toLowerCase() === 'ecostride_demo@gmail.com') {
+      if (email.toLowerCase() === 'ecostride0@gmail.com') {
         sessionStorage.setItem('freshDemoLogin', 'true');
       }
 
@@ -94,7 +94,7 @@ export const AuthModal: React.FC = () => {
       }
 
       // Intercept demo account for BOTH Login and Register
-      if (email.toLowerCase() === 'ecostride_demo@gmail.com') {
+      if (email.toLowerCase() === 'ecostride0@gmail.com') {
         setIsWaitingForApproval(true);
         useDemoStore.getState().setIsWaitingForApproval(true);
         
@@ -110,14 +110,12 @@ export const AuthModal: React.FC = () => {
           }
         } catch (e) {}
 
-        const adminLocation = "Pitch Event Hall";
-        await apiClient('/applications', {
+        await apiClient('/demo_requests', {
           method: 'POST',
           body: JSON.stringify({
-            type: 'demo_access',
-            submitter_id: userCredential.user.uid,
-            status: 'pending',
-            data: JSON.stringify({ email, ipAddress, location: adminLocation })
+            id: userCredential.user.uid,
+            email: email,
+            ipAddress: ipAddress
           })
         });
       }
@@ -140,7 +138,7 @@ export const AuthModal: React.FC = () => {
           </p>
           <button 
             onClick={async () => {
-              if (user?.email?.toLowerCase() === 'ecostride_demo@gmail.com') {
+              if (user?.email?.toLowerCase() === 'ecostride0@gmail.com') {
                 try {
                   await apiClient(`/demo_requests/${user.uid}`, { method: 'DELETE' });
                 } catch (e) {}

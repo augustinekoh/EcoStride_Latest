@@ -12,3 +12,8 @@ FIREBASE_PROJECT_ID = "ecostride-0"
 
 [triggers]
 crons = ["0 * * * *"]
+
+[[r2_buckets]]
+binding = "AVATARS_BUCKET"
+bucket_name = "ecostride"
+preview_bucket_name = "ecostride"

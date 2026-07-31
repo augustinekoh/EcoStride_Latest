@@ -5,6 +5,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 type Bindings = {
   DB: D1Database;
   FIREBASE_PROJECT_ID: string;
+  AVATARS_BUCKET: R2Bucket;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -57,9 +58,35 @@ app.get('/api/check-username', async (c) => {
   return c.json({ available: !existing });
 });
 
+// Serve R2 Objects
+app.get('/r2/*', async (c) => {
+  // Extract key after /r2/
+  const url = new URL(c.req.url);
+  const key = url.pathname.replace('/r2/', '');
+  
+  const object = await c.env.AVATARS_BUCKET.get(key);
+  if (!object) return c.json({ error: 'Not found' }, 404);
+  
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('etag', object.httpEtag);
+  // Add browser caching (1 year) since the filename has a unique timestamp
+  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  
+  return new Response(object.body as any, { headers });
+});
+
 // GET user
 app.get('/api/users/:id', async (c) => {
   const id = c.req.param('id');
+  
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN player_id TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN nationality TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN bio TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN unlocked_badges TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE purchases ADD COLUMN expires_at INTEGER').run(); } catch(e) {}
+
   const user: any = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
   if (user) {
     const history = await c.env.DB.prepare('SELECT date, distance FROM activity_history WHERE user_id = ? ORDER BY date ASC').bind(id).all();
@@ -110,10 +137,17 @@ app.post('/api/users/:id', async (c) => {
     const values: any[] = [];
     
     if (body.email !== undefined) { updates.push('email = ?'); values.push(body.email); }
+    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN player_id TEXT').run(); } catch(e) {}
+    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch(e) {}
+    
     if (body.username !== undefined) { updates.push('username = ?'); values.push(body.username); }
     if (body.role !== undefined) { updates.push('role = ?'); values.push(body.role); }
     if (body.coins !== undefined) { updates.push('coins = ?'); values.push(body.coins); }
     if (body.totalDistanceKm !== undefined) { updates.push('total_distance_km = ?'); values.push(body.totalDistanceKm); }
+    if (body.nationality !== undefined) { updates.push('nationality = ?'); values.push(body.nationality); }
+    if (body.bio !== undefined) { updates.push('bio = ?'); values.push(body.bio); }
+    if (body.avatar !== undefined) { updates.push('avatar = ?'); values.push(body.avatar); }
+    if (body.unlockedBadges !== undefined) { updates.push('unlocked_badges = ?'); values.push(JSON.stringify(body.unlockedBadges)); }
     
     if (updates.length > 0) {
       values.push(id);
@@ -122,6 +156,57 @@ app.post('/api/users/:id', async (c) => {
   }
   
   return c.json({ success: true });
+});
+
+// POST user avatar upload
+app.post('/api/users/:id/avatar', async (c) => {
+  const id = c.req.param('id');
+  const jwtUser = c.get('user') as any;
+  
+  if (!jwtUser || jwtUser.sub !== id) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const formData = await c.req.parseBody();
+  const file = formData['file'] as File;
+
+  if (!file) {
+    return c.json({ error: 'No file provided' }, 400);
+  }
+
+  // File should already be compressed WebP/JPEG by the frontend
+  const extension = file.name.split('.').pop() || 'webp';
+  const objectKey = `avatars/${id}-${Date.now()}.${extension}`;
+  
+  // Try to delete old avatar to save space
+  try {
+    const user = await c.env.DB.prepare('SELECT avatar FROM users WHERE id = ?').bind(id).first();
+    if (user && user.avatar && user.avatar.includes('/r2/')) {
+      const oldUrl = new URL(user.avatar);
+      const oldKey = oldUrl.pathname.replace('/r2/', '');
+      await c.env.AVATARS_BUCKET.delete(oldKey);
+    }
+  } catch (err) {
+    console.warn("Failed to delete old avatar:", err);
+  }
+  
+  // Convert File to ArrayBuffer for R2
+  const arrayBuffer = await file.arrayBuffer();
+  
+  // Upload to R2 Bucket
+  await c.env.AVATARS_BUCKET.put(objectKey, arrayBuffer, {
+    httpMetadata: { contentType: file.type }
+  });
+
+  // Construct the public URL using the Worker's domain to ensure it works in local dev and prod
+  const url = new URL(c.req.url);
+  const publicUrl = `${url.origin}/r2/${objectKey}`;
+
+  // Update Database
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch(e) {}
+  await c.env.DB.prepare('UPDATE users SET avatar = ? WHERE id = ?').bind(publicUrl, id).run();
+
+  return c.json({ success: true, avatarUrl: publicUrl });
 });
 
 // DELETE user
@@ -212,6 +297,7 @@ app.get('/api/map-data', async (c) => {
   // Ensure columns exist (fail silently if they already exist)
   try { await c.env.DB.prepare('ALTER TABLE signposts ADD COLUMN likes INTEGER DEFAULT 0').run(); } catch(e) {}
   try { await c.env.DB.prepare('ALTER TABLE signposts ADD COLUMN liked_by TEXT DEFAULT "[]"').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE signposts ADD COLUMN images TEXT DEFAULT "[]"').run(); } catch(e) {}
 
   const trees = await c.env.DB.prepare('SELECT trees.*, users.username as authorUsername, users.email as authorEmail FROM trees LEFT JOIN users ON trees.author_id = users.id').all();
   const signposts = await c.env.DB.prepare('SELECT signposts.*, users.username as authorUsername, users.email as authorEmail FROM signposts LEFT JOIN users ON signposts.author_id = users.id').all();
@@ -245,11 +331,36 @@ app.delete('/api/trees/:id', async (c) => {
 app.post('/api/signposts', async (c) => {
   const body = await c.req.json();
   const id = `sp-${Date.now()}`;
+  
+  try { await c.env.DB.prepare('ALTER TABLE signposts ADD COLUMN images TEXT DEFAULT "[]"').run(); } catch(e) {}
+
   await c.env.DB.prepare(
-    'INSERT INTO signposts (id, author_id, lng, lat, message, emoji, category, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(id, body.authorId, body.lng, body.lat, body.message, body.emoji, body.category, Date.now(), Date.now() + 24*60*60*1000).run();
+    'INSERT INTO signposts (id, author_id, lng, lat, message, emoji, category, created_at, expires_at, images) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(id, body.authorId, body.lng, body.lat, body.message, body.emoji, body.category, Date.now(), Date.now() + 24*60*60*1000, JSON.stringify(body.images || [])).run();
   
   return c.json({ success: true, id });
+});
+
+app.post('/api/signposts/images', async (c) => {
+  const jwtUser = c.get('user') as any;
+  if (!jwtUser) return c.json({ error: 'Unauthorized' }, 401);
+
+  const formData = await c.req.parseBody();
+  const file = formData['file'] as File;
+  if (!file) return c.json({ error: 'No file provided' }, 400);
+
+  const extension = file.name.split('.').pop() || 'webp';
+  const objectKey = `signposts/${jwtUser.sub}-${Date.now()}.${extension}`;
+  
+  const arrayBuffer = await file.arrayBuffer();
+  await c.env.AVATARS_BUCKET.put(objectKey, arrayBuffer, {
+    httpMetadata: { contentType: file.type }
+  });
+
+  const url = new URL(c.req.url);
+  const publicUrl = `${url.origin}/r2/${objectKey}`;
+
+  return c.json({ success: true, url: publicUrl });
 });
 
 app.delete('/api/signposts/:id', async (c) => {
@@ -310,7 +421,7 @@ app.post('/api/settings', async (c) => {
 });
 
 app.get('/api/leaderboard', async (c) => {
-  const users = await c.env.DB.prepare("SELECT id, username, guild_id, coins, total_distance_km, total_trees_planted FROM users WHERE role != 'admin' ORDER BY total_distance_km DESC LIMIT 50").all();
+  const users = await c.env.DB.prepare("SELECT id, username, guild_id, coins, total_distance_km, total_trees_planted, avatar FROM users WHERE role != 'admin' ORDER BY total_distance_km DESC LIMIT 50").all();
   return c.json({ users: users.results });
 });
 
@@ -355,7 +466,25 @@ app.post('/api/admin/cleanup', async (c) => {
   const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
   
   await c.env.DB.prepare('DELETE FROM trees WHERE planted_at < ?').bind(threeDaysAgo).run();
+  
+  // Clean up signpost images from R2 before deleting from DB
+  const expiredSignposts = await c.env.DB.prepare('SELECT id, images FROM signposts WHERE created_at < ?').bind(threeDaysAgo).all();
+  for (const sp of expiredSignposts.results) {
+    try {
+      const images = JSON.parse((sp.images as string) || '[]');
+      for (const imgUrl of images) {
+        if (imgUrl.includes('/r2/')) {
+          const urlObj = new URL(imgUrl);
+          const key = urlObj.pathname.replace('/r2/', '');
+          await c.env.AVATARS_BUCKET.delete(key);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to delete signpost image from R2", e);
+    }
+  }
   await c.env.DB.prepare('DELETE FROM signposts WHERE created_at < ?').bind(threeDaysAgo).run();
+  
   await c.env.DB.prepare('DELETE FROM demo_requests WHERE requested_at < ?').bind(threeDaysAgo).run();
 
   return c.json({ success: true, message: 'Cleanup complete' });
@@ -402,6 +531,21 @@ app.post('/api/admin/cleanup', async (c) => {
   
   // Signposts > 3 days (fixed)
   const spThreshold = Date.now() - (3 * 24 * 60 * 60 * 1000);
+  const expiredCronSignposts = await c.env.DB.prepare('SELECT id, images FROM signposts WHERE created_at < ?').bind(spThreshold).all();
+  for (const sp of expiredCronSignposts.results) {
+    try {
+      const images = JSON.parse((sp.images as string) || '[]');
+      for (const imgUrl of images) {
+        if (imgUrl.includes('/r2/')) {
+          const urlObj = new URL(imgUrl);
+          const key = urlObj.pathname.replace('/r2/', '');
+          await c.env.AVATARS_BUCKET.delete(key);
+        }
+      }
+    } catch (e) {
+      console.error("Cron failed to delete signpost image from R2", e);
+    }
+  }
   await c.env.DB.prepare('DELETE FROM signposts WHERE created_at < ?').bind(spThreshold).run();
   
   // Recalibrate user stats from activity_history
@@ -495,6 +639,7 @@ app.get('/api/demo_requests/:id', async (c) => {
 app.post('/api/demo_requests', async (c) => {
   const body = await c.req.json();
   const { id, email, ipAddress } = body;
+  try { await c.env.DB.prepare('CREATE TABLE IF NOT EXISTS demo_requests (id TEXT PRIMARY KEY, email TEXT, ip_address TEXT, status TEXT, requested_at INTEGER)').run(); } catch(e) {}
   await c.env.DB.prepare(
     'REPLACE INTO demo_requests (id, email, ip_address, status, requested_at) VALUES (?, ?, ?, ?, ?)'
   ).bind(id, email, ipAddress || 'Unknown', 'pending', Date.now()).run();
@@ -790,6 +935,63 @@ app.post('/api/users/:uid/verify', async (c) => {
   const uid = c.req.param('uid');
   await c.env.DB.prepare('UPDATE users SET verified_email = 1 WHERE id = ?').bind(uid).run();
   return c.json({ success: true });
+});
+
+// GET User's Vouchers
+app.get('/api/users/:id/vouchers', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const vouchers = await c.env.DB.prepare(
+      'SELECT purchases.*, point_store.name as item_name, point_store.desc as item_desc, point_store.icon, merchants.store_name FROM purchases LEFT JOIN point_store ON purchases.item_id = point_store.id LEFT JOIN merchants ON purchases.merchant_id = merchants.owner_id WHERE purchases.user_id = ? ORDER BY purchases.purchased_at DESC'
+    ).bind(id).all();
+    return c.json({ vouchers: vouchers.results });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Start Redeem Voucher
+app.put('/api/purchases/:id/redeem-start', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const expiresAt = Date.now() + 15 * 60 * 1000; // 15 mins
+    await c.env.DB.prepare('UPDATE purchases SET expires_at = ? WHERE id = ?').bind(expiresAt, id).run();
+    return c.json({ success: true, expiresAt });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Merchant Scan Voucher
+app.post('/api/merchants/scan', async (c) => {
+  try {
+    const body = await c.req.json();
+    const purchaseId = body.purchaseId;
+    const merchantId = body.merchantId; // owner_id
+    
+    const purchase: any = await c.env.DB.prepare('SELECT * FROM purchases WHERE id = ?').bind(purchaseId).first();
+    if (!purchase) return c.json({ error: 'Voucher not found' }, 404);
+    
+    if (purchase.merchant_id !== merchantId) {
+      return c.json({ error: 'Invalid voucher for this shop' }, 400);
+    }
+    if (purchase.status === 'redeemed') {
+      return c.json({ error: 'Voucher has already been redeemed' }, 400);
+    }
+    if (purchase.status !== 'active') {
+      return c.json({ error: `Voucher is ${purchase.status}` }, 400);
+    }
+    if (purchase.expires_at && Date.now() > purchase.expires_at) {
+      await c.env.DB.prepare('UPDATE purchases SET status = ? WHERE id = ?').bind('expired', purchaseId).run();
+      return c.json({ error: 'Voucher redemption has expired' }, 400);
+    }
+    
+    // Valid! Redeem it.
+    await c.env.DB.prepare('UPDATE purchases SET status = ?, redeemed_at = ? WHERE id = ?').bind('redeemed', Date.now(), purchaseId).run();
+    return c.json({ success: true });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  }
 });
 
 export default {

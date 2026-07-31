@@ -16,6 +16,8 @@ import leaderboardData from '../../mock/leaderboard.json';
 import { CreateSignpostModal } from './CreateSignpostModal';
 import { DraggableMapWidget } from './DraggableMapWidget';
 import { PointsStoreModal } from '../modals/PointsStoreModal';
+import { SignpostStoryViewer } from './SignpostStoryViewer';
+import { UserProfileModal } from '../modals/UserProfileModal';
 
 export const MapView: React.FC = () => {
   const { demoProgress, currentMode, setShowReportModal } = useDemoStore();
@@ -96,8 +98,10 @@ export const MapView: React.FC = () => {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSignpostModal, setShowSignpostModal] = useState(false);
-  const [showCongratsModal, setShowCongratsModal] = useState(false);
+  const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [merchantStoreFilter, setMerchantStoreFilter] = useState<string | null>(null);
+  const [showCongratsModal, setShowCongratsModal] = useState(false);
+  const [publicProfileUser, setPublicProfileUser] = useState<any | null>(null);
   const { user } = useAuthStore();
 
   // Fetch map data via API Polling
@@ -538,9 +542,17 @@ export const MapView: React.FC = () => {
               e.originalEvent.stopPropagation();
               setActiveSignpost(sp);
             }}
+            style={{ zIndex: activeSignpost?.id === sp.id ? 10 : 1 }}
           >
-            <div className="bg-white px-2 py-1 rounded-t-xl rounded-br-xl border-2 border-slate-900 shadow-comic cursor-pointer hover:-translate-y-1 transition-transform animate-in zoom-in-95 duration-200">
-              <span className="text-xl">{sp.emoji}</span>
+            <div className="relative flex flex-col items-center group animate-in zoom-in-95 duration-200">
+              {/* Hover Username Pill */}
+              <div className="absolute -top-6 whitespace-nowrap bg-white/90 px-2 py-0.5 rounded-md text-[10px] font-bold text-slate-800 shadow-sm border border-slate-200 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                {sp.authorUsername || sp.authorEmail || 'Guest'}
+              </div>
+              {/* Original Marker Icon */}
+              <div className="bg-white px-2 py-1 rounded-t-xl rounded-br-xl border-2 border-slate-900 shadow-comic cursor-pointer group-hover:-translate-y-1 transition-transform">
+                <span className="text-xl">{sp.emoji}</span>
+              </div>
             </div>
           </Marker>
         ))}
@@ -553,24 +565,59 @@ export const MapView: React.FC = () => {
             anchor="bottom"
             onClose={() => setActiveSignpost(null)}
             closeButton={false}
-            className="z-50"
+            className={`z-50 ${(() => {
+              try {
+                const imgs = typeof activeSignpost.images === 'string' ? JSON.parse(activeSignpost.images) : (activeSignpost.images || []);
+                if (imgs.length > 0) return 'signpost-story-popup';
+              } catch(e) {}
+              return '';
+            })()}`}
             offset={[0, -40]}
           >
-            <div className="bg-white border-2 border-slate-900 shadow-comic p-3 rounded-2xl flex flex-col gap-2 min-w-[200px]">
-              <div className="flex items-center gap-2">
-                <span className="text-2xl bg-slate-100 p-1.5 rounded-xl border border-slate-300">{activeSignpost.emoji}</span>
-                <div className="flex-1">
-                  <p className="text-xs text-slate-500 font-bold truncate max-w-[120px]">{activeSignpost.authorUsername || activeSignpost.authorEmail || 'Guest'}</p>
-                  <p className="text-sm font-black text-slate-900">{activeSignpost.message}</p>
+            {(() => {
+              let imgs: string[] = [];
+              try {
+                imgs = typeof activeSignpost.images === 'string' ? JSON.parse(activeSignpost.images) : (activeSignpost.images || []);
+              } catch(e) {}
+
+              if (imgs.length > 0) {
+                // IG STORY STYLE
+                return (
+                  <SignpostStoryViewer 
+                    signpost={activeSignpost}
+                    images={imgs}
+                    onClose={() => setActiveSignpost(null)}
+                    onLike={handleLikeSignpost}
+                    onViewProfile={(authorId, username) => setPublicProfileUser({ id: authorId, username })}
+                    onFullScreen={setFullScreenImage}
+                  />
+                );
+              }
+
+              // STANDARD STYLE (No images)
+              return (
+                <div className="bg-white border-2 border-slate-900 shadow-comic p-3 rounded-2xl flex flex-col gap-2 min-w-[200px]">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl bg-slate-100 p-1.5 rounded-xl border border-slate-300">{activeSignpost.emoji}</span>
+                    <div className="flex-1">
+                      <p 
+                        className="text-xs text-[#5496a2] font-bold truncate max-w-[120px] cursor-pointer hover:underline"
+                        onClick={() => setPublicProfileUser({ id: activeSignpost.authorId, username: activeSignpost.authorUsername || activeSignpost.authorEmail || 'Guest' })}
+                      >
+                        {activeSignpost.authorUsername || activeSignpost.authorEmail || 'Guest'}
+                      </p>
+                      <p className="text-sm font-black text-slate-900">{activeSignpost.message}</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={(e) => handleLikeSignpost(e, activeSignpost)}
+                    className="w-full bg-brand-yellow hover:bg-yellow-400 border-2 border-slate-900 rounded-xl py-1.5 font-bold text-slate-900 text-sm transition-colors flex items-center justify-center gap-1 active:scale-95"
+                  >
+                    👍 +1 Eco Energy <span className="bg-white px-1.5 rounded-full border border-slate-900 text-xs ml-1 font-black">{activeSignpost.likes || 0}</span>
+                  </button>
                 </div>
-              </div>
-              <button 
-                onClick={(e) => handleLikeSignpost(e, activeSignpost)}
-                className="w-full bg-brand-yellow hover:bg-yellow-400 border-2 border-slate-900 rounded-xl py-1.5 font-bold text-slate-900 text-sm transition-colors flex items-center justify-center gap-1 active:scale-95"
-              >
-                👍 +1 Eco Energy <span className="bg-white px-1.5 rounded-full border border-slate-900 text-xs ml-1 font-black">{activeSignpost.likes || 0}</span>
-              </button>
-            </div>
+              );
+            })()}
           </Popup>
         )}
 
@@ -853,6 +900,33 @@ export const MapView: React.FC = () => {
 
       {/* Floating Left Widget */}
       <DraggableMapWidget />
+      {/* Full Screen Image Modal */}
+      {fullScreenImage && (
+        <div 
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setFullScreenImage(null)}
+        >
+          <button 
+            className="absolute top-6 right-6 text-white bg-white/20 hover:bg-white/40 p-2 rounded-full"
+            onClick={() => setFullScreenImage(null)}
+          >
+            <X size={24} />
+          </button>
+          <img 
+            src={fullScreenImage} 
+            alt="Full size signpost" 
+            className="max-w-full max-h-[90vh] object-contain rounded-xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+
+      {/* Public Profile Modal */}
+      <UserProfileModal 
+        player={publicProfileUser} 
+        isOpen={!!publicProfileUser} 
+        onClose={() => setPublicProfileUser(null)} 
+      />
     </div>
   );
 };

@@ -10,7 +10,10 @@ CREATE TABLE IF NOT EXISTS users (
   total_trees_planted INTEGER DEFAULT 0,
   player_id TEXT,
   created_at INTEGER,
-  verified_email INTEGER DEFAULT 0
+  verified_email INTEGER DEFAULT 0,
+  nationality TEXT,
+  bio TEXT,
+  unlocked_badges TEXT
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
@@ -77,6 +80,7 @@ CREATE TABLE IF NOT EXISTS purchases (
   status TEXT DEFAULT 'active',
   purchased_at INTEGER NOT NULL,
   redeemed_at INTEGER,
+  expires_at INTEGER,
   FOREIGN KEY(user_id) REFERENCES users(id),
   FOREIGN KEY(item_id) REFERENCES point_store(id)
 );

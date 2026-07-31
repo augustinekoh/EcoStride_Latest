@@ -17,6 +17,7 @@ interface UserState {
   player_id?: string
   bio: string
   nationality: string
+  avatar?: string
   totalTreesPlanted: number
   newsEnabled: boolean
   dailyReminderEnabled: boolean
@@ -68,6 +69,7 @@ export const useUserStore = create<UserState>()(
       email: '',
       bio: '',
       nationality: '',
+      avatar: undefined,
       totalTreesPlanted: 0,
       newsEnabled: false,
       dailyReminderEnabled: true,
@@ -84,7 +86,8 @@ export const useUserStore = create<UserState>()(
       setLocalData: (data) => set((state) => ({ ...state, ...data })),
       setUserData: (data) => set((state) => {
         const newState = { ...state, ...data };
-        syncToAPI(data);
+        // Always include username and email in case the backend needs to upsert a missing user
+        syncToAPI({ ...data, username: newState.username, email: newState.email });
         return newState;
       }),
       

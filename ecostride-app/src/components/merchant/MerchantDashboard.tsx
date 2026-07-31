@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { apiClient } from '../../lib/api';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useDemoStore } from '../../stores/useDemoStore';
-import { Store, Tag, Plus, Edit2, Trash2, Clock, AlertCircle, ChevronLeft, ShoppingBag, CheckCircle, XCircle, Gift, DollarSign, MapPin, Search } from 'lucide-react';
+import { Store, Tag, Plus, Edit2, Trash2, Clock, AlertCircle, ChevronLeft, ShoppingBag, CheckCircle, XCircle, Gift, DollarSign, MapPin, Search, ScanLine } from 'lucide-react';
+import { Scanner } from '@yudiel/react-qr-scanner';
 import Map, { Marker } from 'react-map-gl/mapbox';
 import { MAPBOX_TOKEN } from '../../lib/mapboxAPI';
 import { useUserStore } from '../../stores/useUserStore';
@@ -32,7 +33,9 @@ export const MerchantDashboard: React.FC = () => {
   const [vouchers, setVouchers] = useState<any[]>([]);
 
   // Tabs
-  const [activeTab, setActiveTab] = useState<'store' | 'sales'>('store');
+  const [activeTab, setActiveTab] = useState<'store' | 'sales' | 'scanner'>('store');
+  const [scanResult, setScanResult] = useState<{success: boolean, message: string} | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
 
   const handleUseCurrentLocation = () => {
     setIsLocating(true);
@@ -169,6 +172,30 @@ export const MerchantDashboard: React.FC = () => {
     }
   };
 
+  const handleScan = async (result: string) => {
+    if (isScanning) return;
+    setIsScanning(true);
+    try {
+      await apiClient('/merchants/scan', {
+        method: 'POST',
+        body: JSON.stringify({
+          purchaseId: result,
+          merchantId: user?.uid
+        })
+      });
+      setScanResult({ success: true, message: 'Voucher redeemed successfully!' });
+      fetchData();
+    } catch (e: any) {
+      setScanResult({ success: false, message: e.message || 'Failed to redeem voucher' });
+    } finally {
+      // Allow another scan after 3 seconds
+      setTimeout(() => {
+        setIsScanning(false);
+        setScanResult(null);
+      }, 3000);
+    }
+  };
+
   const handleAddVoucher = () => {
     setVouchers([...vouchers, {
       id: Date.now().toString(),
@@ -274,6 +301,7 @@ export const MerchantDashboard: React.FC = () => {
         <div className="flex gap-3 w-full md:w-auto">
           <button onClick={() => setActiveTab('store')} className={`flex-1 md:flex-none px-6 py-3 rounded-xl border-2 border-[#1d3539] font-black transition-all ${activeTab === 'store' ? 'bg-[#1d3539] text-white' : 'bg-white text-[#1d3539] hover:bg-slate-50'}`}>Store</button>
           <button onClick={() => setActiveTab('sales')} className={`flex-1 md:flex-none px-6 py-3 rounded-xl border-2 border-[#1d3539] font-black transition-all ${activeTab === 'sales' ? 'bg-[#1d3539] text-white' : 'bg-white text-[#1d3539] hover:bg-slate-50'}`}>Sales</button>
+          <button onClick={() => setActiveTab('scanner')} className={`flex-1 md:flex-none px-6 py-3 rounded-xl border-2 border-[#1d3539] font-black transition-all ${activeTab === 'scanner' ? 'bg-[#1d3539] text-white' : 'bg-white text-[#1d3539] hover:bg-slate-50'} flex justify-center items-center gap-2`}><ScanLine size={18}/> Scan</button>
         </div>
       </div>
 
@@ -501,6 +529,46 @@ export const MerchantDashboard: React.FC = () => {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'scanner' && (
+          <div className="animate-in fade-in slide-in-from-left-4 duration-300">
+            <div className="flex justify-between items-center mb-8 border-b-2 border-slate-100 pb-6">
+              <h2 className="text-2xl md:text-3xl font-black text-[#1d3539] flex items-center gap-2"><ScanLine className="text-[#5496a2]" size={28}/> Scan Voucher</h2>
+            </div>
+            
+            <div className="max-w-md mx-auto bg-white rounded-[2rem] border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] overflow-hidden p-6 relative">
+              <div className="mb-6 text-center">
+                <p className="text-[#5496a2] font-bold text-lg">Scan a customer's QR code</p>
+                <p className="text-slate-500 text-sm font-medium mt-1">Make sure the voucher belongs to your store.</p>
+              </div>
+
+              <div className="relative rounded-2xl overflow-hidden border-2 border-slate-200 aspect-square mb-6 bg-slate-900">
+                {!isScanning && (
+                  <Scanner 
+                    onScan={(result) => handleScan(result[0].rawValue)}
+                    components={{
+                      audio: false,
+                      finder: false
+                    }}
+                    styles={{
+                      container: { width: '100%', height: '100%' }
+                    }}
+                  />
+                )}
+                {/* Scanner Overlay UI */}
+                <div className="absolute inset-0 border-4 border-[#5496a2]/30 pointer-events-none z-10 m-8 rounded-3xl"></div>
+                
+                {scanResult && (
+                  <div className={`absolute inset-0 z-20 flex flex-col items-center justify-center p-6 text-center animate-in zoom-in ${scanResult.success ? 'bg-emerald-500/90' : 'bg-red-500/90'} backdrop-blur-sm`}>
+                    {scanResult.success ? <CheckCircle size={64} className="text-white mb-4"/> : <XCircle size={64} className="text-white mb-4"/>}
+                    <h3 className="text-2xl font-black text-white mb-2">{scanResult.success ? 'Success!' : 'Invalid Voucher'}</h3>
+                    <p className="text-white/90 font-bold">{scanResult.message}</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
