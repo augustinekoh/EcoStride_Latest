@@ -297,9 +297,9 @@ export const ProfileView: React.FC = () => {
               }}
               className={`border p-4 rounded-[1.5rem] flex flex-col gap-3 relative overflow-hidden transition-all shadow-sm ${(v.status === 'active' && (!v.expires_at || Date.now() > v.expires_at)) ? 'hover:-translate-y-1 hover:shadow-md cursor-pointer' : ''} ${statusColor}`}
             >
-              <div className="absolute top-3 right-3 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full flex items-center gap-1">
-                <span className={`px-2 py-1 rounded-full ${statusBadge}`}>
-                  {v.status === 'active' && v.expires_at && Date.now() < v.expires_at ? 'PENDING REDEEM' : v.status.replace(/_/g, ' ')}
+              <div className="absolute top-3 right-3 text-[10px] font-black uppercase tracking-wider flex items-center">
+                <span className={`px-2.5 py-1.5 rounded-full ${statusBadge} shadow-sm border border-black/5`}>
+                  {v.status === 'active' && v.expires_at && Date.now() < v.expires_at ? 'PENDING REDEEM' : v.status === 'disabled_by_admin' ? 'DISABLED' : v.status.replace(/_/g, ' ')}
                 </span>
               </div>
               
@@ -355,7 +355,7 @@ export const ProfileView: React.FC = () => {
               disabled={isUploadingAvatar}
             />
             <img 
-              src={avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`} 
+              src={avatar?.includes('/r2/') ? avatar.substring(avatar.indexOf('/r2/')) : (avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${username || 'EcoStride'}`)} 
               alt="Avatar" 
               className="w-full h-full object-cover rounded-full bg-white/30 backdrop-blur-sm"
             />

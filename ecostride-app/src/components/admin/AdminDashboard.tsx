@@ -1129,8 +1129,8 @@ export const AdminDashboard: React.FC = () => {
       </div>
       
       {viewMapLocation && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={() => setViewMapLocation(null)}>
-          <div className="bg-white p-6 rounded-3xl w-full max-w-2xl border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] relative animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => setViewMapLocation(null)}>
+          <div className="bg-white p-6 rounded-3xl w-[calc(100%-8px)] sm:w-full max-w-2xl border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] relative animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
             <button onClick={() => setViewMapLocation(null)} className="absolute top-4 right-4 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full w-8 h-8 flex items-center justify-center font-bold active:scale-95 transition-all">✕</button>
             <h3 className="text-xl font-black text-[#1d3539] uppercase mb-4">Merchant Location</h3>
             <div className="w-full h-80 rounded-2xl border-4 border-[#1d3539] overflow-hidden">
@@ -1158,8 +1158,8 @@ export const AdminDashboard: React.FC = () => {
 
       {/* Edit Store Item Modal */}
       {editingItemId && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
-          <div className="bg-white p-6 rounded-3xl w-full max-w-lg border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] relative animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => setEditingItemId(null)}>
+          <div className="bg-white p-6 rounded-3xl w-[calc(100%-8px)] sm:w-full max-w-lg border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] relative animate-in zoom-in-95 duration-200">
             <button onClick={() => setEditingItemId(null)} className="absolute top-4 right-4 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full w-8 h-8 flex items-center justify-center font-bold active:scale-95 transition-all">✕</button>
             <h3 className="text-xl font-black text-[#1d3539] uppercase mb-4">Edit Item</h3>
             <form onSubmit={handleAddStoreItem} className="flex flex-col gap-4">

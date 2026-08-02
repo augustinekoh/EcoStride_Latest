@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useMemo } from 'react';
 import Map, { Source, Layer, Marker, Popup } from 'react-map-gl/mapbox';
 import type { ViewState } from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { Leaf, X, ExternalLink, Gift, MapPin } from 'lucide-react';
+import { Leaf, X, ExternalLink, Gift, MapPin, ArrowLeft, Home } from 'lucide-react';
 
 import { useDemoStore } from '../../stores/useDemoStore';
 import { useMapStore } from '../../stores/useMapStore';
@@ -20,7 +20,7 @@ import { SignpostStoryViewer } from './SignpostStoryViewer';
 import { UserProfileModal } from '../modals/UserProfileModal';
 
 export const MapView: React.FC = () => {
-  const { demoProgress, currentMode, setShowReportModal } = useDemoStore();
+  const { demoProgress, currentMode, setShowReportModal, setActiveView, setCompletedDistanceKm } = useDemoStore();
   const { 
     territoryConquered, 
     liveLocation, setLiveLocation,
@@ -32,6 +32,7 @@ export const MapView: React.FC = () => {
     distanceToTarget, setDistanceToTarget,
     flyToLocation, setFlyToLocation,
     isPlantingMode, setIsPlantingMode,
+    mapDisplayMode, setMapDisplayMode,
   } = useMapStore();
   
   const { userCoins, deductCoins, addCoins } = useUserStore();
@@ -39,13 +40,30 @@ export const MapView: React.FC = () => {
   const mapRef = useRef(null);
   const [trees, setTrees] = useState<any[]>([]);
   const [activeTree, setActiveTree] = useState<any | null>(null);
+  const [isFreeWalk, setIsFreeWalk] = useState(false);
+  const [walkedDistanceKm, setWalkedDistanceKm] = useState(0);
   const [showNavPrompt, setShowNavPrompt] = useState(true);
+  const [showFabTooltip, setShowFabTooltip] = useState(() => {
+    if (typeof window !== 'undefined' && window.innerWidth <= 640) {
+      return !sessionStorage.getItem('seen_fab_tooltip');
+    }
+    return false;
+  });
+  const [showMapHomeTooltip, setShowMapHomeTooltip] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return !sessionStorage.getItem('seen_map_home_tooltip');
+    }
+    return false;
+  });
   const [isFabOpen, setIsFabOpen] = useState(false);
   const [fabOffset, setFabOffset] = useState({ x: 0, y: 0 });
   const [isFabDragging, setIsFabDragging] = useState(false);
   const fabDragRef = useRef<{ startX: number; startY: number; initX: number; initY: number } | null>(null);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const hasLongPressedRef = useRef(false);
 
   const handleFabDragStart = (e: React.PointerEvent) => {
+    hasLongPressedRef.current = false;
     fabDragRef.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -53,6 +71,15 @@ export const MapView: React.FC = () => {
       initY: fabOffset.y
     };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
+
+    longPressTimerRef.current = setTimeout(() => {
+      if ((currentMode === 'explore' || currentMode === 'demo') && !mapboxRouteGeoJSON && !isFreeWalk && !selectedMerchant && !isPlantingMode) {
+        hasLongPressedRef.current = true;
+        setIsFreeWalk(true);
+        setWalkedDistanceKm(0);
+        setShowNavPrompt(false);
+      }
+    }, 600);
   };
 
   const handleFabDragMove = (e: React.PointerEvent) => {
@@ -61,6 +88,10 @@ export const MapView: React.FC = () => {
     // Only set dragging if we've moved a bit
     if (!isFabDragging && (Math.abs(e.clientX - fabDragRef.current.startX) > 3 || Math.abs(e.clientY - fabDragRef.current.startY) > 3)) {
       setIsFabDragging(true);
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
     }
     
     const dx = e.clientX - fabDragRef.current.startX;
@@ -72,6 +103,10 @@ export const MapView: React.FC = () => {
   };
 
   const handleFabDragEnd = (e: React.PointerEvent) => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
     if (fabDragRef.current) {
       (e.target as HTMLElement).releasePointerCapture(e.pointerId);
       fabDragRef.current = null;
@@ -80,8 +115,11 @@ export const MapView: React.FC = () => {
   };
 
   const handleFabClick = () => {
+    if (hasLongPressedRef.current) return;
     if (!isFabDragging) {
       setIsFabOpen(!isFabOpen);
+      setShowFabTooltip(false);
+      if (typeof window !== 'undefined') sessionStorage.setItem('seen_fab_tooltip', 'true');
     }
   };
 
@@ -169,9 +207,21 @@ export const MapView: React.FC = () => {
     // We fetch GPS regardless of mode so demo mode has a starting point
     const watchId = navigator.geolocation.watchPosition((pos) => {
       setLiveLocation([pos.coords.longitude, pos.coords.latitude]);
-    }, (err) => console.log('GPS Error:', err), { enableHighAccuracy: true });
+    }, (err) => {
+      console.log('GPS Error:', err);
+      
+      // Mobile browsers strictly block Geolocation over HTTP (except localhost)
+      if (!window.isSecureContext) {
+        alert("⚠️ Note: Your mobile browser blocks real GPS over HTTP. Using a mock location for testing.");
+        setLiveLocation([103.6400, 1.5600]); // Use default location so they aren't locked out
+      } else {
+        // Require GPS permission for both mobile and desktop (when HTTPS or Localhost)
+        alert('GPS location permission is required to access the map. Please allow location access and try again.');
+        setActiveView('landing');
+      }
+    }, { enableHighAccuracy: true });
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [setLiveLocation]);
+  }, [setLiveLocation, setActiveView]);
 
   // Handle FlyTo requests
   useEffect(() => {
@@ -205,6 +255,38 @@ export const MapView: React.FC = () => {
     const currentPoint = turf.along(line, targetDistance, { units: 'meters' });
     return currentPoint.geometry.coordinates as [number, number];
   }, [demoProgress, currentMode, liveLocation, mapboxRouteGeoJSON]);
+  const prevCoordRef = useRef<[number, number] | null>(null);
+
+  // Auto-follow user during active navigation or Free Walk
+  useEffect(() => {
+    if (((currentMode === 'explore' || currentMode === 'demo') && distanceToTarget !== null && mapboxRouteGeoJSON) || isFreeWalk) {
+      let calculatedBearing: number | null = null;
+      let additionalDistance = 0;
+
+      if (prevCoordRef.current) {
+        const distance = turf.distance(turf.point(prevCoordRef.current), turf.point(currentCoordinate), { units: 'meters' });
+        // Only update bearing if moved at least 1 meter to prevent jittering when standing still
+        if (distance > 1) {
+          calculatedBearing = turf.bearing(turf.point(prevCoordRef.current), turf.point(currentCoordinate));
+          additionalDistance = distance / 1000;
+        }
+      }
+      prevCoordRef.current = currentCoordinate;
+
+      if (additionalDistance > 0) {
+        setWalkedDistanceKm(prev => prev + additionalDistance);
+      }
+
+      setViewState(prev => ({
+        ...prev,
+        longitude: currentCoordinate[0],
+        latitude: currentCoordinate[1],
+        zoom: 20,
+        pitch: 65,
+        bearing: calculatedBearing !== null ? calculatedBearing : prev.bearing,
+      }));
+    }
+  }, [currentCoordinate, currentMode, distanceToTarget, mapboxRouteGeoJSON, isFreeWalk]);
 
   // Active route line up to current progress (Demo Mode visual flair)
   const demoActiveRouteGeoJSON = useMemo(() => {
@@ -259,6 +341,7 @@ export const MapView: React.FC = () => {
   }, [currentCoordinate, currentMode, liveLocation]);
 
   const handleMerchantClick = (m: any) => {
+    if (mapboxRouteGeoJSON) return;
     setSelectedMerchant(m);
     setActiveRouteGeoJSON(null);
     setDistanceToTarget(null);
@@ -333,6 +416,9 @@ export const MapView: React.FC = () => {
 
     setActiveSignpost(null);
     setActiveTree(null);
+
+    if (mapboxRouteGeoJSON) return;
+
     const customDest = {
       id: 'custom-destination',
       storeName: 'Custom Destination',
@@ -443,13 +529,32 @@ export const MapView: React.FC = () => {
     <div className="relative w-full h-screen overflow-hidden bg-slate-100">
       {/* User Search Bar */}
       {true && (
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-40 w-11/12 max-w-sm">
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[200] w-11/12 max-w-sm">
           <div className="relative">
-            <form onSubmit={handleUserSearch} className="flex gap-2 bg-white p-1.5 rounded-full border-2 border-[#1d3539] shadow-md transition-all focus-within:-translate-y-1 relative z-50">
+            <form onSubmit={handleUserSearch} className="flex items-center gap-2 bg-white p-1.5 rounded-full border-2 border-[#1d3539] shadow-md transition-all focus-within:-translate-y-1 relative z-50">
+              <div className="relative">
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setActiveView('landing');
+                    if (typeof window !== 'undefined') sessionStorage.setItem('seen_map_home_tooltip', 'true');
+                    setShowMapHomeTooltip(false);
+                  }} 
+                  className="bg-slate-100 text-[#1d3539] p-2 rounded-full border-2 border-transparent hover:bg-slate-200 transition-colors shrink-0 relative z-10"
+                >
+                  <Home size={18} />
+                </button>
+                {showMapHomeTooltip && (
+                  <div className="absolute top-12 left-0 bg-[#5496a2] text-white text-xs font-bold px-3 py-2 rounded-xl shadow-lg w-32 text-center animate-bounce pointer-events-none z-50">
+                    <div className="absolute -top-1.5 left-4 w-3 h-3 bg-[#5496a2] rotate-45"></div>
+                    Back to Home
+                  </div>
+                )}
+              </div>
               <input 
                 type="text" 
                 placeholder="Search destination..." 
-                className="flex-1 bg-transparent px-4 font-bold text-[#1d3539] focus:outline-none"
+                className="flex-1 bg-transparent px-2 font-bold text-[#1d3539] focus:outline-none min-w-0"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -532,7 +637,7 @@ export const MapView: React.FC = () => {
         )}
 
         {/* Real Signposts */}
-        {signposts.map((sp) => (
+        {mapDisplayMode === 'normal' && signposts.map((sp) => (
           <Marker 
             key={sp.id} 
             longitude={sp.location[0]} 
@@ -568,7 +673,7 @@ export const MapView: React.FC = () => {
             className={`z-50 ${(() => {
               try {
                 const imgs = typeof activeSignpost.images === 'string' ? JSON.parse(activeSignpost.images) : (activeSignpost.images || []);
-                if (imgs.length > 0) return 'signpost-story-popup';
+                if (imgs.length > 0) return 'signpost-story-popup hidden sm:block';
               } catch(e) {}
               return '';
             })()}`}
@@ -653,7 +758,7 @@ export const MapView: React.FC = () => {
         )}
 
         {/* Planted Trees */}
-        {trees.map((tree) => (
+        {mapDisplayMode === 'guild' && trees.map((tree) => (
           <Marker 
             key={tree.id} 
             longitude={tree.location[0]} 
@@ -716,12 +821,12 @@ export const MapView: React.FC = () => {
       </Map>
 
       {/* Navigation Prompt */}
-      {showNavPrompt && liveLocation && !activeRouteData && !selectedMerchant && !isPlantingMode && (
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-md border-2 border-slate-900 shadow-comic px-6 py-3 rounded-full flex items-center gap-3 z-40 animate-in slide-in-from-top-10 fade-in duration-300">
-          <p className="text-sm font-bold text-slate-900">Click anywhere or search to start green navigation!</p>
+      {showNavPrompt && liveLocation && !activeRouteData && !selectedMerchant && !isPlantingMode && !isFreeWalk && (
+        <div className="absolute top-1/2 sm:top-24 left-1/2 -translate-x-1/2 -translate-y-1/2 sm:translate-y-0 bg-[#fff4d6] border-2 border-[#1d3539] shadow-[4px_4px_0px_0px_#1d3539] px-6 py-3 rounded-full flex items-center justify-center gap-3 z-[80] animate-bounce w-[90%] sm:w-auto text-center pointer-events-auto">
+          <p className="text-sm font-black text-[#1d3539]">Click anywhere to navigate, or long press 🍃 for Free Walk!</p>
           <button 
             onClick={() => setShowNavPrompt(false)} 
-            className="absolute -top-2 -right-2 bg-slate-900 text-white w-6 h-6 rounded-full text-xs font-bold border-2 border-slate-900 hover:scale-110"
+            className="absolute -top-2 -right-2 bg-white text-[#1d3539] w-7 h-7 rounded-full text-sm font-black border-2 border-[#1d3539] shadow-sm hover:scale-110 flex items-center justify-center"
           >
             ✕
           </button>
@@ -730,7 +835,7 @@ export const MapView: React.FC = () => {
 
       {/* Unified Radial FAB (Frosted Glass) */}
       <div 
-        className="absolute bottom-32 right-8 flex flex-col items-center justify-end z-50 touch-none"
+        className={`absolute right-8 flex flex-col items-center justify-end z-50 touch-none transition-all duration-300 ease-in-out ${isFreeWalk || mapboxRouteGeoJSON ? 'bottom-[220px]' : 'bottom-32'}`}
         style={{ transform: `translate(${fabOffset.x}px, ${fabOffset.y}px)` }}
       >
         
@@ -771,39 +876,51 @@ export const MapView: React.FC = () => {
         </div>
 
         {/* Main Dreamy Leaf FAB */}
-        <button 
-          onPointerDown={handleFabDragStart}
-          onPointerMove={handleFabDragMove}
-          onPointerUp={handleFabDragEnd}
-          onPointerCancel={handleFabDragEnd}
-          onClick={handleFabClick}
-          className={`w-16 h-16 rounded-full bg-gradient-to-br from-white/80 via-emerald-50/70 to-teal-100/60 backdrop-blur-xl border border-white/60 flex items-center justify-center transition-all duration-500 hover:scale-105 hover:bg-white/90 hover:shadow-[0_0_30px_rgba(52,211,153,0.5)] active:scale-95 z-10 relative cursor-grab active:cursor-grabbing ${isFabOpen ? 'shadow-[0_0_40px_rgba(52,211,153,0.6)] rotate-180' : 'shadow-[0_8px_32px_rgba(15,23,42,0.12),inset_0_2px_4px_rgba(255,255,255,0.8)]'}`}
-        >
-          <div className="w-[50px] h-[50px] rounded-full bg-gradient-to-tr from-emerald-400 to-teal-300 shadow-[inset_0_-2px_6px_rgba(0,0,0,0.1),0_4px_10px_rgba(52,211,153,0.4)] flex items-center justify-center text-white overflow-hidden relative">
-            <div className={`absolute transition-all duration-500 ease-in-out ${isFabOpen ? 'scale-0 opacity-0 rotate-90' : 'scale-100 opacity-100 rotate-0'}`}>
-              <Leaf size={24} strokeWidth={2.5} className="text-white drop-shadow-sm filter animate-[pulse_3s_ease-in-out_infinite]" />
+        <div className="relative">
+          <button 
+            onPointerDown={handleFabDragStart}
+            onPointerMove={handleFabDragMove}
+            onPointerUp={handleFabDragEnd}
+            onPointerCancel={handleFabDragEnd}
+            onClick={handleFabClick}
+            className={`w-16 h-16 rounded-full bg-gradient-to-br from-white/80 via-emerald-50/70 to-teal-100/60 backdrop-blur-xl border border-white/60 flex items-center justify-center transition-all duration-500 hover:scale-105 hover:bg-white/90 hover:shadow-[0_0_30px_rgba(52,211,153,0.5)] active:scale-95 z-10 relative cursor-grab active:cursor-grabbing ${isFabOpen ? 'shadow-[0_0_40px_rgba(52,211,153,0.6)] rotate-180' : 'shadow-[0_8px_32px_rgba(15,23,42,0.12),inset_0_2px_4px_rgba(255,255,255,0.8)]'}`}
+          >
+            <div className="w-[50px] h-[50px] rounded-full bg-gradient-to-tr from-emerald-400 to-teal-300 shadow-[inset_0_-2px_6px_rgba(0,0,0,0.1),0_4px_10px_rgba(52,211,153,0.4)] flex items-center justify-center text-white overflow-hidden relative">
+              <div className={`absolute transition-all duration-500 ease-in-out ${isFabOpen ? 'scale-0 opacity-0 rotate-90' : 'scale-100 opacity-100 rotate-0'}`}>
+                <Leaf size={24} strokeWidth={2.5} className="text-white drop-shadow-sm filter animate-[pulse_3s_ease-in-out_infinite]" />
+              </div>
+              <div className={`absolute transition-all duration-500 ease-in-out ${isFabOpen ? 'scale-100 opacity-100 rotate-180' : 'scale-0 opacity-0 -rotate-90'}`}>
+                <X size={26} strokeWidth={2.5} className="text-white drop-shadow-sm" />
+              </div>
             </div>
-            <div className={`absolute transition-all duration-500 ease-in-out ${isFabOpen ? 'scale-100 opacity-100 rotate-180' : 'scale-0 opacity-0 -rotate-90'}`}>
-              <X size={26} strokeWidth={2.5} className="text-white drop-shadow-sm" />
+          </button>
+          
+          {/* Onboarding Tooltip for FAB */}
+          {showFabTooltip && !isFabOpen && (
+            <div className="absolute bottom-16 right-4 bg-[#5496a2] text-white text-xs font-black px-3 py-2 rounded-xl shadow-lg w-[160px] text-center animate-bounce z-50 pointer-events-none leading-tight">
+              <div className="absolute -bottom-1.5 right-6 w-3 h-3 bg-[#5496a2] rotate-45"></div>
+              Tap for 📍 & 🌳,<br/>Long Press for Free Walk!
             </div>
-          </div>
-        </button>
+          )}
+        </div>
 
         {/* Planting Mode Active Tooltip */}
         {isPlantingMode && (
-          <div className="absolute top-1/2 right-20 -translate-y-1/2 bg-brand-yellow text-slate-900 border-2 border-slate-900 px-4 py-2 rounded-xl font-black text-sm shadow-[4px_4px_0px_0px_#0f172a] animate-pulse whitespace-nowrap">
+          <div className="absolute top-1/2 right-20 -translate-y-1/2 bg-[#fff4d6] text-[#1d3539] border-2 border-[#1d3539] p-3 rounded-xl font-black text-sm shadow-[4px_4px_0px_0px_#1d3539] animate-pulse w-48 text-center pointer-events-auto">
             Click anywhere on the map to plant! 📍
-            <button onClick={() => setIsPlantingMode(false)} className="ml-3 underline text-xs">Cancel</button>
+            <div className="mt-2">
+              <button onClick={() => setIsPlantingMode(false)} className="underline text-xs text-slate-600">Cancel</button>
+            </div>
           </div>
         )}
       </div>
 
       {/* Merchant Confirmation Overlay */}
       {selectedMerchant && !activeRouteData && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-[#fff4d6] border-2 border-[#80abb1] shadow-2xl p-6 rounded-3xl flex flex-col items-center gap-4 z-40 w-[340px] sm:w-[400px] text-center animate-in slide-in-from-bottom-10 fade-in duration-300">
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-[#fff4d6] border-2 border-[#80abb1] shadow-2xl p-6 rounded-3xl flex flex-col items-center gap-4 z-50 w-[340px] sm:w-[400px] text-center animate-in slide-in-from-bottom-10 fade-in duration-300 pointer-events-auto">
           <button 
-            onClick={() => setSelectedMerchant(null)} 
-            className="absolute top-4 right-4 text-[#80abb1] hover:text-[#1d3539] transition-colors bg-white/50 backdrop-blur rounded-full p-2 hover:bg-white"
+            onClick={(e) => { e.stopPropagation(); setSelectedMerchant(null); }} 
+            className="absolute top-4 right-4 text-[#80abb1] hover:text-[#1d3539] transition-colors bg-white/50 backdrop-blur rounded-full p-2 hover:bg-white z-50 cursor-pointer"
           >
             <X size={20} strokeWidth={3} />
           </button>
@@ -843,15 +960,63 @@ export const MapView: React.FC = () => {
 
       {/* Distance Overlay (Navigation Active) */}
       {currentMode === 'explore' && distanceToTarget !== null && selectedMerchant && activeRouteData && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white border-2 border-slate-900 shadow-comic px-6 py-3 rounded-full flex items-center gap-4 z-40 animate-in slide-in-from-bottom-10 fade-in duration-300">
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase">Navigating to: {selectedMerchant.storeName}</p>
-            <p className="text-xl font-black text-slate-900">{distanceToTarget} km <span className="text-sm font-bold text-slate-500">remaining</span></p>
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[calc(100vw-2rem)] sm:w-auto bg-white border-2 border-slate-900 shadow-comic px-4 sm:px-6 py-3 rounded-2xl sm:rounded-full flex items-center gap-3 sm:gap-4 z-40 animate-in slide-in-from-bottom-10 fade-in duration-300">
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase leading-tight truncate">Navigating to:</p>
+            <p className="text-sm sm:text-base font-black text-slate-900 truncate leading-tight">{selectedMerchant.storeName}</p>
+            <p className="text-lg sm:text-xl font-black text-slate-900 mt-0.5">{distanceToTarget} km <span className="text-[10px] sm:text-sm font-bold text-slate-500">remaining</span></p>
           </div>
-          <div className="w-10 h-10 bg-brand-green rounded-full border-2 border-slate-900 flex items-center justify-center font-bold text-lg animate-pulse">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-brand-green rounded-full border-2 border-slate-900 flex items-center justify-center font-bold text-lg sm:text-xl animate-pulse shrink-0">
             🚶
           </div>
-          <button onClick={() => { setActiveRouteGeoJSON(null); setDistanceToTarget(null); }} className="ml-2 text-xs font-bold text-red-500 hover:text-red-700 underline">
+          <button 
+            onClick={() => {
+              setCompletedDistanceKm(walkedDistanceKm);
+              setShowReportModal(true);
+              setActiveRouteGeoJSON(null); 
+              setDistanceToTarget(null);
+              setWalkedDistanceKm(0);
+            }} 
+            className="ml-1 sm:ml-2 text-xs sm:text-sm font-black text-red-500 hover:text-red-700 underline shrink-0 bg-red-50 px-2 py-1.5 rounded-lg border border-red-200"
+          >
+            Stop
+          </button>
+        </div>
+      )}
+
+      {/* Removed separate Free Walk Floating Button as it's now handled by long-pressing the FAB */}
+
+      {/* Free Walk Active Overlay */}
+      {isFreeWalk && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[calc(100vw-2rem)] sm:w-auto bg-white border-2 border-[#1d3539] shadow-[4px_4px_0px_0px_#1d3539] px-4 sm:px-6 py-3 rounded-2xl sm:rounded-3xl flex items-center gap-3 sm:gap-6 z-[90] animate-in slide-in-from-bottom-10 fade-in duration-300">
+          <div className="flex-1 min-w-0 flex gap-4 sm:gap-8 justify-between">
+            <div>
+              <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase leading-tight truncate">Distance</p>
+              <p className="text-sm sm:text-lg font-black text-[#1d3539] truncate leading-tight">{walkedDistanceKm.toFixed(2)} <span className="text-xs">km</span></p>
+            </div>
+            <div>
+              <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase leading-tight truncate">Saved</p>
+              <p className="text-sm sm:text-lg font-black text-[#5496a2] truncate leading-tight">{(walkedDistanceKm / 5.88).toFixed(2)} <span className="text-xs">kg CO2</span></p>
+            </div>
+            <div>
+              <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase leading-tight truncate">Energy</p>
+              <p className="text-sm sm:text-lg font-black text-brand-pink truncate leading-tight">{Math.floor((walkedDistanceKm / 5.88) * 100)} <span className="text-xs">🪙</span></p>
+            </div>
+          </div>
+          <button 
+            onClick={() => { 
+              setCompletedDistanceKm(walkedDistanceKm);
+              setShowReportModal(true);
+              setIsFreeWalk(false);
+              setWalkedDistanceKm(0);
+              // reset demo mode state if needed
+              if (currentMode === 'demo') {
+                useDemoStore.getState().setProgress(0);
+                useDemoStore.getState().setIsAutoPlaying(false);
+              }
+            }} 
+            className="ml-1 sm:ml-2 text-xs sm:text-sm font-black text-red-500 hover:text-red-700 uppercase px-4 py-2 rounded-2xl border-2 border-red-500 bg-red-50 hover:bg-red-100 transition-colors shrink-0 shadow-[2px_2px_0px_0px_rgba(239,68,68,1)] active:translate-y-0.5 active:shadow-none"
+          >
             Stop
           </button>
         </div>
@@ -918,6 +1083,36 @@ export const MapView: React.FC = () => {
             className="max-w-full max-h-[90vh] object-contain rounded-xl"
             onClick={(e) => e.stopPropagation()}
           />
+        </div>
+      )}
+
+      {/* Mobile Full Screen Story Viewer */}
+      {activeSignpost && (
+        <div className="sm:hidden">
+          {(() => {
+            let imgs: string[] = [];
+            try {
+              imgs = typeof activeSignpost.images === 'string' ? JSON.parse(activeSignpost.images) : (activeSignpost.images || []);
+            } catch(e) {}
+            if (imgs.length > 0) {
+              return (
+                <div className="fixed inset-0 z-[400] bg-black">
+                  <SignpostStoryViewer 
+                    signpost={activeSignpost}
+                    images={imgs}
+                    onClose={() => setActiveSignpost(null)}
+                    onLike={handleLikeSignpost}
+                    onViewProfile={(authorId, username) => {
+                      setActiveSignpost(null);
+                      setPublicProfileUser({ id: authorId, username });
+                    }}
+                    onFullScreen={setFullScreenImage}
+                  />
+                </div>
+              );
+            }
+            return null;
+          })()}
         </div>
       )}
 

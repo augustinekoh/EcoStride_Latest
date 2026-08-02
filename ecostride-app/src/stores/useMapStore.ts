@@ -32,6 +32,9 @@ interface MapState {
   
   flyToLocation: [number, number] | null
   setFlyToLocation: (loc: [number, number] | null) => void
+
+  mapDisplayMode: 'normal' | 'guild'
+  setMapDisplayMode: (mode: 'normal' | 'guild') => void
 }
 
 export const useMapStore = create<MapState>((set) => ({
@@ -41,28 +44,31 @@ export const useMapStore = create<MapState>((set) => ({
   activeSignpost: null,
   territoryConquered: false,
   plantedTrees: [],
-  setActiveSignpost: (signpost) => set({ activeSignpost: signpost }),
-  setTerritoryConquered: (conquered) => set({ territoryConquered: conquered }),
+  setActiveSignpost: (activeSignpost) => set({ activeSignpost }),
+  setTerritoryConquered: (territoryConquered) => set({ territoryConquered }),
   addTree: (tree) => set((state) => ({ plantedTrees: [...state.plantedTrees, tree] })),
   resetTrees: () => set({ plantedTrees: [] }),
   isPlantingMode: false,
-  setIsPlantingMode: (mode) => set({ isPlantingMode: mode }),
+  setIsPlantingMode: (isPlantingMode) => set({ isPlantingMode }),
   
   liveLocation: null,
-  setLiveLocation: (loc) => set({ liveLocation: loc }),
+  setLiveLocation: (liveLocation) => set({ liveLocation }),
   
   merchants: [],
   setMerchants: (merchants) => set({ merchants }),
   
   selectedMerchant: null,
-  setSelectedMerchant: (merchant) => set({ selectedMerchant: merchant }),
+  setSelectedMerchant: (selectedMerchant) => set({ selectedMerchant }),
   
   activeRouteGeoJSON: null,
-  setActiveRouteGeoJSON: (geojson) => set({ activeRouteGeoJSON: geojson }),
+  setActiveRouteGeoJSON: (activeRouteGeoJSON) => set({ activeRouteGeoJSON }),
   
   distanceToTarget: null,
-  setDistanceToTarget: (dist) => set({ distanceToTarget: dist }),
+  setDistanceToTarget: (distanceToTarget) => set({ distanceToTarget }),
   
   flyToLocation: null,
-  setFlyToLocation: (loc) => set({ flyToLocation: loc }),
+  setFlyToLocation: (flyToLocation) => set({ flyToLocation }),
+
+  mapDisplayMode: 'normal',
+  setMapDisplayMode: (mapDisplayMode) => set({ mapDisplayMode }),
 }))

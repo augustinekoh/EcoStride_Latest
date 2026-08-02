@@ -6,3 +6,5 @@ node_modules/
 *.docx
 *.txt
 *.ps1
+
+*.md

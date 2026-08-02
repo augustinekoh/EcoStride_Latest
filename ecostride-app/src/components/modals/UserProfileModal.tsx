@@ -32,7 +32,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
   const badges = playerDetails?.unlocked_badges ? JSON.parse(playerDetails.unlocked_badges) : [];
 
   return (
-    <div className="fixed inset-0 z-[160] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm px-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm px-4" onClick={onClose}>
       <div 
         className="bg-gradient-to-br from-[#7ccbed] via-[#c2ecd6] to-[#e7ffc9] rounded-[2rem] w-full max-w-sm max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-300 relative shadow-2xl border-2 border-white/60"
         onClick={e => e.stopPropagation()}
@@ -58,7 +58,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
             className="w-28 h-28 rounded-[2rem] overflow-hidden bg-white/40 backdrop-blur-md shrink-0 border-4 border-white shadow-xl flex items-center justify-center p-1 mb-4 rotate-3 hover:rotate-0 transition-transform duration-300 cursor-pointer"
           >
             <img 
-              src={avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`} 
+              src={avatar?.includes('/r2/') ? avatar.substring(avatar.indexOf('/r2/')) : (avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`)} 
               alt="Avatar" 
               className="w-full h-full object-cover rounded-2xl bg-white/60"
             />
@@ -76,11 +76,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
           </p>
 
           {/* Stats */}
-          <div className="flex gap-4 mt-4 w-full px-4">
+          <div className="flex gap-4 mt-4 w-full px-2 sm:px-4">
             <div className="flex-1 bg-white/40 backdrop-blur-md border border-white/60 rounded-2xl p-3 flex flex-col items-center justify-center shadow-sm">
               <MapPin size={20} className="text-[#3aaeff] mb-1" />
               <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider">Distance</span>
-              <span className="text-lg font-black text-slate-800">{playerDetails?.total_distance_km || player?.totalMileageKm || 0} km</span>
+              <span className="text-lg font-black text-slate-800">{Number(playerDetails?.total_distance_km || player?.totalMileageKm || 0).toFixed(1)} km</span>
             </div>
             <div className="flex-1 bg-white/40 backdrop-blur-md border border-white/60 rounded-2xl p-3 flex flex-col items-center justify-center shadow-sm">
               <TreePine size={20} className="text-[#84a98c] mb-1" />

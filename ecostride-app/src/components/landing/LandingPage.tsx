@@ -43,7 +43,13 @@ export const LandingPage: React.FC = () => {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   
 
-  const [isActionMenuOpen, setIsActionMenuOpen] = useState(true);
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(typeof window !== 'undefined' && window.innerWidth > 640);
+  const [showMenuTooltip, setShowMenuTooltip] = useState(() => {
+    if (typeof window !== 'undefined' && window.innerWidth <= 640) {
+      return !sessionStorage.getItem('seen_menu_tooltip');
+    }
+    return false;
+  });
   
   const [progressView, setProgressView] = useState<'Week' | 'Month'>('Week');
   
@@ -54,6 +60,31 @@ export const LandingPage: React.FC = () => {
 
   const [showAllActivities, setShowAllActivities] = useState(false);
   const [showCarbonModal, setShowCarbonModal] = useState(false);
+
+  // Swipe to close states
+  const [touchStartY, setTouchStartY] = useState<number | null>(null);
+  const [touchCurrentY, setTouchCurrentY] = useState<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartY(e.touches[0].clientY);
+    setTouchCurrentY(e.touches[0].clientY);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    setTouchCurrentY(e.touches[0].clientY);
+  };
+
+  const handleTouchEnd = () => {
+    if (touchStartY !== null && touchCurrentY !== null) {
+      if (touchCurrentY - touchStartY > 100) {
+        setIsActionMenuOpen(false);
+      }
+    }
+    setTouchStartY(null);
+    setTouchCurrentY(null);
+  };
+
+  const menuDragOffset = (touchCurrentY && touchStartY && touchCurrentY > touchStartY) ? touchCurrentY - touchStartY : 0;
 
   const calculateStreak = () => {
     let streak = 0;
@@ -185,27 +216,28 @@ export const LandingPage: React.FC = () => {
       <div className="absolute top-20 right-0 w-64 h-64 bg-[var(--color-pastel-yellow)] rounded-full mix-blend-overlay filter blur-3xl opacity-60 animate-pulse pointer-events-none"></div>
       <div className="absolute bottom-40 left-[-2rem] w-80 h-80 bg-[var(--color-soft-green-2)] rounded-full mix-blend-overlay filter blur-3xl opacity-40 pointer-events-none"></div>
 
-      {/* Top Header */}
-      <div className="flex items-center mb-8 mt-2 relative z-[40] w-max">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full glass-card p-1 flex items-center justify-center">
+      {/* Top Bar (Avatar + Menu) */}
+      <div className="flex items-center justify-between mb-8 mt-2 relative z-50">
+        
+        {/* Avatar & Username */}
+        <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full glass-card p-1 flex items-center justify-center shrink-0">
             <img 
-              src={avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${username || 'EcoStride'}`} 
+              src={avatar?.includes('/r2/') ? avatar.substring(avatar.indexOf('/r2/')) : (avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${username || 'EcoStride'}`)} 
               alt="Profile" 
               className="w-full h-full object-cover rounded-full bg-white/30 backdrop-blur-sm"
             />
           </div>
           <div>
-            <p className="text-sm text-[var(--color-text-muted)] font-bold tracking-wide">{greeting}</p>
-            <p className="text-2xl font-black text-[var(--color-text-main)] tracking-wide">{capitalizedName}</p>
+            <p className="text-xs sm:text-sm text-[var(--color-text-muted)] font-bold tracking-wide">{greeting}</p>
+            <p className="text-lg sm:text-2xl font-black text-[var(--color-text-main)] tracking-wide truncate max-w-[140px] sm:max-w-none">{capitalizedName}</p>
           </div>
         </div>
-      </div>
 
-      {/* Top Action Bar (Expandable) */}
-      <div className="flex justify-end mb-6 relative z-50 mt-[-4rem]">
-        <div className="flex items-center">
-          <div className={`flex items-center gap-2 overflow-hidden py-2 px-1 transition-all duration-500 ease-out origin-right ${isActionMenuOpen ? 'max-w-[600px] opacity-100 pr-3' : 'max-w-0 opacity-0 pr-0'}`}>
+        {/* Top Action Bar (Expandable on Desktop) */}
+        <div className="flex items-center justify-end shrink-0">
+          {/* Desktop Inline Menu */}
+          <div className={`hidden sm:flex items-center gap-2 overflow-hidden py-2 px-1 transition-all duration-500 ease-out origin-right ${isActionMenuOpen ? 'max-w-[600px] opacity-100 pr-3' : 'max-w-0 opacity-0 pr-0'}`}>
             <div className="relative">
               <button 
                 onClick={() => {
@@ -257,22 +289,100 @@ export const LandingPage: React.FC = () => {
             )}
           </div>
           
-          <button 
-            onClick={() => setIsActionMenuOpen(!isActionMenuOpen)}
-            className="w-10 h-10 glass-card rounded-full flex items-center justify-center z-10 hover:-translate-y-1 transition-transform shadow-md border-2 border-white/60 bg-white/40"
-          >
-            <Menu size={20} className="text-[var(--color-text-main)]" />
-          </button>
+          <div className="relative">
+            <button 
+              onClick={() => {
+                setIsActionMenuOpen(!isActionMenuOpen);
+                setShowMenuTooltip(false);
+                if (typeof window !== 'undefined') sessionStorage.setItem('seen_menu_tooltip', 'true');
+              }}
+              className="w-10 h-10 glass-card rounded-full flex items-center justify-center z-10 hover:-translate-y-1 transition-transform shadow-md border-2 border-white/60 bg-white/40"
+            >
+              <Menu size={20} className="text-[var(--color-text-main)]" />
+              {/* Mobile notification dot on menu button */}
+              {((notifications.length > 0 && !hasReadAlerts) || unreadCount > 0) && (
+                <div className="sm:hidden absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></div>
+              )}
+            </button>
+            {/* Onboarding Tooltip */}
+            {showMenuTooltip && !isActionMenuOpen && (
+              <div className="absolute top-14 right-0 bg-[#5496a2] text-white text-xs font-bold px-3 py-2 rounded-xl shadow-lg w-32 text-center animate-bounce z-50 pointer-events-none">
+                <div className="absolute -top-1.5 right-4 w-3 h-3 bg-[#5496a2] rotate-45"></div>
+                Tap here to open Mailbox & Store
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Mobile Actions Menu Overlay */}
+      <div 
+        className={`fixed inset-0 z-[200] sm:hidden flex flex-col justify-end transition-opacity duration-300 ${isActionMenuOpen || menuDragOffset > 0 ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
+      >
+        <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsActionMenuOpen(false)}></div>
+        
+        <div 
+          className="bg-[#fff4d6] rounded-t-3xl border-t-4 border-x-4 border-[#1d3539] p-6 pb-32 relative z-10 flex flex-col gap-3 shadow-[0_-8px_30px_rgba(0,0,0,0.15)] touch-none overscroll-none"
+          style={{ 
+            transform: `translateY(${!isActionMenuOpen ? '100%' : menuDragOffset + 'px'})`,
+            transition: touchStartY ? 'none' : 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+          }}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div className="w-12 h-1.5 bg-[#1d3539] rounded-full mx-auto mb-2 opacity-50 cursor-grab active:cursor-grabbing"></div>
+          <h3 className="text-lg font-black text-[#1d3539] uppercase mb-2 px-2">Menu</h3>
+            
+            <button onClick={() => { setShowNotifications(true); setIsActionMenuOpen(false); setHasReadAlerts(true); }} className="flex items-center justify-between w-full p-4 rounded-2xl bg-white border-2 border-[#1d3539] shadow-sm active:bg-slate-100">
+              <div className="flex items-center gap-3">
+                <Bell size={20} className="text-[#5496a2]" />
+                <span className="font-bold text-[#1d3539]">Alerts</span>
+              </div>
+              {notifications.length > 0 && !hasReadAlerts && <div className="w-2.5 h-2.5 bg-red-500 rounded-full"></div>}
+            </button>
+
+            <button onClick={() => { setShowMailbox(true); setIsActionMenuOpen(false); }} className="flex items-center justify-between w-full p-4 rounded-2xl bg-white border-2 border-[#1d3539] shadow-sm active:bg-slate-100">
+              <div className="flex items-center gap-3">
+                <Mail size={20} className="text-[#5496a2]" />
+                <span className="font-bold text-[#1d3539]">Mailbox</span>
+              </div>
+              {unreadCount > 0 && <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full font-black">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+            </button>
+            
+            <button onClick={() => { setShowStore(true); setIsActionMenuOpen(false); }} className="flex items-center w-full p-4 rounded-2xl bg-white border-2 border-[#1d3539] shadow-sm active:bg-slate-100 gap-3">
+              <Gift size={20} className="text-[#5496a2]" />
+              <span className="font-bold text-[#1d3539]">Points Store</span>
+            </button>
+            
+            <button onClick={() => { setShowLeaderboard(true); setIsActionMenuOpen(false); }} className="flex items-center w-full p-4 rounded-2xl bg-white border-2 border-[#1d3539] shadow-sm active:bg-slate-100 gap-3">
+              <Trophy size={20} className="text-[#5496a2]" />
+              <span className="font-bold text-[#1d3539]">City Ranks</span>
+            </button>
+
+            {user && role === 'merchant' && (
+              <button onClick={() => { setActiveView('merchant_dashboard'); setIsActionMenuOpen(false); }} className="flex items-center w-full p-4 rounded-2xl bg-white border-2 border-[#1d3539] shadow-sm active:bg-slate-100 gap-3">
+                <Store size={20} className="text-[#5496a2]" />
+                <span className="font-bold text-[#1d3539]">Merchant Hub</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {showNotifications && (
-          <div className="absolute right-0 top-12 w-72 glass-card p-5 z-[100] animate-in fade-in slide-in-from-top-2">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="font-black text-[var(--color-text-main)]">Alerts</h3>
-              {notifications.length > 0 && (
-                <button onClick={() => clearNotifications()} className="text-xs font-bold text-[var(--color-teal-dark)] hover:underline">Clear</button>
-              )}
-            </div>
+          <>
+            <div className="fixed inset-0 z-[90] sm:hidden" onClick={() => setShowNotifications(false)}></div>
+            <div className="fixed sm:absolute left-1/2 sm:left-auto right-auto sm:right-0 -translate-x-1/2 sm:translate-x-0 top-24 sm:top-12 w-[calc(100vw-2rem)] sm:w-72 glass-card p-5 z-[100] animate-in fade-in slide-in-from-top-2">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="font-black text-[var(--color-text-main)]">Alerts</h3>
+                <div className="flex items-center gap-3">
+                  {notifications.length > 0 && (
+                    <button onClick={() => clearNotifications()} className="text-xs font-bold text-[var(--color-teal-dark)] hover:underline">Clear</button>
+                  )}
+                  <button onClick={() => setShowNotifications(false)} className="sm:hidden text-[var(--color-text-muted)] hover:text-[var(--color-text-main)]">
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
             <div className="space-y-3 max-h-60 overflow-y-auto">
               {notifications.length === 0 ? (
                 <p className="text-sm font-bold text-[var(--color-text-muted)] py-4 text-center">No new alerts.</p>
@@ -291,6 +401,7 @@ export const LandingPage: React.FC = () => {
               )}
             </div>
           </div>
+          </>
         )}
       </div>
 
@@ -302,43 +413,43 @@ export const LandingPage: React.FC = () => {
             setSelectedDate(null);
             setShowCalendar(true);
           }}
-          className="glass-card p-7 cursor-pointer hover:-translate-y-1 transition-all"
+          className="glass-card p-5 sm:p-7 cursor-pointer hover:-translate-y-1 transition-all"
         >
-          <div className="flex justify-between items-center mb-8">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 glass-active rounded-full flex items-center justify-center shadow-sm">
-                <Activity size={20} className="text-[var(--color-teal-dark)]" />
+          <div className="flex justify-between items-center mb-5 sm:mb-8">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 glass-active rounded-full flex items-center justify-center shadow-sm">
+                <Activity size={18} className="text-[var(--color-teal-dark)]" />
               </div>
-              <h3 className="text-2xl font-black tracking-wide text-[var(--color-text-main)]">Goal Crusher</h3>
+              <h3 className="text-lg sm:text-xl font-black tracking-wide text-[var(--color-text-main)] mt-0.5">Goal Crusher</h3>
             </div>
             <div 
               onClick={(e) => {
                 e.stopPropagation();
                 setProgressView(progressView === 'Week' ? 'Month' : 'Week');
               }}
-              className="flex items-center gap-2 glass-active px-5 py-2.5 rounded-full text-sm font-bold transition-colors shadow-sm text-[var(--color-text-main)]"
+              className="flex items-center gap-1.5 sm:gap-2 glass-active px-4 sm:px-5 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm font-bold transition-colors shadow-sm text-[var(--color-text-main)]"
             >
-              {progressView} <ChevronDown size={16} />
+              {progressView} <ChevronDown size={14} className="sm:w-4 sm:h-4 w-3 h-3" />
             </div>
           </div>
 
-          <div className="h-44 flex items-end justify-between gap-2 md:gap-4 relative pt-6 pointer-events-none">
-            <div className="absolute left-0 top-0 h-full flex flex-col justify-between text-[11px] text-[var(--color-text-muted)] pb-8 pr-2 font-bold">
+          <div className="h-32 sm:h-44 flex items-end justify-between gap-1 sm:gap-4 relative pt-4 sm:pt-6 pointer-events-none">
+            <div className="absolute left-0 top-0 h-full flex flex-col justify-between text-[10px] sm:text-[11px] text-[var(--color-text-muted)] pb-8 pr-1 sm:pr-2 font-bold w-7 sm:w-auto">
               {yAxisSteps.map((step, i) => (
                 <span key={i}>{step}km</span>
               ))}
             </div>
 
-            <div className="flex-1 flex justify-between items-end h-full pl-10">
+            <div className="flex-1 flex justify-between items-end h-full pl-7 sm:pl-10">
               {chartData.map((data, index) => (
-                <div key={index} className="flex flex-col items-center gap-3 h-full justify-end w-full group">
-                  <div className="w-full max-w-[2rem] bg-white/20 rounded-full h-full relative overflow-hidden flex items-end border-2 border-[var(--color-text-main)]">
+                <div key={index} className="flex flex-col items-center gap-1.5 sm:gap-3 h-full justify-end w-full group px-0.5 sm:px-0">
+                  <div className="w-full max-w-[1rem] sm:max-w-[2rem] bg-white/20 rounded-full h-full relative overflow-hidden flex items-end border sm:border-2 border-[var(--color-text-main)]">
                     <div 
                       className={`w-full rounded-full transition-all duration-700 ease-out ${data.active ? 'bg-[var(--color-teal-dark)] shadow-[0_0_10px_rgba(84,150,162,0.4)]' : 'bg-transparent'}`}
                       style={{ height: `${(data.value / maxChartVal) * 100}%` }}
                     />
                   </div>
-                  <span className="text-xs font-bold text-[var(--color-text-muted)]">{data.label}</span>
+                  <span className="text-[9px] sm:text-xs font-bold text-[var(--color-text-muted)]">{data.label}</span>
                 </div>
               ))}
             </div>
@@ -458,22 +569,22 @@ export const LandingPage: React.FC = () => {
 
               {/* Calendar View Area */}
               {calendarView === 'Week' ? (
-                <div className="flex justify-between mb-8">
+                <div className="flex justify-between mb-8 gap-1 sm:gap-2">
                   {getModalWeekData().map((d, i) => {
                     const isActive = d.distance > 0;
                     const isSelected = selectedDate && isSameDay(selectedDate, d.dateObj);
                     
                     return (
-                      <div key={i} className="flex flex-col items-center gap-3">
-                        <span className="text-xs font-bold text-[var(--color-text-muted)]">{d.label}</span>
+                      <div key={i} className="flex flex-col items-center gap-2 sm:gap-3 flex-1">
+                        <span className="text-[10px] sm:text-xs font-bold text-[var(--color-text-muted)]">{d.label}</span>
                         <button 
                           onClick={() => setSelectedDate(d.dateObj)}
-                          className={`w-12 h-[4.5rem] rounded-[1.5rem] flex flex-col items-center justify-center gap-1 transition-all
+                          className={`w-full max-w-[2.5rem] sm:max-w-[3rem] aspect-[1/1.5] rounded-xl sm:rounded-[1.5rem] flex flex-col items-center justify-center gap-1 transition-all
                             ${isActive ? 'bg-[var(--color-teal-dark)] text-white shadow-sm hover:-translate-y-1' : 'glass-active text-[var(--color-text-main)] hover:scale-105'}
-                            ${isSelected ? 'ring-4 ring-[var(--color-teal-dark)] ring-opacity-40' : ''}
+                            ${isSelected ? 'ring-2 sm:ring-4 ring-[var(--color-teal-dark)] ring-opacity-40' : ''}
                           `}
                         >
-                          <span className="text-lg font-black">{d.dateNum}</span>
+                          <span className="text-sm sm:text-lg font-black">{d.dateNum}</span>
                         </button>
                       </div>
                     );

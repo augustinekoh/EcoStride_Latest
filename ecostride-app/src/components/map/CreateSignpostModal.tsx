@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import EmojiPicker from 'emoji-picker-react';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { apiClient } from '../../lib/api';
 import { useMapStore } from '../../stores/useMapStore';
@@ -12,7 +13,7 @@ interface Props {
   currentLocation: [number, number] | null;
 }
 
-const EMOJI_LIST = ['🚴', '💪', '📸', '☕', '⚠️', '🌳', '🏆'];
+const EMOJI_LIST = ['🚴', '💪', '📸', '☕', '⚠️', '🏆'];
 
 export const CreateSignpostModal: React.FC<Props> = ({ isOpen, onClose, currentLocation }) => {
   const { user } = useAuthStore();
@@ -23,6 +24,7 @@ export const CreateSignpostModal: React.FC<Props> = ({ isOpen, onClose, currentL
   const [images, setImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   if (!isOpen) return null;
 
@@ -95,7 +97,7 @@ export const CreateSignpostModal: React.FC<Props> = ({ isOpen, onClose, currentL
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[#faf9f6] w-full max-w-sm rounded-3xl border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] flex flex-col animate-in zoom-in-95 duration-200 overflow-hidden">
+      <div className="bg-[#faf9f6] w-[calc(100%-8px)] sm:w-full max-w-sm mr-2 sm:mr-0 rounded-3xl border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] flex flex-col animate-in zoom-in-95 duration-200 overflow-hidden">
         
         <div className="bg-[#5496a2] border-b-4 border-[#1d3539] px-4 py-3 flex items-center justify-between">
           <h2 className="font-black text-white text-lg uppercase tracking-tight">📍 Drop a Signpost</h2>
@@ -108,17 +110,55 @@ export const CreateSignpostModal: React.FC<Props> = ({ isOpen, onClose, currentL
           
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-2 uppercase">Select a Sticker</label>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 relative">
               {EMOJI_LIST.map(emoji => (
                 <button
                   key={emoji}
                   type="button"
-                  onClick={() => setSelectedEmoji(emoji)}
+                  onClick={() => { setSelectedEmoji(emoji); setShowEmojiPicker(false); }}
                   className={`text-3xl p-2 rounded-xl border-2 transition-transform ${selectedEmoji === emoji ? 'border-[#1d3539] bg-[#fff4d6] scale-110 shadow-[2px_2px_0px_0px_#1d3539]' : 'border-transparent hover:bg-slate-100 hover:scale-105'}`}
                 >
                   {emoji}
                 </button>
               ))}
+
+              {/* Render custom selected emoji if it's not in the default list */}
+              {!EMOJI_LIST.includes(selectedEmoji) && (
+                <button
+                  type="button"
+                  onClick={() => setShowEmojiPicker(true)}
+                  className={`text-3xl p-2 rounded-xl border-2 transition-transform border-[#1d3539] bg-[#fff4d6] scale-110 shadow-[2px_2px_0px_0px_#1d3539]`}
+                >
+                  {selectedEmoji}
+                </button>
+              )}
+
+              {/* More Emojis Button */}
+              <button
+                type="button"
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                className={`text-2xl p-2 rounded-xl border-2 border-dashed border-slate-300 hover:border-[#1d3539] hover:bg-slate-100 transition-colors flex items-center justify-center text-slate-500 hover:text-[#1d3539] w-14 h-14`}
+                title="More emojis"
+              >
+                ➕
+              </button>
+
+              {/* Emoji Picker Popup */}
+              {showEmojiPicker && (
+                <div className="fixed inset-0 z-[250] flex items-center justify-center p-4">
+                  <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowEmojiPicker(false)}></div>
+                  <div className="relative shadow-[8px_8px_0px_0px_#1d3539] rounded-2xl overflow-hidden border-4 border-[#1d3539] bg-white animate-in zoom-in-95 duration-200">
+                    <EmojiPicker 
+                      onEmojiClick={(emojiData) => { 
+                        setSelectedEmoji(emojiData.emoji); 
+                        setShowEmojiPicker(false); 
+                      }}
+                      width={320}
+                      height={400}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

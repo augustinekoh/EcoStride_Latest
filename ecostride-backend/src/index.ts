@@ -85,6 +85,7 @@ app.get('/api/users/:id', async (c) => {
   try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN bio TEXT').run(); } catch(e) {}
   try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN unlocked_badges TEXT').run(); } catch(e) {}
   try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN read_mails TEXT').run(); } catch(e) {}
   try { await c.env.DB.prepare('ALTER TABLE purchases ADD COLUMN expires_at INTEGER').run(); } catch(e) {}
 
   const user: any = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
@@ -139,6 +140,7 @@ app.post('/api/users/:id', async (c) => {
     if (body.email !== undefined) { updates.push('email = ?'); values.push(body.email); }
     try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN player_id TEXT').run(); } catch(e) {}
     try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch(e) {}
+    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN read_mails TEXT').run(); } catch(e) {}
     
     if (body.username !== undefined) { updates.push('username = ?'); values.push(body.username); }
     if (body.role !== undefined) { updates.push('role = ?'); values.push(body.role); }
@@ -148,6 +150,7 @@ app.post('/api/users/:id', async (c) => {
     if (body.bio !== undefined) { updates.push('bio = ?'); values.push(body.bio); }
     if (body.avatar !== undefined) { updates.push('avatar = ?'); values.push(body.avatar); }
     if (body.unlockedBadges !== undefined) { updates.push('unlocked_badges = ?'); values.push(JSON.stringify(body.unlockedBadges)); }
+    if (body.readMails !== undefined) { updates.push('read_mails = ?'); values.push(JSON.stringify(body.readMails)); }
     
     if (updates.length > 0) {
       values.push(id);

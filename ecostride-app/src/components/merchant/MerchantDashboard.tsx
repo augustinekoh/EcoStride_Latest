@@ -23,6 +23,7 @@ export const MerchantDashboard: React.FC = () => {
   
   // Modification Form State
   const [isEditing, setIsEditing] = useState(false);
+  const [editStep, setEditStep] = useState(1);
   const [editStoreName, setEditStoreName] = useState('');
   const [editMenuLink, setEditMenuLink] = useState('');
   const [editLocation, setEditLocation] = useState<[number, number] | null>(null);
@@ -225,8 +226,8 @@ export const MerchantDashboard: React.FC = () => {
 
   if (!merchantData && !latestApp) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#faf9f6] to-[#e9efce] p-8 text-center">
-        <div className="bg-white p-12 rounded-3xl border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] max-w-lg">
+      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#faf9f6] to-[#e9efce] p-4 sm:p-8 text-center">
+        <div className="bg-white p-8 sm:p-12 rounded-3xl border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] max-w-lg w-[calc(100%-8px)] sm:w-full">
           <Store size={80} className="text-[#1d3539] mx-auto mb-6 opacity-80" />
           <h2 className="text-3xl font-black text-[#1d3539] mb-4 uppercase">No Merchant Account</h2>
           <p className="text-[#5496a2] font-bold mb-8 text-lg">You haven't applied to be a merchant yet.</p>
@@ -238,9 +239,9 @@ export const MerchantDashboard: React.FC = () => {
 
   if (!merchantData && latestApp) {
     return (
-      <div className="w-full h-full flex flex-col p-8 pt-24 bg-gradient-to-br from-[#faf9f6] to-[#e9efce] overflow-y-auto">
+      <div className="w-full h-full flex flex-col p-4 sm:p-8 pt-24 bg-gradient-to-br from-[#faf9f6] to-[#e9efce] overflow-y-auto">
         <button onClick={() => setActiveView('landing')} className="flex items-center gap-2 text-[#1d3539] font-bold mb-8 hover:bg-white/50 px-4 py-2 rounded-xl transition-colors w-fit"><ChevronLeft /> Back to Home</button>
-        <div className="max-w-2xl mx-auto w-full bg-white rounded-3xl border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] p-10 text-center animate-in zoom-in-95 duration-500">
+        <div className="max-w-2xl mx-auto w-[calc(100%-8px)] sm:w-full bg-white rounded-3xl border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] p-6 sm:p-10 text-center animate-in zoom-in-95 duration-500">
           {latestApp.status === 'pending' ? (
             <>
               <div className="bg-orange-100 p-6 rounded-full w-32 h-32 flex items-center justify-center mx-auto mb-6">
@@ -298,10 +299,10 @@ export const MerchantDashboard: React.FC = () => {
           <h1 className="text-3xl md:text-4xl font-black text-[#1d3539] uppercase tracking-tight flex items-center gap-3"><Store className="text-[#5496a2]" size={36}/> Merchant Hub</h1>
           <p className="text-[#5496a2] font-bold mt-1 text-lg">Manage your store and track sales</p>
         </div>
-        <div className="flex gap-3 w-full md:w-auto">
-          <button onClick={() => setActiveTab('store')} className={`flex-1 md:flex-none px-6 py-3 rounded-xl border-2 border-[#1d3539] font-black transition-all ${activeTab === 'store' ? 'bg-[#1d3539] text-white' : 'bg-white text-[#1d3539] hover:bg-slate-50'}`}>Store</button>
-          <button onClick={() => setActiveTab('sales')} className={`flex-1 md:flex-none px-6 py-3 rounded-xl border-2 border-[#1d3539] font-black transition-all ${activeTab === 'sales' ? 'bg-[#1d3539] text-white' : 'bg-white text-[#1d3539] hover:bg-slate-50'}`}>Sales</button>
-          <button onClick={() => setActiveTab('scanner')} className={`flex-1 md:flex-none px-6 py-3 rounded-xl border-2 border-[#1d3539] font-black transition-all ${activeTab === 'scanner' ? 'bg-[#1d3539] text-white' : 'bg-white text-[#1d3539] hover:bg-slate-50'} flex justify-center items-center gap-2`}><ScanLine size={18}/> Scan</button>
+        <div className="flex gap-2 sm:gap-3 w-full md:w-auto overflow-x-auto custom-scrollbar pb-2 sm:pb-0 hide-scrollbar">
+          <button onClick={() => setActiveTab('store')} className={`flex-1 min-w-[80px] md:flex-none px-3 sm:px-6 py-3 rounded-xl border-2 border-[#1d3539] font-black transition-all text-xs sm:text-base ${activeTab === 'store' ? 'bg-[#1d3539] text-white' : 'bg-white text-[#1d3539] hover:bg-slate-50'}`}>Store</button>
+          <button onClick={() => setActiveTab('sales')} className={`flex-1 min-w-[80px] md:flex-none px-3 sm:px-6 py-3 rounded-xl border-2 border-[#1d3539] font-black transition-all text-xs sm:text-base ${activeTab === 'sales' ? 'bg-[#1d3539] text-white' : 'bg-white text-[#1d3539] hover:bg-slate-50'}`}>Sales</button>
+          <button onClick={() => setActiveTab('scanner')} className={`flex-1 min-w-[80px] md:flex-none px-3 sm:px-6 py-3 rounded-xl border-2 border-[#1d3539] font-black transition-all text-xs sm:text-base flex justify-center items-center gap-1 sm:gap-2 ${activeTab === 'scanner' ? 'bg-[#1d3539] text-white' : 'bg-white text-[#1d3539] hover:bg-slate-50'}`}><ScanLine size={16}/> Scan</button>
         </div>
       </div>
 
@@ -320,13 +321,13 @@ export const MerchantDashboard: React.FC = () => {
         {activeTab === 'store' && (
           <div className="animate-in fade-in slide-in-from-right-4 duration-300">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b-2 border-slate-100 pb-6">
-              <h2 className="text-2xl md:text-3xl font-black text-[#1d3539] flex items-center gap-2"><Store className="text-[#5496a2]" size={28}/> Store Details</h2>
+              <h2 className="text-2xl md:text-3xl font-black text-[#1d3539] flex items-center gap-2"><Store className="text-[#5496a2]" size={28}/> {isEditing ? 'Edit Store' : 'Store Details'}</h2>
               {!isEditing && (
                 <div className="flex gap-3 w-full md:w-auto">
                   <button onClick={handleTakeDownShop} className="flex-1 md:flex-none items-center justify-center gap-2 bg-red-100 text-red-600 font-black px-5 py-3 rounded-xl border-2 border-red-200 hover:bg-red-200 transition-colors active:scale-95">
                     Take Down Shop
                   </button>
-                  <button onClick={() => setIsEditing(true)} className="flex-1 md:flex-none items-center justify-center gap-2 bg-[#e9efce] text-[#1d3539] font-black px-5 py-3 rounded-xl border-2 border-[#1d3539] hover:bg-[#d8e0b3] transition-colors shadow-[4px_4px_0px_0px_#1d3539] active:translate-y-1 active:translate-x-1 active:shadow-none flex">
+                  <button onClick={() => { setIsEditing(true); setEditStep(1); }} className="flex-1 md:flex-none items-center justify-center gap-2 bg-[#e9efce] text-[#1d3539] font-black px-5 py-3 rounded-xl border-2 border-[#1d3539] hover:bg-[#d8e0b3] transition-colors shadow-[4px_4px_0px_0px_#1d3539] active:translate-y-1 active:translate-x-1 active:shadow-none flex">
                     <Edit2 size={18} /> Edit Store
                   </button>
                 </div>
@@ -374,9 +375,27 @@ export const MerchantDashboard: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="space-y-8 animate-in fade-in slide-in-from-top-4">
+              <div className="space-y-6">
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="flex justify-between items-center mb-6 px-2 sm:px-12 relative">
+                  <div className="absolute left-10 right-10 top-5 h-0.5 bg-slate-200 -z-10"></div>
+                  {[1, 2, 3].map(step => (
+                    <div key={step} className="flex flex-col items-center bg-white">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black border-2 border-[#1d3539] transition-all duration-300 ${editStep >= step ? 'bg-[#5496a2] text-white shadow-[2px_2px_0px_0px_#1d3539]' : 'bg-slate-100 text-slate-400'}`}>
+                        {step}
+                      </div>
+                      <span className={`text-[10px] mt-2 font-bold uppercase tracking-wider transition-colors duration-300 ${editStep >= step ? 'text-[#1d3539]' : 'text-slate-400'}`}>
+                        {step === 1 ? 'Basic Info' : step === 2 ? 'Location' : 'Vouchers'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {editStep === 1 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-right-4 duration-300 bg-slate-50 p-6 rounded-3xl border-2 border-slate-200">
+                  <div className="md:col-span-2 border-b-2 border-slate-200 pb-2 mb-2">
+                    <h3 className="font-black text-[#1d3539] text-xl uppercase flex items-center gap-2"><Store size={24} className="text-[#5496a2]"/> Basic Information</h3>
+                  </div>
                   <div>
                     <label className="block font-black text-sm mb-2 text-[#1d3539] uppercase">Store Name</label>
                     <input type="text" className="w-full border-2 border-[#1d3539] rounded-xl px-4 py-3 font-bold bg-white focus:ring-4 focus:ring-[#5496a2]/20 outline-none transition-all" value={editStoreName} onChange={e => setEditStoreName(e.target.value)} />
@@ -386,13 +405,15 @@ export const MerchantDashboard: React.FC = () => {
                     <input type="text" className="w-full border-2 border-[#1d3539] rounded-xl px-4 py-3 font-bold bg-white focus:ring-4 focus:ring-[#5496a2]/20 outline-none transition-all" value={editMenuLink} onChange={e => setEditMenuLink(e.target.value)} />
                   </div>
                 </div>
+                )}
 
-                <div className="pt-8 border-t-2 border-slate-100">
-                  <h3 className="font-black text-[#1d3539] text-xl uppercase flex items-center gap-2 mb-4"><MapPin size={24} className="text-[#5496a2]"/> Edit Location</h3>
+                {editStep === 2 && (
+                <div className="bg-slate-50 p-6 rounded-3xl border-2 border-slate-200 animate-in fade-in slide-in-from-right-4 duration-300">
+                  <h3 className="font-black text-[#1d3539] text-xl uppercase flex items-center gap-2 mb-4 border-b-2 border-slate-200 pb-2"><MapPin size={24} className="text-[#5496a2]"/> Edit Location</h3>
                   <div className="space-y-4">
-                    <form onSubmit={handleSearch} className="flex gap-2">
+                    <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2">
                       <input type="text" placeholder="Search location..." className="flex-1 border-2 border-slate-200 rounded-xl px-4 py-2 font-bold bg-white focus:border-[#5496a2] outline-none" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-                      <button type="submit" className="bg-[#5496a2] text-white px-4 py-2 rounded-xl font-bold hover:bg-[#3d7079] transition-colors"><Search size={20}/></button>
+                      <button type="submit" className="bg-[#5496a2] text-white px-6 py-2 rounded-xl font-bold hover:bg-[#3d7079] transition-colors"><Search size={20} className="mx-auto"/></button>
                     </form>
 
                     <button type="button" onClick={handleUseCurrentLocation} disabled={isLocating} className="w-full bg-white border-2 border-[#5496a2] text-[#5496a2] font-bold py-2 rounded-xl hover:bg-[#5496a2]/5 transition-colors disabled:opacity-50">
@@ -419,17 +440,19 @@ export const MerchantDashboard: React.FC = () => {
                     </div>
                   </div>
                 </div>
+                )}
 
-                <div className="pt-8 border-t-2 border-slate-100">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                {editStep === 3 && (
+                <div className="bg-[#e9efce]/50 p-4 sm:p-6 rounded-3xl border-2 border-[#e9efce] animate-in fade-in slide-in-from-right-4 duration-300">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 border-b-2 border-[#e9efce] pb-4">
                     <h3 className="font-black text-[#1d3539] text-xl uppercase flex items-center gap-2"><Tag size={24} className="text-[#5496a2]"/> Vouchers</h3>
-                    <button onClick={handleAddVoucher} className="flex items-center justify-center gap-2 font-black bg-[#e9efce] text-[#1d3539] px-4 py-2.5 rounded-xl border-2 border-[#1d3539] hover:bg-[#d8e0b3] shadow-[4px_4px_0px_0px_#1d3539] active:translate-y-1 active:translate-x-1 active:shadow-none w-full sm:w-auto"><Plus size={18} /> Add Voucher</button>
+                    <button onClick={handleAddVoucher} className="flex items-center justify-center gap-2 font-black bg-[#1d3539] text-white px-4 py-2.5 rounded-xl border-2 border-[#1d3539] hover:bg-[#2c5258] active:scale-95 transition-all w-full sm:w-auto"><Plus size={18} /> Add Voucher</button>
                   </div>
                   
                   <div className="space-y-6">
                     {vouchers.map((v, idx) => (
-                      <div key={idx} className="bg-slate-50 p-6 rounded-3xl border-2 border-slate-200 relative group transition-all hover:border-slate-300">
-                        <button onClick={() => handleRemoveVoucher(idx)} className="absolute top-4 right-4 text-slate-300 hover:text-red-500 bg-white p-2 rounded-full border border-slate-200 shadow-sm transition-all active:scale-95"><Trash2 size={18} /></button>
+                      <div key={idx} className="bg-white p-6 rounded-3xl border-2 border-[#1d3539] shadow-sm relative group transition-all hover:border-slate-400">
+                        <button onClick={() => handleRemoveVoucher(idx)} className="absolute top-4 right-4 text-slate-300 hover:text-red-500 bg-slate-50 p-2 rounded-full border border-slate-200 shadow-sm transition-all active:scale-95"><Trash2 size={18} /></button>
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                           <div className="sm:col-span-2">
                             <label className="block text-xs font-black text-slate-500 mb-2 uppercase">Name</label>
@@ -456,10 +479,31 @@ export const MerchantDashboard: React.FC = () => {
                     ))}
                   </div>
                 </div>
+                )}
 
-                <div className="flex flex-col sm:flex-row gap-4 pt-8 border-t-2 border-slate-100">
-                  <button onClick={() => setIsEditing(false)} className="flex-1 bg-white text-slate-700 font-black px-6 py-4 rounded-2xl border-2 border-slate-200 hover:bg-slate-50 transition-all uppercase tracking-wide">Cancel</button>
-                  <button onClick={handleSubmitModification} className="flex-[2] bg-[#5496a2] text-white font-black px-6 py-4 rounded-2xl border-4 border-[#1d3539] shadow-[6px_6px_0px_0px_#1d3539] active:translate-y-1 active:translate-x-1 active:shadow-none hover:bg-[#1d3539] transition-all uppercase tracking-wide">Submit for Approval</button>
+                <div className="flex gap-4 pt-4 mt-8 border-t-2 border-slate-100">
+                  <button onClick={() => {
+                    if (editStep === 1) setIsEditing(false);
+                    else setEditStep(prev => prev - 1);
+                  }} className="flex-1 bg-white text-slate-700 font-black px-4 py-4 rounded-2xl border-2 border-slate-200 hover:bg-slate-50 transition-all tracking-wide">
+                    {editStep === 1 ? 'Cancel' : 'Back'}
+                  </button>
+                  
+                  {editStep < 3 ? (
+                    <button 
+                      onClick={() => {
+                        if (editStep === 1 && !editStoreName) return alert('Store Name is required');
+                        setEditStep(prev => prev + 1);
+                      }} 
+                      className="flex-[2] bg-[#1d3539] text-white font-black px-6 py-4 rounded-2xl shadow-[4px_4px_0px_0px_rgba(29,53,57,0.3)] active:translate-y-1 active:shadow-none transition-all tracking-wide"
+                    >
+                      Next Step
+                    </button>
+                  ) : (
+                    <button onClick={handleSubmitModification} className="flex-[2] bg-[#5496a2] text-white font-black px-6 py-4 rounded-2xl border-4 border-[#1d3539] shadow-[4px_4px_0px_0px_#1d3539] active:translate-y-1 active:translate-x-1 active:shadow-none hover:bg-[#1d3539] transition-all tracking-wide flex items-center justify-center gap-2">
+                      Submit <CheckCircle size={20} />
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -539,7 +583,7 @@ export const MerchantDashboard: React.FC = () => {
               <h2 className="text-2xl md:text-3xl font-black text-[#1d3539] flex items-center gap-2"><ScanLine className="text-[#5496a2]" size={28}/> Scan Voucher</h2>
             </div>
             
-            <div className="max-w-md mx-auto bg-white rounded-[2rem] border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] overflow-hidden p-6 relative">
+            <div className="max-w-md mx-auto w-[calc(100%-8px)] sm:w-full bg-white rounded-[2rem] border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] overflow-hidden p-6 relative">
               <div className="mb-6 text-center">
                 <p className="text-[#5496a2] font-bold text-lg">Scan a customer's QR code</p>
                 <p className="text-slate-500 text-sm font-medium mt-1">Make sure the voucher belongs to your store.</p>

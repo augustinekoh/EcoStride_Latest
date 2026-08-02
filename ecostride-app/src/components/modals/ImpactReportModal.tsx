@@ -37,8 +37,8 @@ export const ImpactReportModal: React.FC = () => {
   if (!showReportModal) return null;
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-      <div className="bg-[#faf9f6] border-2 border-[#1d3539] rounded-3xl p-8 max-w-md w-full shadow-[8px_8px_0px_0px_#1d3539] animate-in zoom-in duration-300">
+    <div className="absolute inset-0 z-[400] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+      <div className="bg-[#faf9f6] border-2 border-[#1d3539] rounded-3xl p-8 max-w-md w-[calc(100%-8px)] sm:w-full shadow-[8px_8px_0px_0px_#1d3539] animate-in zoom-in duration-300">
         <h2 className="text-3xl font-black text-center mb-6 uppercase tracking-tight text-[#1d3539] drop-shadow-[2px_2px_0px_#80abb1]">
           Journey Complete!
         </h2>

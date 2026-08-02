@@ -68,7 +68,7 @@ export const SignpostStoryViewer: React.FC<Props> = ({
 
   return (
     <div 
-      className="relative w-[240px] h-[360px] bg-black rounded-2xl overflow-hidden shadow-2xl flex flex-col pointer-events-auto"
+      className="relative w-full h-full sm:w-[240px] sm:h-[360px] bg-black sm:rounded-2xl overflow-hidden sm:shadow-2xl flex flex-col pointer-events-auto"
       onMouseDown={() => setIsPaused(true)}
       onMouseUp={() => setIsPaused(false)}
       onMouseLeave={() => setIsPaused(false)}

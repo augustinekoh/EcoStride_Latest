@@ -37,6 +37,7 @@ export const MerchantOnboardingForm: React.FC = () => {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
   const [isLocating, setIsLocating] = useState(false);
+  const [currentStep, setCurrentStep] = useState(1);
 
   const handleUseCurrentLocation = () => {
     setIsLocating(true);
@@ -143,8 +144,8 @@ export const MerchantOnboardingForm: React.FC = () => {
 
   if (submitted) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-gradient-to-br from-[#e9efce] to-[#faf9f6]">
-        <div className="bg-white p-12 rounded-3xl border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] max-w-lg animate-in zoom-in duration-500">
+      <div className="min-h-[80vh] flex items-center justify-center p-4">
+        <div className="bg-white p-12 rounded-3xl border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] max-w-lg w-[calc(100%-8px)] sm:w-full animate-in zoom-in duration-500">
           <CheckCircle size={80} className="text-[#5496a2] mx-auto mb-6" />
           <h1 className="text-4xl font-black text-[#1d3539] mb-4 uppercase tracking-tight">Application Submitted!</h1>
           <p className="text-lg font-bold text-slate-600">
@@ -157,8 +158,8 @@ export const MerchantOnboardingForm: React.FC = () => {
   }
 
   return (
-    <div className="w-full h-full flex flex-col p-4 md:p-8 pt-24 bg-[#faf9f6] overflow-y-auto">
-      <div className="max-w-3xl mx-auto w-full bg-white rounded-3xl border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] p-6 md:p-10 mb-20">
+    <div className="p-2 sm:p-4 md:p-8 overflow-y-auto h-full overflow-x-hidden">
+      <div className="max-w-3xl mx-auto w-[calc(100%-4px)] sm:w-full bg-white rounded-2xl sm:rounded-3xl border-2 sm:border-4 border-[#1d3539] shadow-[4px_4px_0px_0px_#1d3539] sm:shadow-[8px_8px_0px_0px_#1d3539] p-4 sm:p-6 md:p-10 mb-20">
         
         <div className="flex items-center gap-4 mb-2">
           <div className="bg-[#e9efce] p-3 rounded-2xl border-2 border-[#1d3539]">
@@ -172,10 +173,25 @@ export const MerchantOnboardingForm: React.FC = () => {
         
         {error && <div className="mt-6 bg-red-100 p-4 rounded-2xl border-2 border-red-200 text-red-700 font-bold flex items-center gap-2 animate-in slide-in-from-top-2"><CheckCircle className="rotate-45" /> {error}</div>}
 
-        <form onSubmit={handleSubmit} className="space-y-8 mt-8">
+        <div className="flex justify-between items-center mt-8 mb-6 px-2 sm:px-12 relative">
+          <div className="absolute left-10 right-10 top-5 h-0.5 bg-slate-200 -z-10"></div>
+          {[1, 2, 3].map(step => (
+            <div key={step} className="flex flex-col items-center bg-white">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black border-2 border-[#1d3539] transition-all duration-300 ${currentStep >= step ? 'bg-[#5496a2] text-white shadow-[2px_2px_0px_0px_#1d3539]' : 'bg-slate-100 text-slate-400'}`}>
+                {step}
+              </div>
+              <span className={`text-[10px] mt-2 font-bold uppercase tracking-wider transition-colors duration-300 ${currentStep >= step ? 'text-[#1d3539]' : 'text-slate-400'}`}>
+                {step === 1 ? 'Basic Info' : step === 2 ? 'Vouchers' : 'Location'}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
           
-          <div className="bg-slate-50 p-6 rounded-3xl border-2 border-slate-200 space-y-4">
-            <h2 className="text-xl font-black text-[#1d3539] uppercase flex items-center gap-2 mb-4 border-b-2 border-slate-200 pb-2"><Store size={20}/> Basic Information</h2>
+          {currentStep === 1 && (
+          <div className="bg-slate-50 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-slate-200 space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+            <h2 className="text-lg sm:text-xl font-black text-[#1d3539] uppercase flex items-center gap-2 mb-4 border-b-2 border-slate-200 pb-2"><Store size={20}/> Basic Information</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block font-bold text-sm mb-1 text-slate-700">Store Name</label>
@@ -202,14 +218,16 @@ export const MerchantOnboardingForm: React.FC = () => {
               </div>
             </div>
           </div>
+          )}
 
-          <div className="bg-[#e9efce]/50 p-6 rounded-3xl border-2 border-[#e9efce] space-y-4 relative overflow-hidden">
+          {currentStep === 2 && (
+          <div className="bg-[#e9efce]/50 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-[#e9efce] space-y-4 relative overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300">
             <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none"><Tag size={100} /></div>
             
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2 relative z-10 gap-4">
               <div>
-                <h2 className="text-xl font-black text-[#1d3539] uppercase flex items-center gap-2"><Tag size={20}/> Point Store Vouchers</h2>
-                <p className="text-sm font-bold text-[#5496a2]">Create up to 5 vouchers for users to redeem.</p>
+                <h2 className="text-lg sm:text-xl font-black text-[#1d3539] uppercase flex items-center gap-2"><Tag size={20}/> Point Store Vouchers</h2>
+                <p className="text-xs sm:text-sm font-bold text-[#5496a2]">Create up to 5 vouchers for users to redeem.</p>
               </div>
               {formData.vouchers.length < 5 && (
                 <button type="button" onClick={handleAddVoucher} className="bg-[#1d3539] text-white px-4 py-2 rounded-xl font-bold hover:bg-[#2c5258] transition-colors active:scale-95 text-sm shrink-0">
@@ -220,7 +238,7 @@ export const MerchantOnboardingForm: React.FC = () => {
             
             <div className="space-y-4 relative z-10">
               {formData.vouchers.map((voucher, idx) => (
-                <div key={idx} className="bg-white p-5 rounded-2xl border-2 border-[#1d3539] space-y-4 shadow-sm relative">
+                <div key={idx} className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-[#1d3539] space-y-4 shadow-sm relative">
                   {formData.vouchers.length > 1 && (
                     <button type="button" onClick={() => handleRemoveVoucher(idx)} className="absolute top-4 right-4 text-slate-400 hover:text-red-500 font-bold text-sm bg-slate-100 px-2 py-1 rounded-lg">Remove</button>
                   )}
@@ -275,10 +293,12 @@ export const MerchantOnboardingForm: React.FC = () => {
               ))}
             </div>
           </div>
+          )}
 
-          <div className="bg-slate-50 p-6 rounded-3xl border-2 border-slate-200 space-y-4">
-            <div className="flex justify-between items-center mb-2 border-b-2 border-slate-200 pb-2">
-              <h2 className="text-xl font-black text-[#1d3539] uppercase flex items-center gap-2"><MapPin size={20}/> Store Location</h2>
+          {currentStep === 3 && (
+          <div className="bg-slate-50 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-slate-200 space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2 border-b-2 border-slate-200 pb-2 gap-2">
+              <h2 className="text-lg sm:text-xl font-black text-[#1d3539] uppercase flex items-center gap-2"><MapPin size={20}/> Store Location</h2>
               <button type="button" onClick={handleUseCurrentLocation} className="text-xs font-bold text-white bg-[#5496a2] px-4 py-2 rounded-xl shadow-sm hover:bg-[#1d3539] active:scale-95 transition-all">
                 {isLocating ? 'Locating...' : '📍 Use My Location'}
               </button>
@@ -307,10 +327,41 @@ export const MerchantOnboardingForm: React.FC = () => {
             </div>
             <p className="text-sm font-bold text-slate-500 mt-2 text-center">Drag the pin or click on the map to fine-tune your location.</p>
           </div>
+          )}
           
-          <button type="submit" className="w-full bg-[#5496a2] text-white hover:bg-[#80abb1] border-2 border-[#1d3539] py-5 rounded-2xl font-black text-xl tracking-wide shadow-[6px_6px_0px_0px_#1d3539] active:translate-y-1 active:translate-x-1 active:shadow-none transition-all mt-8 uppercase flex items-center justify-center gap-2">
-            Submit Application <CheckCircle size={24} />
-          </button>
+          <div className="flex gap-4 pt-4 mt-8 border-t-2 border-slate-100">
+            {currentStep > 1 && (
+              <button type="button" onClick={() => setCurrentStep(prev => prev - 1)} className="flex-1 bg-white border-2 border-[#1d3539] py-4 rounded-2xl font-black text-lg text-[#1d3539] hover:bg-slate-50 active:translate-y-1 transition-all">
+                Back
+              </button>
+            )}
+            
+            {currentStep < 3 ? (
+              <button 
+                type="button" 
+                onClick={() => {
+                  // Basic validation before next step
+                  if (currentStep === 1 && !formData.storeName) {
+                    setError('Please fill in your Store Name.');
+                    return;
+                  }
+                  if (currentStep === 2 && (!formData.vouchers[0] || !formData.vouchers[0].name)) {
+                    setError('Please fill in your Voucher Name.');
+                    return;
+                  }
+                  setError('');
+                  setCurrentStep(prev => prev + 1);
+                }} 
+                className="flex-[2] bg-[#1d3539] text-white py-4 rounded-2xl font-black text-lg shadow-[4px_4px_0px_0px_rgba(29,53,57,0.3)] active:translate-y-1 active:shadow-none transition-all"
+              >
+                Next Step
+              </button>
+            ) : (
+              <button type="submit" className="flex-[2] bg-[#5496a2] text-white hover:bg-[#80abb1] border-2 border-[#1d3539] py-4 rounded-2xl font-black text-lg tracking-wide shadow-[4px_4px_0px_0px_#1d3539] active:translate-y-1 active:shadow-none transition-all uppercase flex items-center justify-center gap-2">
+                Submit <CheckCircle size={20} />
+              </button>
+            )}
+          </div>
         </form>
       </div>
     </div>

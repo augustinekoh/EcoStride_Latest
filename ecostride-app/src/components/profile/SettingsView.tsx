@@ -344,7 +344,7 @@ export const SettingsView: React.FC = () => {
 
       {showChangePassword && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-[#faf9f6] border-4 border-[#1d3539] rounded-3xl p-6 max-w-sm w-full shadow-[8px_8px_0px_0px_#1d3539]">
+          <div className="bg-[#faf9f6] border-4 border-[#1d3539] rounded-3xl p-6 max-w-sm w-[calc(100%-8px)] sm:w-full shadow-[8px_8px_0px_0px_#1d3539]">
             <h2 className="text-2xl font-black text-center mb-4 uppercase text-[#1d3539]">Change Password</h2>
             
             {pwError && <div className="bg-red-100 border-2 border-red-500 text-red-700 p-2 rounded-xl mb-4 text-sm font-bold">{pwError}</div>}
@@ -395,7 +395,7 @@ export const SettingsView: React.FC = () => {
 
       {showDeleteModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-[#faf9f6] border-4 border-[#1d3539] rounded-3xl p-6 max-w-sm w-full shadow-[8px_8px_0px_0px_#1d3539]">
+          <div className="bg-[#faf9f6] border-4 border-[#1d3539] rounded-3xl p-6 max-w-sm w-[calc(100%-8px)] sm:w-full shadow-[8px_8px_0px_0px_#1d3539]">
             <h2 className="text-2xl font-black text-center mb-2 uppercase text-red-600">Delete Account</h2>
             <p className="text-sm font-bold text-slate-700 text-center mb-6">
               This action is <span className="text-red-500 font-black">permanent</span> and cannot be undone. All your coins, trees, and history will be lost.

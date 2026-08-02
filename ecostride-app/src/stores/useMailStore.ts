@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+import { auth } from '../firebase';
+import { apiClient } from '../lib/api';
+
 interface MailState {
   mails: any[];
   readMails: string[];
@@ -24,6 +27,15 @@ export const useMailStore = create<MailState>()(
         if (state.readMails.includes(mailId)) return state;
         const newReadMails = [...state.readMails, mailId];
         const unreadCount = state.mails.filter(m => !newReadMails.includes(m.id)).length;
+        
+        // Sync to backend
+        if (auth.currentUser) {
+          apiClient(`/users/${auth.currentUser.uid}`, {
+            method: 'POST',
+            body: JSON.stringify({ readMails: newReadMails })
+          }).catch(console.error);
+        }
+        
         return { readMails: newReadMails, unreadCount };
       })
     }),

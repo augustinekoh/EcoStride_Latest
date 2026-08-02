@@ -27,7 +27,7 @@ export const AuthModal: React.FC = () => {
       setUsernameStatus('checking');
       const timer = setTimeout(async () => {
         try {
-          const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787/api'}/check-username?username=${encodeURIComponent(username)}`);
+          const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/check-username?username=${encodeURIComponent(username)}`);
           const data = await res.json();
           setUsernameStatus(data.available ? 'available' : 'taken');
         } catch (e) {
@@ -128,7 +128,7 @@ export const AuthModal: React.FC = () => {
   if (demoRequestRejected) {
     return (
       <div className="absolute inset-0 z-[150] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-        <div className="bg-[#faf9f6] border-4 border-[#1d3539] rounded-3xl p-8 max-w-sm w-full shadow-[8px_8px_0px_0px_#1d3539] flex flex-col items-center">
+        <div className="bg-[#faf9f6] border-4 border-[#1d3539] rounded-3xl p-8 max-w-sm w-[calc(100%-8px)] sm:w-full shadow-[8px_8px_0px_0px_#1d3539] flex flex-col items-center">
           <h2 className="text-3xl font-black text-center mb-4 uppercase tracking-tight drop-shadow-[2px_2px_0px_#80abb1] text-[#1d3539]">
             Access Denied
           </h2>
@@ -158,7 +158,7 @@ export const AuthModal: React.FC = () => {
   if (isWaitingForApproval) {
     return (
       <div className="absolute inset-0 z-[150] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-        <div className="bg-[#faf9f6] border-4 border-[#1d3539] rounded-3xl p-8 max-w-sm w-full shadow-[8px_8px_0px_0px_#1d3539] flex flex-col items-center">
+        <div className="bg-[#faf9f6] border-4 border-[#1d3539] rounded-3xl p-8 max-w-sm w-[calc(100%-8px)] sm:w-full shadow-[8px_8px_0px_0px_#1d3539] flex flex-col items-center">
           <h2 className="text-3xl font-black text-center mb-4 uppercase tracking-tight drop-shadow-[2px_2px_0px_#80abb1] text-[#1d3539]">
             Waiting for Admin
           </h2>
@@ -174,7 +174,7 @@ export const AuthModal: React.FC = () => {
 
   return (
     <div className="absolute inset-0 z-[150] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-[#faf9f6] border-4 border-[#1d3539] rounded-3xl p-8 max-w-sm w-full shadow-[8px_8px_0px_0px_#1d3539] my-8">
+      <div className="bg-[#faf9f6] border-4 border-[#1d3539] rounded-3xl p-8 max-w-sm w-[calc(100%-8px)] sm:w-full shadow-[8px_8px_0px_0px_#1d3539] my-8 mr-2 sm:mr-0">
         <h2 className="text-3xl font-black text-center mb-2 uppercase tracking-tight drop-shadow-[2px_2px_0px_#80abb1] text-[#1d3539]">
           {isLogin ? 'Welcome Back' : 'Join EcoStride'}
         </h2>

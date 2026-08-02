@@ -28,7 +28,7 @@ function PublicApp() {
 
   if (!user || isWaitingForApproval) {
     return (
-      <div className="w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500">
+      <div className="w-screen h-[100dvh] overflow-hidden relative text-slate-900 font-sans transition-colors duration-500">
         <AuthModal />
       </div>
     );
@@ -38,14 +38,14 @@ function PublicApp() {
   // We only block if they explicitly registered with Email/Password and haven't verified.
   if (!auth.currentUser?.emailVerified) {
     return (
-      <div className="w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500">
+      <div className="w-screen h-[100dvh] overflow-hidden relative text-slate-900 font-sans transition-colors duration-500">
         <VerificationPending />
       </div>
     );
   }
 
   return (
-    <div className="w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500">
+    <div className="w-screen h-[100dvh] overflow-hidden relative text-slate-900 font-sans transition-colors duration-500">
       {activeView !== 'settings' && <BottomNavBar />}
       
       {activeView === 'landing' && <LandingPage />}
@@ -115,7 +115,11 @@ function App() {
                 player_id: data.user.player_id,
                 totalTreesPlanted: data.user.total_trees_planted || 0,
                 createdAt: data.user.created_at || Date.now(), // fallback to now if not set
-                activityHistory: data.user.activityHistory || []
+                activityHistory: data.user.activityHistory || [],
+                avatar: data.user.avatar,
+                bio: data.user.bio,
+                nationality: data.user.nationality,
+                unlockedBadges: data.user.unlocked_badges ? JSON.parse(data.user.unlocked_badges) : []
               });
               
               // Handle role
@@ -143,13 +147,21 @@ function App() {
                 if (m.recipient_type === 'guild' && userState.guildId && m.recipient_id === userState.guildId) return true;
                 return false;
               });
+              // Parse read_mails from backend
+              let backendReadMails: string[] | undefined = undefined;
+              if (data.user && data.user.read_mails) {
+                try {
+                  backendReadMails = JSON.parse(data.user.read_mails);
+                } catch(e) {}
+              }
+
               useMailStore.getState().setMailsData(filtered.map((m: any) => ({
                 id: m.id,
                 title: m.title,
                 content: m.content,
                 sender: m.sender,
                 createdAt: m.created_at
-              })));
+              })), backendReadMails);
             }
           } catch (e) {
             console.error("Failed to fetch user data", e);
@@ -196,7 +208,15 @@ function App() {
         }
       } else {
         setUser(null, null);
-        setUserData({ userCoins: 0, totalCarbonSaved: 0, totalDistanceKm: 0, activityHistory: [] });
+        setUserData({ 
+          userCoins: 0, 
+          totalCarbonSaved: 0, 
+          totalDistanceKm: 0, 
+          activityHistory: [],
+          notifications: [],
+          hasReadAlerts: true
+        });
+        useMailStore.getState().setMailsData([], []);
         if (demoPollInterval) clearInterval(demoPollInterval);
       }
       setLoading(false);
