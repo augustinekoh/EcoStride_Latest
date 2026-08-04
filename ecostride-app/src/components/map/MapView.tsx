@@ -18,6 +18,7 @@ import { DraggableMapWidget } from './DraggableMapWidget';
 import { PointsStoreModal } from '../modals/PointsStoreModal';
 import { SignpostStoryViewer } from './SignpostStoryViewer';
 import { UserProfileModal } from '../modals/UserProfileModal';
+import { useMapGeolocation } from './useMapGeolocation';
 
 export const MapView: React.FC = () => {
   const { demoProgress, currentMode, setShowReportModal, setActiveView, setCompletedDistanceKm } = useDemoStore();
@@ -35,13 +36,11 @@ export const MapView: React.FC = () => {
     mapDisplayMode, setMapDisplayMode,
   } = useMapStore();
   
-  const { userCoins, deductCoins, addCoins } = useUserStore();
+  const { userCoins, deductCoins, addCoins, guildName, guildId } = useUserStore();
 
   const mapRef = useRef(null);
   const [trees, setTrees] = useState<any[]>([]);
   const [activeTree, setActiveTree] = useState<any | null>(null);
-  const [isFreeWalk, setIsFreeWalk] = useState(false);
-  const [walkedDistanceKm, setWalkedDistanceKm] = useState(0);
   const [showNavPrompt, setShowNavPrompt] = useState(true);
   const [showFabTooltip, setShowFabTooltip] = useState(() => {
     if (typeof window !== 'undefined' && window.innerWidth <= 640) {
@@ -142,6 +141,15 @@ export const MapView: React.FC = () => {
   const [publicProfileUser, setPublicProfileUser] = useState<any | null>(null);
   const { user } = useAuthStore();
 
+  const {
+    currentCoordinate,
+    walkedDistanceKm,
+    setWalkedDistanceKm,
+    isFreeWalk,
+    setIsFreeWalk,
+    bearing
+  } = useMapGeolocation();
+
   // Fetch map data via API Polling
   useEffect(() => {
     const fetchMapData = async () => {
@@ -202,91 +210,19 @@ export const MapView: React.FC = () => {
     }
   }, [showNavPrompt, currentMode]);
 
-  // Real-time GPS Tracking
-  useEffect(() => {
-    // We fetch GPS regardless of mode so demo mode has a starting point
-    const watchId = navigator.geolocation.watchPosition((pos) => {
-      setLiveLocation([pos.coords.longitude, pos.coords.latitude]);
-    }, (err) => {
-      console.log('GPS Error:', err);
-      
-      // Mobile browsers strictly block Geolocation over HTTP (except localhost)
-      if (!window.isSecureContext) {
-        alert("⚠️ Note: Your mobile browser blocks real GPS over HTTP. Using a mock location for testing.");
-        setLiveLocation([103.6400, 1.5600]); // Use default location so they aren't locked out
-      } else {
-        // Require GPS permission for both mobile and desktop (when HTTPS or Localhost)
-        alert('GPS location permission is required to access the map. Please allow location access and try again.');
-        setActiveView('landing');
-      }
-    }, { enableHighAccuracy: true });
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [setLiveLocation, setActiveView]);
-
-  // Handle FlyTo requests
-  useEffect(() => {
-    if (flyToLocation && mapRef.current) {
-      (mapRef.current as any).flyTo({
-        center: flyToLocation,
-        zoom: 16,
-        duration: 2000,
-        essential: true
-      });
-      setFlyToLocation(null);
-    }
-  }, [flyToLocation, setFlyToLocation]);
-
-  // Calculate current position based on Demo Progress OR Live GPS
-  const currentCoordinate = useMemo(() => {
-    // If not demo mode, or no active route, just use liveLocation
-    if (currentMode !== 'demo' || !mapboxRouteGeoJSON) {
-      return liveLocation || [103.6400, 1.5600];
-    }
-    
-    // Auto-walk interpolation for demo mode along the real mapbox route
-    const coords = mapboxRouteGeoJSON.geometry.coordinates;
-    if (!coords || coords.length === 0) return liveLocation || [103.6400, 1.5600];
-    if (demoProgress === 0) return coords[0] as [number, number];
-    if (demoProgress >= 100) return coords[coords.length - 1] as [number, number];
-
-    const line = turf.lineString(coords);
-    const totalLength = turf.length(line, { units: 'meters' });
-    const targetDistance = (demoProgress / 100) * totalLength;
-    const currentPoint = turf.along(line, targetDistance, { units: 'meters' });
-    return currentPoint.geometry.coordinates as [number, number];
-  }, [demoProgress, currentMode, liveLocation, mapboxRouteGeoJSON]);
-  const prevCoordRef = useRef<[number, number] | null>(null);
-
   // Auto-follow user during active navigation or Free Walk
   useEffect(() => {
     if (((currentMode === 'explore' || currentMode === 'demo') && distanceToTarget !== null && mapboxRouteGeoJSON) || isFreeWalk) {
-      let calculatedBearing: number | null = null;
-      let additionalDistance = 0;
-
-      if (prevCoordRef.current) {
-        const distance = turf.distance(turf.point(prevCoordRef.current), turf.point(currentCoordinate), { units: 'meters' });
-        // Only update bearing if moved at least 1 meter to prevent jittering when standing still
-        if (distance > 1) {
-          calculatedBearing = turf.bearing(turf.point(prevCoordRef.current), turf.point(currentCoordinate));
-          additionalDistance = distance / 1000;
-        }
-      }
-      prevCoordRef.current = currentCoordinate;
-
-      if (additionalDistance > 0) {
-        setWalkedDistanceKm(prev => prev + additionalDistance);
-      }
-
       setViewState(prev => ({
         ...prev,
         longitude: currentCoordinate[0],
         latitude: currentCoordinate[1],
         zoom: 20,
         pitch: 65,
-        bearing: calculatedBearing !== null ? calculatedBearing : prev.bearing,
+        bearing: bearing !== null ? bearing : prev.bearing,
       }));
     }
-  }, [currentCoordinate, currentMode, distanceToTarget, mapboxRouteGeoJSON, isFreeWalk]);
+  }, [currentCoordinate, currentMode, distanceToTarget, mapboxRouteGeoJSON, isFreeWalk, bearing]);
 
   // Active route line up to current progress (Demo Mode visual flair)
   const demoActiveRouteGeoJSON = useMemo(() => {
@@ -387,7 +323,8 @@ export const MapView: React.FC = () => {
           lat: e.lngLat.lat,
           location: [e.lngLat.lng, e.lngLat.lat],
           authorId: user.uid,
-          guildId: 'Eco Warriors',
+          guildId: guildId || 'None',
+          guildName: guildName || 'None',
           plantedAt: Date.now()
         };
         setTrees(prev => [...prev, newTree]);
@@ -399,7 +336,7 @@ export const MapView: React.FC = () => {
               authorId: user.uid,
               lng: e.lngLat.lng,
               lat: e.lngLat.lat,
-              guildId: 'Eco Warriors'
+              guildId: guildId || 'None'
             })
           });
           // Optimistically update trees array or just wait for the poll
@@ -758,7 +695,9 @@ export const MapView: React.FC = () => {
         )}
 
         {/* Planted Trees */}
-        {mapDisplayMode === 'guild' && trees.map((tree) => (
+        {(mapDisplayMode === 'guild' || mapDisplayMode === 'my_guild') && trees
+          .filter(tree => mapDisplayMode === 'my_guild' ? tree.guildId === guildId : true)
+          .map((tree) => (
           <Marker 
             key={tree.id} 
             longitude={tree.location[0]} 
@@ -770,9 +709,9 @@ export const MapView: React.FC = () => {
             }}
           >
             <div className="relative group cursor-pointer animate-in zoom-in-50 spring duration-500">
-              <div className="text-4xl">🌳</div>
+              <div className="text-4xl">🌲</div>
               <div className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap bg-brand-green text-slate-900 text-[10px] font-black px-2 py-0.5 rounded-full border border-slate-900 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
-                {tree.guildId}
+                {tree.guildName || 'None'}
               </div>
             </div>
           </Marker>
@@ -789,17 +728,17 @@ export const MapView: React.FC = () => {
             className="z-50"
             offset={[0, -40]}
           >
-            <div className="bg-white border-2 border-slate-900 shadow-comic p-3 rounded-2xl flex flex-col gap-2 min-w-[150px] text-center">
-              <p className="text-sm font-black text-slate-900">{activeTree.guildId}</p>
+            <div className="bg-white border-2 border-slate-900 shadow-comic px-3 py-2 rounded-xl flex flex-col gap-1 min-w-[120px] text-center">
+              <p className="text-xs font-black text-slate-900">{activeTree.guildName || 'None'}</p>
               {user && user.uid === activeTree.authorId && (Date.now() - activeTree.plantedAt < 5 * 60 * 1000) ? (
                 <button 
                   onClick={() => handleDeleteTree(activeTree.id)}
-                  className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-2 rounded-lg text-xs"
+                  className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-2 rounded-lg text-[10px]"
                 >
-                  Recall Tree (Refund 100)
+                  Recall (Refund 100)
                 </button>
               ) : (
-                <p className="text-xs text-slate-500">Planted a tree for the territory!</p>
+                <p className="text-[10px] text-slate-500 leading-tight">Territory Tree</p>
               )}
             </div>
           </Popup>

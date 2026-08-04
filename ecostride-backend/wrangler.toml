@@ -17,3 +17,11 @@ crons = ["0 * * * *"]
 binding = "AVATARS_BUCKET"
 bucket_name = "ecostride"
 preview_bucket_name = "ecostride"
+
+[[durable_objects.bindings]]
+name = "CHAT_ROOM"
+class_name = "CommunityChatRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["CommunityChatRoom"]

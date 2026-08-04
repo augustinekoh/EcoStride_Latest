@@ -11,8 +11,11 @@ CREATE TABLE IF NOT EXISTS users (
   player_id TEXT,
   created_at INTEGER,
   verified_email INTEGER DEFAULT 0,
-  nationality TEXT,
+  banned_until INTEGER,
+  muted_until INTEGER,
+  avatar TEXT,
   bio TEXT,
+  nationality TEXT,
   unlocked_badges TEXT
 );
 
@@ -80,7 +83,6 @@ CREATE TABLE IF NOT EXISTS purchases (
   status TEXT DEFAULT 'active',
   purchased_at INTEGER NOT NULL,
   redeemed_at INTEGER,
-  expires_at INTEGER,
   FOREIGN KEY(user_id) REFERENCES users(id),
   FOREIGN KEY(item_id) REFERENCES point_store(id)
 );
@@ -90,9 +92,12 @@ CREATE TABLE IF NOT EXISTS mail (
   title TEXT NOT NULL,
   content TEXT NOT NULL,
   sender TEXT NOT NULL,
+  recipient_name TEXT,
   recipient_type TEXT NOT NULL,
   recipient_id TEXT,
   expires_for_new_users INTEGER NOT NULL,
+  action_type TEXT,
+  action_data TEXT,
   created_at INTEGER NOT NULL
 );
 
@@ -128,4 +133,51 @@ CREATE TABLE IF NOT EXISTS applications (
 CREATE TABLE IF NOT EXISTS store_categories (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS guilds (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  icon TEXT DEFAULT '🌍',
+  nationality TEXT DEFAULT 'Global',
+  require_approval INTEGER DEFAULT 0,
+  admin_id TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id TEXT PRIMARY KEY,
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS friends (
+  user_id TEXT NOT NULL,
+  friend_id TEXT NOT NULL,
+  status TEXT DEFAULT 'accepted',
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, friend_id),
+  FOREIGN KEY(user_id) REFERENCES users(id),
+  FOREIGN KEY(friend_id) REFERENCES users(id)
+);
+
+
+CREATE TABLE IF NOT EXISTS user_deleted_mail (
+  user_id TEXT NOT NULL,
+  mail_id TEXT NOT NULL,
+  deleted_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, mail_id),
+  FOREIGN KEY(mail_id) REFERENCES mail(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_guilds_name ON guilds(name COLLATE NOCASE);
+
+CREATE TABLE IF NOT EXISTS user_chat_reads (
+  user_id TEXT NOT NULL,
+  guild_id TEXT NOT NULL,
+  last_read_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, guild_id)
 );

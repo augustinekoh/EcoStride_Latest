@@ -7,6 +7,7 @@ import { MailboxModal } from '../modals/MailboxModal';
 import { PointsStoreModal } from '../modals/PointsStoreModal';
 import { LeaderboardModal } from '../modals/LeaderboardModal';
 import { useMailStore } from '../../stores/useMailStore';
+import { resolveAvatarUrl } from '../../lib/api';
 
 import { useDemoStore } from '../../stores/useDemoStore';
 
@@ -223,7 +224,7 @@ export const LandingPage: React.FC = () => {
         <div className="flex items-center gap-3 sm:gap-4 shrink-0">
           <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full glass-card p-1 flex items-center justify-center shrink-0">
             <img 
-              src={avatar?.includes('/r2/') ? avatar.substring(avatar.indexOf('/r2/')) : (avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${username || 'EcoStride'}`)} 
+              src={resolveAvatarUrl(avatar, username)} 
               alt="Profile" 
               className="w-full h-full object-cover rounded-full bg-white/30 backdrop-blur-sm"
             />

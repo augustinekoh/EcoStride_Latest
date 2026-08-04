@@ -33,8 +33,8 @@ interface MapState {
   flyToLocation: [number, number] | null
   setFlyToLocation: (loc: [number, number] | null) => void
 
-  mapDisplayMode: 'normal' | 'guild'
-  setMapDisplayMode: (mode: 'normal' | 'guild') => void
+  mapDisplayMode: 'normal' | 'guild' | 'my_guild'
+  setMapDisplayMode: (mode: 'normal' | 'guild' | 'my_guild') => void
 }
 
 export const useMapStore = create<MapState>((set) => ({

@@ -10,7 +10,7 @@ import { useUserStore } from '../../stores/useUserStore';
 
 export const MerchantDashboard: React.FC = () => {
   const { user } = useAuthStore();
-  const { userData } = useUserStore();
+  const { username } = useUserStore();
   const { setActiveView } = useDemoStore();
   
   const [merchantData, setMerchantData] = useState<any>(null);
@@ -140,7 +140,7 @@ export const MerchantDashboard: React.FC = () => {
           ownerId: user.uid,
           type: 'modification',
           details: JSON.stringify({
-            username: userData?.username || user.email?.split('@')[0] || 'Unknown',
+            username: username || user.email?.split('@')[0] || 'Unknown',
             uid: user.uid,
             storeName: editStoreName,
             menuLink: editMenuLink,
@@ -594,7 +594,6 @@ export const MerchantDashboard: React.FC = () => {
                   <Scanner 
                     onScan={(result) => handleScan(result[0].rawValue)}
                     components={{
-                      audio: false,
                       finder: false
                     }}
                     styles={{

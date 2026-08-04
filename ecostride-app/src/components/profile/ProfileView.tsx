@@ -3,7 +3,7 @@ import { useUserStore } from '../../stores/useUserStore';
 import { useDemoStore } from '../../stores/useDemoStore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { Settings, Edit2, Check, Globe, Building2, TreePine, Users, Award, Ticket, X, QrCode, Clock, Store, Camera, Loader2 } from 'lucide-react';
-import { apiClient } from '../../lib/api';
+import { apiClient, resolveAvatarUrl } from '../../lib/api';
 import QRCode from 'react-qr-code';
 import imageCompression from 'browser-image-compression';
 import { AvatarCropModal } from '../modals/AvatarCropModal';
@@ -18,6 +18,8 @@ export const ProfileView: React.FC = () => {
     streaks, 
     unlockedBadges,
     avatar,
+    guildName,
+    guildId,
     setUserData
   } = useUserStore();
   
@@ -62,6 +64,28 @@ export const ProfileView: React.FC = () => {
     }
     return () => clearInterval(timer);
   }, [showRedeemModal, countdown]);
+
+  // Poll for successful redemption
+  useEffect(() => {
+    let pollTimer: any;
+    if (showRedeemModal && selectedVoucher) {
+      pollTimer = setInterval(async () => {
+        try {
+          const res = await apiClient(`/users/${user?.uid}/vouchers`);
+          const updatedVoucher = res.vouchers?.find((v: any) => v.id === selectedVoucher.id);
+          if (updatedVoucher && updatedVoucher.status === 'redeemed') {
+            setShowRedeemModal(false);
+            setSelectedVoucher(null);
+            alert('🎉 Successfully redeemed!');
+            setVouchers(res.vouchers || []);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }, 3000);
+    }
+    return () => clearInterval(pollTimer);
+  }, [showRedeemModal, selectedVoucher, user?.uid]);
 
   const fetchVouchers = async () => {
     try {
@@ -203,10 +227,10 @@ export const ProfileView: React.FC = () => {
           <span className="text-xl font-black text-[var(--color-text-main)]">0</span>
           <span className="text-[10px] text-[var(--color-teal-dark)] font-bold mt-1 group-hover:underline">View List &rarr;</span>
         </div>
-        <div className="glass-card p-4 flex flex-col gap-2 group cursor-pointer hover:shadow-md hover:-translate-y-1 transition-transform border border-white/60">
+        <div onClick={() => setActiveView('social')} className="glass-card p-4 flex flex-col gap-2 group cursor-pointer hover:shadow-md hover:-translate-y-1 transition-transform border border-white/60">
           <div className="w-10 h-10 bg-blue-100/50 rounded-full flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform"><Users size={20}/></div>
           <span className="text-xs font-bold text-[var(--color-text-muted)]">Group</span>
-          <span className="text-xl font-black text-[var(--color-text-main)] truncate">TestGroup</span>
+          <span className="text-xl font-black text-[var(--color-text-main)] truncate">{guildName || (guildId && guildId !== 'None' ? guildId : 'None')}</span>
         </div>
       </div>
 
@@ -355,7 +379,7 @@ export const ProfileView: React.FC = () => {
               disabled={isUploadingAvatar}
             />
             <img 
-              src={avatar?.includes('/r2/') ? avatar.substring(avatar.indexOf('/r2/')) : (avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${username || 'EcoStride'}`)} 
+              src={resolveAvatarUrl(avatar, username)} 
               alt="Avatar" 
               className="w-full h-full object-cover rounded-full bg-white/30 backdrop-blur-sm"
             />
