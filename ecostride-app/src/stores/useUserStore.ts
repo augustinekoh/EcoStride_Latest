@@ -20,6 +20,8 @@ interface UserState {
   avatar: string | null
   guildId: string | null
   guildName: string | null
+  communityUnreadCount: number
+  friendsUnreadCount: number
   setCoins: (coins: number | ((prev: number) => number)) => void
   setGuildId: (id: string | null) => void
   totalTreesPlanted: number
@@ -77,6 +79,8 @@ export const useUserStore = create<UserState>()(
       avatar: null,
       guildId: null,
       guildName: null,
+      communityUnreadCount: 0,
+      friendsUnreadCount: 0,
       setCoins: (coins) => set((state) => ({ 
         userCoins: typeof coins === 'function' ? coins(state.userCoins) : coins 
       })),

@@ -3,7 +3,8 @@ import { MessageCircle, X, Send, User } from 'lucide-react';
 import { useCommunityChat } from '../../hooks/useCommunityChat';
 import { auth } from '../../firebase';
 import { useDemoStore } from '../../stores/useDemoStore';
-import { resolveAvatarUrl } from '../../lib/api';
+import { useUserStore } from '../../stores/useUserStore';
+import { resolveAvatarUrl, apiClient } from '../../lib/api';
 
 interface FloatingChatProps {
   guildId: string;
@@ -21,7 +22,11 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
   // Chat state
   const { messages, isConnected, isMuted, sendMessage } = useCommunityChat(guildId, token);
   const [inputMessage, setInputMessage] = useState("");
-  const [unreadCount, setUnreadCount] = useState(0);
+  const unreadCount = useUserStore(state => state.communityUnreadCount);
+  const setUnreadCount = (val: any) => { 
+    const newState = typeof val === 'function' ? val(useUserStore.getState().communityUnreadCount) : val;
+    useUserStore.getState().setUserData({ communityUnreadCount: newState });
+  };
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const prevLastMessageId = useRef<string | null>(null);
@@ -34,6 +39,9 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
   useEffect(() => {
     if (isChatExpanded) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      if (useUserStore.getState().communityUnreadCount > 0) {
+        apiClient(`/chat/read/${guildId}`, { method: 'POST' }).catch(console.error);
+      }
       setUnreadCount(0);
     }
   }, [messages, isChatExpanded]);

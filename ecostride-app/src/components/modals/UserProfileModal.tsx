@@ -88,7 +88,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
   const communityJoined = displayUser.guildName ?? displayUser.guild_name ?? displayUser.guild_id ?? displayUser.guildId ?? displayUser.community ?? 'None';
   const casesReported = displayUser.cases_reported ?? displayUser.casesReported ?? 0;
   const nationality = displayUser.nationality || 'Global Citizen';
-  const bio = displayUser.bio || '"Exploring the world, one step at a time."';
+  const bio = displayUser.bio || "This user hasn't written a bio yet.";
 
   // Derive badges from trees planted
   const badges = [];

@@ -15,20 +15,11 @@ export const MailboxModal: React.FC<MailboxModalProps> = ({ onClose }) => {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const socialTitles = [
-    'Friend Request',
-    'Friend Request Accepted',
-    'Friend Request Rejected',
-    'New Join Request',
-    'Join Request Approved',
-    'Join Request Rejected',
-    'Kicked from Community',
-    'Promoted to Admin'
+    'Friend Request', 'Friend Request Accepted', 'Friend Request Rejected', 'Friend Request Sent', 'Friend Removed',
+    'New Join Request', 'Join Request Approved', 'Join Request Rejected', 'Kicked from Community', 'Promoted to Admin'
   ];
-
   const systemMails = (mails || []).filter(m => 
-    m.action_type !== 'guild_join_request' &&
-    m.action_type !== 'friend_request' &&
-    !socialTitles.includes(m.title)
+    m.category ? m.category === 'mail' : (m.action_type !== 'guild_join_request' && m.action_type !== 'friend_request' && !socialTitles.includes(m.title))
   );
 
   const readSystemMails = systemMails.filter(m => (readMails || []).includes(m.id));
@@ -38,7 +29,7 @@ export const MailboxModal: React.FC<MailboxModalProps> = ({ onClose }) => {
     try {
       setIsDeleting(true);
       const idsToDelete = readSystemMails.map(m => m.id);
-      await apiClient('/api/mail/user/batch-delete', {
+      await apiClient('/mail/user/batch-delete', {
         method: 'POST',
         body: JSON.stringify({ ids: idsToDelete })
       });
@@ -56,7 +47,7 @@ export const MailboxModal: React.FC<MailboxModalProps> = ({ onClose }) => {
     if (!user) return;
     try {
       setIsDeleting(true);
-      await apiClient(`/api/mail/user/${mailId}`, { method: 'DELETE' });
+      await apiClient(`/mail/user/${mailId}`, { method: 'DELETE' });
       removeMailLocally(mailId);
       if (expandedId === mailId) setExpandedId(null);
     } catch (err) {

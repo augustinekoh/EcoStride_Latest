@@ -12,20 +12,11 @@ export const CapybaraRequests: React.FC = () => {
   const dropdownRef = useRef<HTMLDivElement>(null);
   
   const socialTitles = [
-    'Friend Request',
-    'Friend Request Accepted',
-    'Friend Request Rejected',
-    'New Join Request',
-    'Join Request Approved',
-    'Join Request Rejected',
-    'Kicked from Community',
-    'Promoted to Admin'
+    'Friend Request', 'Friend Request Accepted', 'Friend Request Rejected', 'Friend Request Sent', 'Friend Removed',
+    'New Join Request', 'Join Request Approved', 'Join Request Rejected', 'Kicked from Community', 'Promoted to Admin'
   ];
-
   const requestMails = (mails || []).filter(m => 
-    m.action_type === 'guild_join_request' || 
-    m.action_type === 'friend_request' ||
-    socialTitles.includes(m.title)
+    m.category ? m.category === 'social' : (m.action_type === 'guild_join_request' || m.action_type === 'friend_request' || socialTitles.includes(m.title))
   );
 
   useEffect(() => {

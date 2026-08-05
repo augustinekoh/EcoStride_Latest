@@ -1,3 +1,4 @@
+import { useUserStore } from '../stores/useUserStore';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiClient } from '../lib/api';
 
@@ -34,6 +35,10 @@ export function useCommunityChat(guildId: string | undefined | null, token: stri
       .then(data => {
         if (data && data.messages) {
           setMessages(data.messages);
+          if (data.last_read_at !== undefined) {
+             const unreadCount = data.messages.filter((m: any) => m.created_at > data.last_read_at).length;
+             useUserStore.getState().setUserData({ communityUnreadCount: unreadCount });
+          }
         }
       })
       .catch(console.error);

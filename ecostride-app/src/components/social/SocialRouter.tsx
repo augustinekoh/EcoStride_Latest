@@ -9,7 +9,7 @@ import { CapybaraRequests } from './CapybaraRequests';
 import { FloatingChat } from './FloatingChat';
 
 export function SocialRouter() {
-  const { guildId, setGuildId } = useUserStore();
+  const { guildId, setGuildId, communityUnreadCount, friendsUnreadCount } = useUserStore();
   const { activePrivateChat } = useDemoStore();
   const [activeTab, setActiveTab] = useState<'community' | 'friends'>('friends');
 
@@ -54,23 +54,33 @@ export function SocialRouter() {
             
             <button
               onClick={() => setActiveTab('friends')}
-              className={`flex-1 md:flex-none px-4 md:px-6 py-2 text-[13px] font-bold transition-colors z-10 rounded-[0.8rem] ${
+              className={`relative flex-1 md:flex-none px-4 md:px-6 py-2 text-[13px] font-bold transition-colors z-10 rounded-[0.8rem] ${
                 activeTab === 'friends' 
                   ? 'text-slate-800' 
                   : 'text-slate-500 hover:text-slate-700'
               }`}
             >
               Friends
+              {friendsUnreadCount > 0 && (
+                <div className="absolute top-1 right-1 w-4 h-4 bg-rose-500 rounded-full flex items-center justify-center border border-white shadow-sm">
+                  <span className="text-[9px] font-bold text-white leading-none">{friendsUnreadCount > 99 ? '99+' : friendsUnreadCount}</span>
+                </div>
+              )}
             </button>
             <button
               onClick={() => setActiveTab('community')}
-              className={`flex-1 md:flex-none px-4 md:px-6 py-2 text-[13px] font-bold transition-colors z-10 rounded-[0.8rem] ${
+              className={`relative flex-1 md:flex-none px-4 md:px-6 py-2 text-[13px] font-bold transition-colors z-10 rounded-[0.8rem] ${
                 activeTab === 'community' 
                   ? 'text-slate-800' 
                   : 'text-slate-500 hover:text-slate-700'
               }`}
             >
               Community
+              {communityUnreadCount > 0 && (
+                <div className="absolute top-1 right-1 w-4 h-4 bg-rose-500 rounded-full flex items-center justify-center border border-white shadow-sm">
+                  <span className="text-[9px] font-bold text-white leading-none">{communityUnreadCount > 99 ? '99+' : communityUnreadCount}</span>
+                </div>
+              )}
             </button>
           </div>
           

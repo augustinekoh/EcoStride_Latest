@@ -134,6 +134,27 @@ function App() {
               setUser(user, 'user');
             }
 
+            // Community Chat Unread polling
+            if (data.user && data.user.guild_id) {
+              try {
+                const unreadData = await apiClient('/chat/unread/' + data.user.guild_id);
+                useUserStore.getState().setUserData({ communityUnreadCount: unreadData.unread_count || 0 });
+              } catch (err) {
+                console.error("Failed to fetch community unread count", err);
+              }
+            }
+
+            // Friends Chat Unread polling
+            try {
+              const friendsData = await apiClient('/friends/' + user.uid);
+              if (friendsData.friends) {
+                const totalFriendsUnread = friendsData.friends.reduce((sum: number, f: any) => sum + (f.unread_count || 0), 0);
+                useUserStore.getState().setUserData({ friendsUnreadCount: totalFriendsUnread });
+              }
+            } catch (err) {
+              console.error("Failed to fetch friends unread count", err);
+            }
+
             // Mailbox listener via API
             const mailData = await apiClient('/mail');
             if (mailData.mail) {

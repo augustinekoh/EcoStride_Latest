@@ -73,8 +73,29 @@ app.get('/api/check-username', async (c) => {
 // GET /api/chat/messages/:guildId
 app.get('/api/chat/messages/:guildId', async (c) => {
   const guildId = c.req.param('guildId');
+  const jwtUser = c.get('user') as any;
+  let lastReadAt = 0;
+  if (jwtUser && jwtUser.sub) {
+    const readRecord = await c.env.DB.prepare('SELECT last_read_at FROM user_chat_reads WHERE user_id = ? AND guild_id = ?').bind(jwtUser.sub, guildId).first();
+    if (readRecord) lastReadAt = readRecord.last_read_at;
+  }
   const messages = await c.env.DB.prepare('SELECT c.id, c.guild_id, c.sender_id as user_id, u.username, u.avatar, c.content, c.timestamp as created_at FROM chat_messages c LEFT JOIN users u ON c.sender_id = u.id WHERE c.guild_id = ? ORDER BY c.timestamp ASC').bind(guildId).all();
-  return c.json({ messages: messages.results });
+  return c.json({ messages: messages.results, last_read_at: lastReadAt });
+});
+
+// GET /api/chat/unread/:guildId
+app.get('/api/chat/unread/:guildId', async (c) => {
+  const guildId = c.req.param('guildId');
+  const jwtUser = c.get('user') as any;
+  if (!jwtUser) return c.json({ error: 'Unauthorized' }, 401);
+  
+  const readRecord = await c.env.DB.prepare('SELECT last_read_at FROM user_chat_reads WHERE user_id = ? AND guild_id = ?').bind(jwtUser.sub, guildId).first();
+  const lastReadAt = readRecord ? readRecord.last_read_at : 0;
+  
+  const unreadCountQuery = await c.env.DB.prepare('SELECT COUNT(*) as count FROM chat_messages WHERE guild_id = ? AND timestamp > ?').bind(guildId, lastReadAt).first();
+  const unreadCount = unreadCountQuery ? unreadCountQuery.count : 0;
+  
+  return c.json({ unread_count: unreadCount });
 });
 
 // POST /api/chat/read/:roomId
@@ -90,7 +111,15 @@ app.post('/api/chat/read/:roomId', async (c) => {
     'INSERT INTO user_chat_reads (user_id, guild_id, last_read_at) VALUES (?, ?, ?) ON CONFLICT(user_id, guild_id) DO UPDATE SET last_read_at = ?'
   ).bind(userId, roomId, now, now).run();
   
-  return c.json({ success: true });
+  // Send Mail to requester
+    const senderMailId = `mail-${Date.now()}-snd-${Math.random().toString(36).substring(2,7)}`;
+    const targetUsername = friendExists.username || 'Someone';
+    const senderContent = `Friend request sent to ${targetUsername}.`;
+    await c.env.DB.prepare(
+      'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, action_type, action_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(senderMailId, 'Friend Request Sent', senderContent, 'System', 'user', id, 0, 'system', '{}', now).run();
+
+    return c.json({ success: true });
 });
 
 // GET /api/guilds/recommended
@@ -567,6 +596,15 @@ app.post('/api/activity', async (c) => {
     if (deletedMailIds.length > 0) {
       filteredMail = filteredMail.filter(m => !deletedMailIds.includes(m.id as string));
     }
+    
+    const socialTitles = [
+      'Friend Request', 'Friend Request Accepted', 'Friend Request Rejected', 'Friend Request Sent', 'Friend Removed',
+      'New Join Request', 'Join Request Approved', 'Join Request Rejected', 'Kicked from Community', 'Promoted to Admin'
+    ];
+    filteredMail = filteredMail.map((m: any) => {
+      m.category = (m.action_type === 'guild_join_request' || m.action_type === 'friend_request' || socialTitles.includes(m.title)) ? 'social' : 'mail';
+      return m;
+    });
     
     return c.json({ mail: filteredMail, read_mail_ids: readMailIds });
   });
@@ -1353,7 +1391,8 @@ app.post('/api/mail/:id/action', async (c) => {
   } else if (mail.action_type === 'friend_request') {
     const data = JSON.parse(mail.action_data as string);
     const { requester_id, requester_username } = data;
-    const myUsername = user.username || 'Someone'; // we can fetch real username but 'Someone' works as fallback
+    const myUser = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(user.sub).first();
+    const myUsername = myUser?.username || 'Someone';
 
     if (action === 'accept') {
       const now = Date.now();
@@ -1581,6 +1620,14 @@ app.post('/api/friends/:id', async (c) => {
     await c.env.DB.prepare(
       'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, action_type, action_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).bind(mailId, 'Friend Request', content, 'System', 'user', body.friendId, 0, 'friend_request', actionData, now).run();
+
+    // Send Mail to requester
+    const senderMailId = `mail-${Date.now()}-snd-${Math.random().toString(36).substring(2,7)}`;
+    const targetUsername = friendExists.username || 'Someone';
+    const senderContent = `Friend request sent to ${targetUsername}.`;
+    await c.env.DB.prepare(
+      'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, action_type, action_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(senderMailId, 'Friend Request Sent', senderContent, 'System', 'user', id, 0, 'system', '{}', now).run();
   
     return c.json({ success: true });
 });
@@ -1599,6 +1646,24 @@ app.delete('/api/friends/:id/:friendId', async (c) => {
   const roomSuffix = [id, friendId].sort().join('_');
   const roomId = `1to1_${roomSuffix}`;
   await c.env.DB.prepare('DELETE FROM chat_messages WHERE guild_id = ?').bind(roomId).run();
+  
+  // Unfriend Notifications
+  const user1 = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(id).first();
+  const user2 = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(friendId).first();
+  const u1Name = user1?.username || 'Someone';
+  const u2Name = user2?.username || 'Someone';
+  const now = Date.now();
+
+  const mailId1 = `mail-${now}-u1-${Math.random().toString(36).substring(2,7)}`;
+  const mailId2 = `mail-${now}-u2-${Math.random().toString(36).substring(2,7)}`;
+
+  await c.env.DB.prepare(
+    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, action_type, action_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(mailId1, 'Friend Removed', `You have unfriended ${u2Name}.`, 'System', 'user', id, 0, 'system', '{}', now).run();
+
+  await c.env.DB.prepare(
+    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, action_type, action_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(mailId2, 'Friend Removed', `${u1Name} has unfriended you.`, 'System', 'user', friendId, 0, 'system', '{}', now).run();
     
   return c.json({ success: true });
 });
@@ -2057,6 +2122,15 @@ app.post('/api/activity', async (c) => {
     if (deletedMailIds.length > 0) {
       filteredMail = filteredMail.filter(m => !deletedMailIds.includes(m.id as string));
     }
+    
+    const socialTitles = [
+      'Friend Request', 'Friend Request Accepted', 'Friend Request Rejected', 'Friend Request Sent', 'Friend Removed',
+      'New Join Request', 'Join Request Approved', 'Join Request Rejected', 'Kicked from Community', 'Promoted to Admin'
+    ];
+    filteredMail = filteredMail.map((m: any) => {
+      m.category = (m.action_type === 'guild_join_request' || m.action_type === 'friend_request' || socialTitles.includes(m.title)) ? 'social' : 'mail';
+      return m;
+    });
     
     return c.json({ mail: filteredMail, read_mail_ids: readMailIds });
   });
