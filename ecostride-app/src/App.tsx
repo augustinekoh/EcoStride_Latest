@@ -27,12 +27,44 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 function PublicApp() {
   const { activeView, isWaitingForApproval, isChatExpanded } = useDemoStore();
   const { user } = useAuthStore();
-  const { isDarkMode } = useUserStore();
+  const { isDarkMode, bannedUntil } = useUserStore();
 
   if (!user || isWaitingForApproval) {
     return (
       <div className={`w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500 ${isDarkMode ? 'dark' : ''}`}>
         <AuthModal />
+      </div>
+    );
+  }
+
+  if (bannedUntil && bannedUntil > Date.now()) {
+    const timeLeft = Math.max(0, bannedUntil - Date.now());
+    const days = Math.floor(timeLeft / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const dateStr = new Date(bannedUntil).toLocaleDateString();
+
+    return (
+      <div className={`w-screen h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-sans transition-colors duration-500 ${isDarkMode ? 'dark' : ''}`}>
+        <div className="bg-white dark:bg-slate-800 border-4 border-red-200 dark:border-red-900/50 p-8 rounded-3xl max-w-md w-full text-center shadow-xl shadow-red-500/5">
+          <div className="text-6xl mb-6 drop-shadow-md">🚫</div>
+          <h1 className="text-2xl font-black text-red-500 uppercase tracking-widest mb-4">Account Suspended</h1>
+          <p className="text-slate-600 dark:text-slate-300 font-bold mb-2">
+            Your account has been temporarily suspended due to a violation of our community guidelines.
+          </p>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+            {bannedUntil > 4000000000000 ? (
+              <span className="text-red-500 font-black">This ban is permanent.</span>
+            ) : (
+              <span>The ban will be lifted in <span className="text-red-500 font-black">{days} days, {hours} hours</span> ({dateStr}).</span>
+            )}
+          </p>
+          <button 
+            onClick={() => auth.signOut()}
+            className="w-full bg-slate-900 dark:bg-red-600/20 hover:bg-black dark:hover:bg-red-600/30 dark:border dark:border-red-500/30 text-white font-black py-4 rounded-xl transition-all"
+          >
+            Sign Out
+          </button>
+        </div>
       </div>
     );
   }
@@ -132,7 +164,8 @@ function App() {
                 guildName: data.user.guildName || null,
                 bio: data.user.bio || '',
                 nationality: data.user.nationality || '',
-                unlockedBadges: data.user.unlocked_badges ? JSON.parse(data.user.unlocked_badges) : []
+                unlockedBadges: data.user.unlocked_badges ? JSON.parse(data.user.unlocked_badges) : [],
+                bannedUntil: data.user.banned_until
               });
               
               // Handle role

@@ -174,6 +174,29 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  const handleBanUser = async (uid: string, e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    if (!value) return; // Prompt option
+
+    let bannedUntil = 0;
+    if (value === 'unban') {
+      bannedUntil = 0;
+    } else if (value === 'forever') {
+      bannedUntil = 4102444800000; // Year 2100
+    } else {
+      const days = Number(value);
+      bannedUntil = Date.now() + days * 24 * 60 * 60 * 1000;
+    }
+    
+    try {
+      await apiClient(`/admin/users/${uid}/ban`, { method: 'POST', body: JSON.stringify({ bannedUntil }) });
+      alert(bannedUntil === 0 ? 'User unbanned successfully.' : 'User banned successfully.');
+      fetchDashboardData();
+    } catch (err: any) {
+      alert(`Failed to update ban status: ${err.message}`);
+    }
+  };
+
   const handleTerminateCommunity = async (guildId: string) => {
     if (confirm('Are you SURE you want to terminate this community? This cannot be undone.')) {
       try {
@@ -482,14 +505,16 @@ export const AdminDashboard: React.FC = () => {
       <div className="flex-1 overflow-y-auto h-screen p-8 bg-transparent">
         <div className="max-w-7xl mx-auto relative">
           
-          <button 
-            onClick={fetchDashboardData}
-            disabled={loading}
-            className="absolute top-0 right-0 z-10 flex items-center gap-2 bg-white/80 backdrop-blur border border-teal-200 text-teal-800 px-4 py-2 rounded-xl font-bold shadow-sm hover:bg-teal-50 transition-all disabled:opacity-50"
-          >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            {loading ? 'Refreshing...' : 'Refresh Data'}
-          </button>
+          <div className="flex justify-end mb-4">
+            <button 
+              onClick={fetchDashboardData}
+              disabled={loading}
+              className="flex items-center gap-2 bg-white/80 backdrop-blur border border-teal-200 text-teal-800 px-4 py-2 rounded-xl font-bold shadow-sm hover:bg-teal-50 transition-all disabled:opacity-50"
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              {loading ? 'Refreshing...' : 'Refresh Data'}
+            </button>
+          </div>
 
 
           {/* OVERVIEW TAB */}
@@ -948,27 +973,33 @@ export const AdminDashboard: React.FC = () => {
                 />
               </div>
               
-              <div className="bg-white/60 backdrop-blur-lg rounded-3xl shadow-xl shadow-teal-900/5 border border-white/80 overflow-hidden">
+              <div className="mb-8 bg-white/60 backdrop-blur-lg rounded-3xl shadow-xl shadow-teal-900/5 border border-white/80 overflow-hidden">
                 <div className="max-h-[700px] overflow-y-auto custom-scrollbar">
                   <table className="w-full text-left text-sm">
-                    <thead className="bg-transparent sticky top-0 z-10 shadow-sm">
+                    <thead className="bg-white/95 backdrop-blur-sm sticky top-0 z-20 border-b border-teal-100 shadow-sm">
                       <tr>
-                        <th className="px-6 py-4 font-bold text-teal-700/70 uppercase text-xs tracking-wider">User</th>
-                        <th className="px-6 py-4 font-bold text-teal-700/70 uppercase text-xs tracking-wider">Role</th>
-                        <th className="px-6 py-4 font-bold text-teal-700/70 uppercase text-xs tracking-wider">Stats</th>
-                        <th className="px-6 py-4 font-bold text-teal-700/70 uppercase text-xs tracking-wider">Coins</th>
-                        <th className="px-6 py-4 font-bold text-teal-700/70 uppercase text-xs tracking-wider text-right">Actions</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">User</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">Role</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">Stats</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">Coins</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-teal-50">
                       {filteredUsers.length === 0 && (
                         <tr><td colSpan={5} className="px-6 py-8 text-center text-teal-700/70 italic">No users found.</td></tr>
                       )}
                       {filteredUsers.map(u => (
-                        <tr key={u.id} className="hover:bg-transparent/50 transition-colors">
+                        <tr key={u.id} className="hover:bg-white/40 transition-colors">
                           <td className="px-6 py-4">
-                            <div className="font-bold text-teal-950">{u.email}</div>
-                            <div className="text-xs text-teal-700/70 font-mono mt-0.5">{u.id}</div>
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-teal-950 text-sm truncate max-w-[150px]">{u.username || 'Unknown'}</span>
+                                <span className="text-[10px] font-black font-mono text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-100">ID: {u.player_id || 'N/A'}</span>
+                              </div>
+                              <div className="text-xs text-teal-700 truncate max-w-[200px]">{u.email}</div>
+                              <div className="text-[10px] text-slate-400 font-mono truncate max-w-[200px]">UID: {u.id}</div>
+                            </div>
                           </td>
                           <td className="px-6 py-4">
                             <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
@@ -978,6 +1009,11 @@ export const AdminDashboard: React.FC = () => {
                             }`}>
                               {u.role || 'user'}
                             </span>
+                            {u.banned_until > Date.now() && (
+                              <div className="mt-2 inline-block bg-red-100 text-red-700 text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider">
+                                Banned
+                              </div>
+                            )}
                           </td>
                           <td className="px-6 py-4">
                             <div className="text-xs text-slate-600">Trees: <span className="font-bold text-teal-950">{u.totalTreesPlanted || 0}</span></div>
@@ -995,12 +1031,28 @@ export const AdminDashboard: React.FC = () => {
                             </div>
                           </td>
                           <td className="px-6 py-4 text-right">
-                            <button 
-                              onClick={() => handleUpdateCoins(u.id)}
-                              className="bg-teal-500/15 text-teal-700 shadow-sm border border-teal-500/20 hover:bg-urban-blue/20 hover:text-teal-600 font-bold px-3 py-1.5 rounded-lg text-xs transition-colors"
-                            >
-                              Save Coins
-                            </button>
+                            <div className="flex flex-col gap-2 items-end">
+                              <button 
+                                onClick={() => handleUpdateCoins(u.id)}
+                                className="w-full bg-teal-500/15 text-teal-700 shadow-sm border border-teal-500/20 hover:bg-urban-blue/20 hover:text-teal-600 font-bold px-3 py-1.5 rounded-lg text-xs transition-colors"
+                              >
+                                Save Coins
+                              </button>
+                              <select
+                                onChange={(e) => handleBanUser(u.id, e)}
+                                value=""
+                                className="w-full bg-red-50 text-red-600 font-bold border border-red-200 px-3 py-1.5 rounded-lg text-xs outline-none cursor-pointer hover:bg-red-100 transition-colors"
+                              >
+                                <option value="" disabled>{u.banned_until > Date.now() ? 'Manage Ban' : 'Ban User'}</option>
+                                {u.banned_until > Date.now() && <option value="unban">Unban Now</option>}
+                                <option value="1">Ban for 1 Day</option>
+                                <option value="7">Ban for 7 Days</option>
+                                <option value="30">Ban for 30 Days</option>
+                                <option value="180">Ban for Half Year</option>
+                                <option value="365">Ban for 1 Year</option>
+                                <option value="forever">Permanent Ban</option>
+                              </select>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1010,22 +1062,22 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               <div className="bg-white/60 backdrop-blur-lg rounded-3xl shadow-xl shadow-teal-900/5 border border-white/80 overflow-hidden">
-                <div className="p-6 border-b border-white/80 bg-white/40">
+                <div className="p-6 border-b border-teal-100 bg-white/60 backdrop-blur-md">
                   <h3 className="text-xl font-bold text-teal-950">Active Communities</h3>
                 </div>
                 <div className="max-h-[500px] overflow-y-auto custom-scrollbar">
                   <table className="w-full text-left text-sm">
-                    <thead className="bg-transparent sticky top-0 z-10 shadow-sm backdrop-blur-md">
+                    <thead className="bg-white/95 backdrop-blur-sm sticky top-0 z-20 border-b border-teal-100 shadow-sm">
                       <tr>
-                        <th className="px-6 py-4 font-bold text-teal-700/70 uppercase text-xs tracking-wider">Icon</th>
-                        <th className="px-6 py-4 font-bold text-teal-700/70 uppercase text-xs tracking-wider">Community</th>
-                        <th className="px-6 py-4 font-bold text-teal-700/70 uppercase text-xs tracking-wider">Access</th>
-                        <th className="px-6 py-4 font-bold text-teal-700/70 uppercase text-xs tracking-wider">Total Members</th>
-                        <th className="px-6 py-4 font-bold text-teal-700/70 uppercase text-xs tracking-wider">Admin</th>
-                        <th className="px-6 py-4 font-bold text-teal-700/70 uppercase text-xs tracking-wider text-right">Action</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">Icon</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">Community</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">Access</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">Total Members</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">Admin</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider text-right">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-teal-50">
                       {guilds.length === 0 && (
                         <tr><td colSpan={6} className="px-6 py-8 text-center text-teal-700/70 italic">No communities found.</td></tr>
                       )}

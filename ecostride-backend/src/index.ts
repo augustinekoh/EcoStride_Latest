@@ -171,6 +171,7 @@ app.get('/api/users/:id', async (c) => {
   try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN read_mails TEXT').run(); } catch(e) {}
   try { await c.env.DB.prepare('ALTER TABLE purchases ADD COLUMN expires_at INTEGER').run(); } catch(e) {}
   try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN showcased_badges TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN banned_until INTEGER DEFAULT 0').run(); } catch(e) {}
 
   // Ensure badges are up to date (retroactive awards for existing users)
   await checkAndAwardBadges(c, id);
@@ -385,6 +386,25 @@ app.delete('/api/users/:id', async (c) => {
     console.error("DELETE user error:", err);
     return c.json({ error: err.message }, 500);
   }
+});
+
+// POST ban user
+app.post('/api/admin/users/:id/ban', async (c) => {
+  const id = c.req.param('id');
+  const jwtUser = c.get('user') as any;
+  if (!jwtUser) return c.json({ error: 'Unauthorized' }, 401);
+  
+  const requestingDbUser = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(jwtUser.sub).first();
+  const isAdmin = requestingDbUser && requestingDbUser.role === 'admin';
+  if (!isAdmin) return c.json({ error: 'Forbidden' }, 403);
+
+  const body = await c.req.json();
+  const bannedUntil = body.bannedUntil || 0;
+
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN banned_until INTEGER DEFAULT 0').run(); } catch(e) {}
+  await c.env.DB.prepare('UPDATE users SET banned_until = ? WHERE id = ?').bind(bannedUntil, id).run();
+
+  return c.json({ success: true, bannedUntil });
 });
 
 app.get('/api/map-data', async (c) => {

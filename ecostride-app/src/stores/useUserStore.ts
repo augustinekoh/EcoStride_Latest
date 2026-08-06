@@ -20,6 +20,7 @@ interface UserState {
   avatar: string | null
   guildId: string | null
   guildName: string | null
+  bannedUntil?: number
   communityUnreadCount: number
   friendsUnreadCount: number
   setCoins: (coins: number | ((prev: number) => number)) => void
@@ -80,6 +81,7 @@ export const useUserStore = create<UserState>()(
       avatar: null,
       guildId: null,
       guildName: null,
+      bannedUntil: undefined,
       communityUnreadCount: 0,
       friendsUnreadCount: 0,
       setCoins: (coins) => set((state) => ({ 
@@ -158,7 +160,7 @@ export const useUserStore = create<UserState>()(
           challengesCompleted: 0, username: '', firstName: '', lastName: '', email: '',
           bio: '', nationality: '', avatar: null, guildId: null, guildName: null,
           totalTreesPlanted: 0, notifications: [], unlockedBadges: [], activityHistory: [],
-          hasReadAlerts: false
+          hasReadAlerts: false, bannedUntil: undefined
         });
       }
     }),
