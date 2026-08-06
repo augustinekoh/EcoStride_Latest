@@ -183,23 +183,23 @@ export function CommunityDashboard() {
               </button>
             )}
           </div>
-          
-          <h1 className="text-3xl font-black mb-1 text-slate-800 tracking-tight">
+          <h1 className="text-3xl font-black text-[var(--color-text-main)] mt-2 mb-2 leading-tight">
             {isLoading ? 'Loading...' : guild?.name || 'Community'}
           </h1>
           <p className="text-slate-400 text-[10px] font-bold tracking-widest uppercase mb-4">
             ID: {guild?.id || '---'}
           </p>
+          
           <p className="text-slate-500 text-sm max-w-xs mb-8 leading-relaxed">
             {isLoading ? 'Fetching details...' : guild?.description || 'Join us in making the world a greener place, one step at a time.'}
           </p>
 
           <div className="flex gap-4 w-full max-w-sm">
-            <div className="flex-1 bg-white rounded-[1.5rem] py-4 flex flex-col items-center shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-              <span className="text-2xl font-black text-slate-800 mb-0.5">{members.length}</span>
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Members</span>
+            <div className="flex-1 glass-card rounded-[1.5rem] py-4 flex flex-col items-center shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+              <span className="text-2xl font-black text-[var(--color-text-main)] mb-0.5">{members.length}</span>
+              <span className="text-[10px] text-[var(--color-text-muted)] font-bold uppercase tracking-widest">Members</span>
             </div>
-            <div className="flex-1 bg-white rounded-[1.5rem] py-4 flex flex-col items-center shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-emerald-50">
+            <div className="flex-1 glass-card rounded-[1.5rem] py-4 flex flex-col items-center shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-emerald-50/20">
               <span className="text-2xl font-black text-emerald-500 mb-0.5">
                 {members.reduce((acc, m) => acc + (m.total_trees_planted || 0), 0)}
               </span>
@@ -211,18 +211,18 @@ export function CommunityDashboard() {
 
       {/* Members Section */}
       <div className="px-6 py-8">
-        <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center justify-between">
+        <h2 className="text-lg font-bold text-[var(--color-text-main)] mb-4 flex items-center justify-between">
           <span className="flex items-center">
             Top Contributors <Trophy size={18} className="ml-2 text-yellow-500" />
           </span>
-          <span className="text-xs font-normal text-slate-400">{members.length}/75 Members</span>
+          <span className="text-xs font-normal text-[var(--color-text-muted)]">{members.length}/75 Members</span>
         </h2>
         
-        <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-visible relative">
+        <div className="glass-card rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-visible relative">
           {isLoading ? (
             <div className="animate-pulse space-y-4 p-4">
               {[1,2,3].map(i => (
-                <div key={i} className="h-14 bg-slate-100 rounded-xl" />
+                <div key={i} className="h-14 bg-slate-100 dark:bg-slate-700/50 rounded-xl" />
               ))}
             </div>
           ) : (
@@ -230,7 +230,7 @@ export function CommunityDashboard() {
               <div 
                 key={member.id} 
                 onClick={() => setSelectedProfile(member)}
-                className={`flex items-center p-4 cursor-pointer hover:bg-slate-50 transition-colors relative border-b border-slate-50 last:border-b-0 ${activeMenuId === member.id ? 'z-50' : 'z-0'}`}
+                className={`flex items-center p-4 cursor-pointer hover:bg-slate-500/10 transition-colors relative border-b border-black/5 dark:border-white/5 last:border-b-0 ${activeMenuId === member.id ? 'z-50' : 'z-0'}`}
               >
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0 mr-3 ${
                   index === 0 ? 'bg-yellow-100 text-yellow-600' :
@@ -253,11 +253,11 @@ export function CommunityDashboard() {
                   )}
                 </div>
                 
-                <div className="ml-3 flex-1 min-w-0">
-                  <div className="flex items-center">
-                    <h3 className="font-bold text-slate-800 truncate">{member.username || 'User'}</h3>
+                <div className="ml-3 flex-1 min-w-0 text-left">
+                  <div className="flex items-center justify-start">
+                    <h3 className="font-bold text-[var(--color-text-main)] truncate text-left">{member.username || 'User'}</h3>
                     {guild?.admin_id === member.id && (
-                      <span className="ml-2 px-2 py-0.5 bg-[var(--color-teal-dark)]/10 text-[var(--color-teal-dark)] border border-[var(--color-teal-dark)]/20 text-[10px] font-bold uppercase rounded-full">
+                      <span className="ml-2 px-2 py-0.5 bg-[var(--color-teal-dark)]/10 text-[var(--color-teal-dark)] border border-[var(--color-teal-dark)]/20 text-[10px] font-bold uppercase rounded-full shrink-0">
                         Admin
                       </span>
                     )}

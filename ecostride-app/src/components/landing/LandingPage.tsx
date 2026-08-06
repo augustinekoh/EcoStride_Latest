@@ -307,8 +307,18 @@ export const LandingPage: React.FC = () => {
             </button>
             {/* Onboarding Tooltip */}
             {showMenuTooltip && !isActionMenuOpen && (
-              <div className="absolute top-14 right-0 bg-[#5496a2] text-white text-xs font-bold px-3 py-2 rounded-xl shadow-lg w-32 text-center animate-bounce z-50 pointer-events-none">
+              <div className="absolute top-14 right-0 bg-[#5496a2] text-white text-xs font-bold px-4 py-3 rounded-xl shadow-lg w-36 text-center animate-bounce z-50 pointer-events-auto leading-tight">
                 <div className="absolute -top-1.5 right-4 w-3 h-3 bg-[#5496a2] rotate-45"></div>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMenuTooltip(false);
+                    if (typeof window !== 'undefined') sessionStorage.setItem('seen_menu_tooltip', 'true');
+                  }}
+                  className="absolute -top-2 -left-2 w-5 h-5 bg-[#1d3539] rounded-full flex items-center justify-center border border-[#5496a2] shadow-sm hover:scale-110 active:scale-95 transition-transform"
+                >
+                  <X size={12} strokeWidth={3} className="text-white"/>
+                </button>
                 Tap here to open Mailbox & Store
               </div>
             )}
@@ -481,7 +491,7 @@ export const LandingPage: React.FC = () => {
       <div className="relative z-10">
         <h3 className="text-2xl font-black text-[var(--color-text-main)] mb-5 tracking-wide">Recent Activity</h3>
         <div className="space-y-4">
-          {(showAllActivities ? activityHistory : activityHistory.slice(-3)).reverse().map((trip, idx) => (
+          {(showAllActivities ? activityHistory.filter(t => t.distance > 0) : activityHistory.filter(t => t.distance > 0).slice(-3)).reverse().map((trip, idx) => (
              <div key={idx} className="glass-card p-5 flex items-center justify-between cursor-pointer hover:-translate-y-1 transition-all">
              <div className="flex items-center gap-5">
                <div className="w-16 h-16 rounded-[1.5rem] glass-active flex items-center justify-center shadow-sm">
@@ -492,7 +502,7 @@ export const LandingPage: React.FC = () => {
                  <div className="flex gap-5 mt-1">
                    <div>
                      <p className="text-[11px] text-[var(--color-text-muted)] uppercase font-bold tracking-wider">Distance</p>
-                     <p className="text-sm font-black text-[var(--color-teal-dark)]">{trip.distance.toFixed(1)} km</p>
+                     <p className="text-sm font-black text-[var(--color-teal-dark)]">{trip.distance.toFixed(2)} km</p>
                    </div>
                    <div>
                      <p className="text-[11px] text-[var(--color-text-muted)] uppercase font-bold tracking-wider">Date</p>
@@ -503,12 +513,12 @@ export const LandingPage: React.FC = () => {
              </div>
            </div>
           ))}
-          {activityHistory.length === 0 && (
+          {activityHistory.filter(t => t.distance > 0).length === 0 && (
             <div className="glass-card p-6 flex justify-center">
               <p className="text-[var(--color-text-muted)] font-bold text-center">No logs found. Start walking!</p>
             </div>
           )}
-          {activityHistory.length > 3 && (
+          {activityHistory.filter(t => t.distance > 0).length > 3 && (
             <button 
               onClick={() => setShowAllActivities(!showAllActivities)} 
               className="w-full mt-2 glass-active py-3 rounded-xl font-bold text-[var(--color-text-main)] shadow-sm hover:shadow-md transition-all text-sm"
@@ -640,7 +650,7 @@ export const LandingPage: React.FC = () => {
                             </div>
                             <span className="font-black text-[var(--color-text-main)] text-lg">Walk</span>
                           </div>
-                          <span className="font-black text-[var(--color-teal-dark)] text-xl">+{activity.distance.toFixed(1)} km</span>
+                          <span className="font-black text-[var(--color-teal-dark)] text-xl">+{activity.distance.toFixed(2)} km</span>
                         </div>
                       ))
                     ) : (

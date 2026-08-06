@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { checkAndAwardBadges } from './badgeEngine';
 
 export { CommunityChatRoom } from './CommunityChatRoom';
 
@@ -169,6 +170,10 @@ app.get('/api/users/:id', async (c) => {
   try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch(e) {}
   try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN read_mails TEXT').run(); } catch(e) {}
   try { await c.env.DB.prepare('ALTER TABLE purchases ADD COLUMN expires_at INTEGER').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN showcased_badges TEXT').run(); } catch(e) {}
+
+  // Ensure badges are up to date (retroactive awards for existing users)
+  await checkAndAwardBadges(c, id);
 
   const user: any = await c.env.DB.prepare('SELECT users.*, guilds.name as guildName FROM users LEFT JOIN guilds ON users.guild_id = guilds.id WHERE users.id = ?').bind(id).first();
   if (user) {
@@ -223,6 +228,7 @@ app.post('/api/users/:id', async (c) => {
     try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN player_id TEXT').run(); } catch(e) {}
     try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch(e) {}
     try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN read_mails TEXT').run(); } catch(e) {}
+    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN showcased_badges TEXT').run(); } catch(e) {}
     
     if (body.username !== undefined) { updates.push('username = ?'); values.push(body.username); }
     if (body.role !== undefined) { updates.push('role = ?'); values.push(body.role); }
@@ -232,11 +238,14 @@ app.post('/api/users/:id', async (c) => {
     if (body.bio !== undefined) { updates.push('bio = ?'); values.push(body.bio); }
     if (body.avatar !== undefined) { updates.push('avatar = ?'); values.push(body.avatar); }
     if (body.unlockedBadges !== undefined) { updates.push('unlocked_badges = ?'); values.push(JSON.stringify(body.unlockedBadges)); }
+    if (body.showcasedBadges !== undefined) { updates.push('showcased_badges = ?'); values.push(JSON.stringify(body.showcasedBadges)); }
     if (body.readMails !== undefined) { updates.push('read_mails = ?'); values.push(JSON.stringify(body.readMails)); }
     
     if (updates.length > 0) {
       values.push(id);
       await c.env.DB.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
+      
+      await checkAndAwardBadges(c, id);
     }
   }
   
@@ -399,6 +408,8 @@ app.post('/api/trees', async (c) => {
   // Only increment total_trees_planted, frontend handles coin deduction
   await c.env.DB.prepare('UPDATE users SET total_trees_planted = total_trees_planted + 1 WHERE id = ?').bind(body.authorId).run();
   
+  await checkAndAwardBadges(c, body.authorId);
+  
   return c.json({ success: true, id });
 });
 
@@ -461,7 +472,7 @@ app.post('/api/signposts/:id/like', async (c) => {
   
   if (!userId) return c.json({ error: 'User ID required' }, 400);
 
-  const signpost: any = await c.env.DB.prepare('SELECT likes, liked_by FROM signposts WHERE id = ?').bind(id).first();
+  const signpost: any = await c.env.DB.prepare('SELECT likes, liked_by, author_id FROM signposts WHERE id = ?').bind(id).first();
   if (!signpost) return c.json({ error: 'Signpost not found' }, 404);
 
   let likedBy = [];
@@ -476,6 +487,8 @@ app.post('/api/signposts/:id/like', async (c) => {
 
   await c.env.DB.prepare('UPDATE signposts SET likes = ?, liked_by = ? WHERE id = ?')
     .bind(newLikes, JSON.stringify(likedBy), id).run();
+
+  await checkAndAwardBadges(c, signpost.author_id);
 
   return c.json({ success: true, likes: newLikes, likedBy });
 });
@@ -506,8 +519,36 @@ app.post('/api/settings', async (c) => {
 });
 
 app.get('/api/leaderboard', async (c) => {
-  const users = await c.env.DB.prepare("SELECT users.id, users.username, users.guild_id, guilds.name as guildName, users.coins, users.total_distance_km, users.total_trees_planted, users.avatar, users.player_id FROM users LEFT JOIN guilds ON users.guild_id = guilds.id WHERE users.role != 'admin' ORDER BY users.total_distance_km DESC LIMIT 50").all();
-  return c.json({ users: users.results });
+  const userId = c.req.query('userId');
+
+  try { await c.env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_users_distance ON users(total_distance_km DESC)').run(); } catch(e) {}
+  try { await c.env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_users_coins ON users(coins DESC)').run(); } catch(e) {}
+
+  const baseSelect = "SELECT users.id, users.username, users.guild_id, guilds.name as guildName, users.coins, users.total_distance_km, users.total_trees_planted, users.avatar, users.player_id FROM users LEFT JOIN guilds ON users.guild_id = guilds.id WHERE users.role != 'admin'";
+  
+  const topDistance = await c.env.DB.prepare(`${baseSelect} ORDER BY users.total_distance_km DESC, users.id ASC LIMIT 50`).all();
+  const topCoins = await c.env.DB.prepare(`${baseSelect} ORDER BY users.coins DESC, users.id ASC LIMIT 50`).all();
+
+  let userRank = null;
+  if (userId) {
+    const user = await c.env.DB.prepare("SELECT total_distance_km, coins FROM users WHERE id = ?").bind(userId).first();
+    if (user) {
+      const dist = user.total_distance_km || 0;
+      const cns = user.coins || 0;
+
+      const distCount = await c.env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role != 'admin' AND (total_distance_km > ? OR (total_distance_km = ? AND id < ?))").bind(dist, dist, userId).first();
+      const coinsCount = await c.env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role != 'admin' AND (coins > ? OR (coins = ? AND id < ?))").bind(cns, cns, userId).first();
+
+      userRank = {
+        distanceRank: (distCount?.count || 0) + 1,
+        distanceScore: dist,
+        coinsRank: (coinsCount?.count || 0) + 1,
+        coinsScore: cns
+      };
+    }
+  }
+
+  return c.json({ topDistance: topDistance.results, topCoins: topCoins.results, userRank });
 });
 
 app.get('/api/store', async (c) => {
@@ -1140,6 +1181,8 @@ app.post('/api/guilds', async (c) => {
     }
   }
 
+  await checkAndAwardBadges(c, user.sub);
+
   return c.json({ success: true, guildId });
 });
 
@@ -1264,6 +1307,8 @@ app.post('/api/guilds/:id/join', async (c) => {
     }
   }
 
+  await checkAndAwardBadges(c, user.sub);
+
   return c.json({ success: true, guildId });
 });
 
@@ -1378,6 +1423,8 @@ app.post('/api/mail/:id/action', async (c) => {
         await c.env.DB.prepare(
           'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
         ).bind(crypto.randomUUID(), 'Join Request Approved', `The admin approved your request to join ${guildName}.`, 'System', 'user', userId, 0, Date.now()).run();
+        
+        await checkAndAwardBadges(c, userId);
       }
     } else if (action === 'reject') {
       await c.env.DB.prepare('UPDATE mail SET content = ?, action_type = NULL, action_data = NULL WHERE id = ?')

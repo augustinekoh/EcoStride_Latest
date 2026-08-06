@@ -41,7 +41,13 @@ export const MapView: React.FC = () => {
   const mapRef = useRef(null);
   const [trees, setTrees] = useState<any[]>([]);
   const [activeTree, setActiveTree] = useState<any | null>(null);
-  const [showNavPrompt, setShowNavPrompt] = useState(true);
+  const [showNavPrompt, setShowNavPrompt] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return !sessionStorage.getItem('hide_nav_instruction');
+    }
+    return true;
+  });
+  const [showNavPromptConfirm, setShowNavPromptConfirm] = useState(false);
   const [showFabTooltip, setShowFabTooltip] = useState(() => {
     if (typeof window !== 'undefined' && window.innerWidth <= 640) {
       return !sessionStorage.getItem('seen_fab_tooltip');
@@ -137,7 +143,6 @@ export const MapView: React.FC = () => {
   const [showSignpostModal, setShowSignpostModal] = useState(false);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [merchantStoreFilter, setMerchantStoreFilter] = useState<string | null>(null);
-  const [showCongratsModal, setShowCongratsModal] = useState(false);
   const [publicProfileUser, setPublicProfileUser] = useState<any | null>(null);
   const { user } = useAuthStore();
 
@@ -375,7 +380,7 @@ export const MapView: React.FC = () => {
     }
     const likedByArray = sp.likedBy || [];
     if (likedByArray.includes(user.uid)) {
-      alert("You already gave energy to this signpost! 🔋");
+      // Quietly return if already liked (animation will still play in UI)
       return;
     }
     
@@ -398,8 +403,6 @@ export const MapView: React.FC = () => {
       sp.likedBy = sp.likedBy.filter((id: string) => id !== user.uid);
       setSignposts([...signposts]);
     }
-
-    setShowCongratsModal(true);
   };
 
   // Fetch autocomplete results from Mapbox
@@ -482,8 +485,19 @@ export const MapView: React.FC = () => {
                   <Home size={18} />
                 </button>
                 {showMapHomeTooltip && (
-                  <div className="absolute top-12 left-0 bg-[#5496a2] text-white text-xs font-bold px-3 py-2 rounded-xl shadow-lg w-32 text-center animate-bounce pointer-events-none z-50">
+                  <div className="absolute top-12 left-0 bg-[#5496a2] text-white text-xs font-bold px-4 py-2 rounded-xl shadow-lg w-36 text-center animate-bounce pointer-events-auto z-50">
                     <div className="absolute -top-1.5 left-4 w-3 h-3 bg-[#5496a2] rotate-45"></div>
+                    <button 
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowMapHomeTooltip(false);
+                        if (typeof window !== 'undefined') sessionStorage.setItem('seen_map_home_tooltip', 'true');
+                      }}
+                      className="absolute -top-2 -right-2 w-5 h-5 bg-[#1d3539] rounded-full flex items-center justify-center border border-[#5496a2] shadow-sm hover:scale-110 active:scale-95 transition-transform"
+                    >
+                      <X size={12} strokeWidth={3} className="text-white"/>
+                    </button>
                     Back to Home
                   </div>
                 )}
@@ -764,11 +778,39 @@ export const MapView: React.FC = () => {
         <div className="absolute top-1/2 sm:top-24 left-1/2 -translate-x-1/2 -translate-y-1/2 sm:translate-y-0 bg-[#fff4d6] border-2 border-[#1d3539] shadow-[4px_4px_0px_0px_#1d3539] px-6 py-3 rounded-full flex items-center justify-center gap-3 z-[80] animate-bounce w-[90%] sm:w-auto text-center pointer-events-auto">
           <p className="text-sm font-black text-[#1d3539]">Click anywhere to navigate, or long press 🍃 for Free Walk!</p>
           <button 
-            onClick={() => setShowNavPrompt(false)} 
+            onClick={() => setShowNavPromptConfirm(true)} 
             className="absolute -top-2 -right-2 bg-white text-[#1d3539] w-7 h-7 rounded-full text-sm font-black border-2 border-[#1d3539] shadow-sm hover:scale-110 flex items-center justify-center"
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {/* Hide Navigation Instruction Confirm Modal */}
+      {showNavPromptConfirm && (
+        <div className="fixed inset-0 z-[200] bg-[#1d3539]/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-[#fff4d6] border-2 border-[#1d3539] rounded-[2rem] p-6 max-w-sm w-full shadow-[8px_8px_0px_0px_#1d3539] text-center animate-in zoom-in-95 duration-200">
+            <h3 className="text-xl font-black text-[#1d3539] uppercase tracking-wider mb-2">Hide Instruction?</h3>
+            <p className="text-sm font-bold text-[#1d3539]/70 mb-6">Do you want to permanently hide this navigation tip?</p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowNavPromptConfirm(false)}
+                className="flex-1 py-3 bg-white border-2 border-[#1d3539] text-[#1d3539] font-black rounded-xl hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(29,53,57,0.2)] transition-all"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  setShowNavPrompt(false);
+                  setShowNavPromptConfirm(false);
+                  if (typeof window !== 'undefined') sessionStorage.setItem('hide_nav_instruction', 'true');
+                }}
+                className="flex-1 py-3 bg-[#5496a2] border-2 border-[#1d3539] text-white font-black rounded-xl hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_#1d3539] transition-all"
+              >
+                Don't Show
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -836,8 +878,18 @@ export const MapView: React.FC = () => {
           
           {/* Onboarding Tooltip for FAB */}
           {showFabTooltip && !isFabOpen && (
-            <div className="absolute bottom-16 right-4 bg-[#5496a2] text-white text-xs font-black px-3 py-2 rounded-xl shadow-lg w-[160px] text-center animate-bounce z-50 pointer-events-none leading-tight">
+            <div className="absolute bottom-16 right-4 bg-[#5496a2] text-white text-xs font-black px-4 py-3 rounded-xl shadow-lg w-[170px] text-center animate-bounce z-50 pointer-events-auto leading-tight">
               <div className="absolute -bottom-1.5 right-6 w-3 h-3 bg-[#5496a2] rotate-45"></div>
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowFabTooltip(false);
+                  if (typeof window !== 'undefined') sessionStorage.setItem('seen_fab_tooltip', 'true');
+                }}
+                className="absolute -top-2 -right-2 w-5 h-5 bg-[#1d3539] rounded-full flex items-center justify-center border border-[#5496a2] shadow-sm hover:scale-110 active:scale-95 transition-transform"
+              >
+                <X size={12} strokeWidth={3} className="text-white"/>
+              </button>
               Tap for 📍 & 🌳,<br/>Long Press for Free Walk!
             </div>
           )}
@@ -967,32 +1019,6 @@ export const MapView: React.FC = () => {
         onClose={() => setShowSignpostModal(false)} 
         currentLocation={currentCoordinate as [number, number]} 
       />
-      {showCongratsModal && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
-          <div className="bg-white border-4 border-slate-900 shadow-comic rounded-3xl w-full max-w-xs text-center p-6 animate-in zoom-in-90 duration-300">
-            <div className="text-6xl mb-4 animate-bounce">🎉</div>
-            <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-2">Awesome!</h2>
-            <p className="text-sm font-bold text-slate-600 mb-6">You sent positive vibes and Eco Energy. Why don't you drop your own signpost to inspire others?</p>
-            <div className="flex gap-2">
-              <button 
-                onClick={() => setShowCongratsModal(false)}
-                className="flex-1 border-2 border-slate-900 text-slate-900 font-bold py-2 rounded-xl hover:bg-slate-100 transition-colors"
-              >
-                Later
-              </button>
-              <button 
-                onClick={() => {
-                  setShowCongratsModal(false);
-                  setShowSignpostModal(true);
-                }}
-                className="flex-[2] bg-brand-green border-2 border-slate-900 text-slate-900 font-bold py-2 rounded-xl shadow-comic hover:-translate-y-1 transition-transform"
-              >
-                Drop Signpost 📍
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Points Store Modal Filtered */}
       {merchantStoreFilter && (

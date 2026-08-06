@@ -90,9 +90,9 @@ export const AdminDashboard: React.FC = () => {
       }));
       setDemoRequests(res.demoRequests.filter((d: any) => d.status === 'pending'));
       const socialTitles = [
-        'Friend Request', 'Friend Request Accepted', 'Friend Request Rejected',
-        'New Join Request', 'Join Request Approved', 'Join Request Rejected',
-        'Kicked from Community', 'Promoted to Admin'
+        'Friend Request', 'Friend Request Accepted', 'Friend Request Rejected', 'Friend Request Sent', 'Friend Removed',
+        'New Join Request', 'Join Request Approved', 'Join Request Rejected', 'Kicked from Community', 'Promoted to Admin',
+        'Community Terminated'
       ];
       
       const filteredSentMails = res.sentMails.filter((m: any) => 

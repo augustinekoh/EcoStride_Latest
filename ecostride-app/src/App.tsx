@@ -27,10 +27,11 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 function PublicApp() {
   const { activeView, isWaitingForApproval, isChatExpanded } = useDemoStore();
   const { user } = useAuthStore();
+  const { isDarkMode } = useUserStore();
 
   if (!user || isWaitingForApproval) {
     return (
-      <div className="w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500">
+      <div className={`w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500 ${isDarkMode ? 'dark' : ''}`}>
         <AuthModal />
       </div>
     );
@@ -40,14 +41,14 @@ function PublicApp() {
   // We only block if they explicitly registered with Email/Password and haven't verified.
   if (!user?.emailVerified) {
     return (
-      <div className="w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500">
+      <div className={`w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500 ${isDarkMode ? 'dark' : ''}`}>
         <VerificationPending />
       </div>
     );
   }
 
   return (
-    <div className="w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500">
+    <div className={`w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500 ${isDarkMode ? 'dark' : ''}`}>
       {activeView !== 'settings' && !isChatExpanded && <BottomNavBar />}
       
       {activeView === 'landing' && <LandingPage />}
@@ -79,6 +80,16 @@ function AdminApp() {
 function App() {
   const { setUser, loading, setLoading } = useAuthStore();
   const { setUserData } = useUserStore();
+  const isDarkMode = useUserStore(state => state.isDarkMode);
+
+  useEffect(() => {
+    // Sync dark mode class to HTML tag
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
 
   useEffect(() => {
     // Passive cleanup of expired trees and signposts
@@ -142,6 +153,8 @@ function App() {
               } catch (err) {
                 console.error("Failed to fetch community unread count", err);
               }
+            } else {
+              useUserStore.getState().setUserData({ communityUnreadCount: 0 });
             }
 
             // Friends Chat Unread polling
@@ -200,7 +213,8 @@ function App() {
                 sender: m.sender,
                 createdAt: m.created_at,
                 action_type: m.action_type,
-                action_data: m.action_data
+                action_data: m.action_data,
+                category: m.category
               })), mailData.read_mail_ids || []);
             }
           } catch (e) {

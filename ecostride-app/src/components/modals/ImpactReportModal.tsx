@@ -46,7 +46,7 @@ export const ImpactReportModal: React.FC = () => {
         <div className="space-y-4 mb-6">
           <div className="bg-white p-4 rounded-2xl border-2 border-[#1d3539] flex justify-between items-center">
             <span className="font-bold text-slate-500">Distance</span>
-            <span className="font-black text-xl text-[#1d3539]">{stats.distance.toFixed(1)} km</span>
+            <span className="font-black text-xl text-[#1d3539]">{stats.distance.toFixed(2)} km</span>
           </div>
           <div className="bg-[#e9efce] p-4 rounded-2xl border-2 border-[#1d3539] flex justify-between items-center">
             <span className="font-bold text-slate-500">CO2 Saved</span>

@@ -4,6 +4,8 @@ import { X, Trophy, TrendingUp, Calendar, Map as MapIcon, Shield } from 'lucide-
 import { apiClient, resolveAvatarUrl } from '../../lib/api';
 import { CommunityProfileModal } from './CommunityProfileModal';
 import { UserProfileModal } from './UserProfileModal';
+import { useAuthStore } from '../../stores/useAuthStore';
+import { useUserStore } from '../../stores/useUserStore';
 
 interface LeaderboardModalProps {
   isOpen: boolean;
@@ -12,20 +14,26 @@ interface LeaderboardModalProps {
 
 export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState<'weekly' | 'guild' | 'monthly' | 'total'>('weekly');
-  const [realPlayers, setRealPlayers] = useState<any[]>([]);
+  const [topDistance, setTopDistance] = useState<any[]>([]);
+  const [topCoins, setTopCoins] = useState<any[]>([]);
+  const [userRank, setUserRank] = useState<any | null>(null);
+  
   const [realGuilds, setRealGuilds] = useState<any[]>([]);
   const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<any | null>(null);
+
+  const { user } = useAuthStore();
+  const { avatar, username } = useUserStore();
 
   useEffect(() => {
     if (isOpen) {
       const fetchUsers = async () => {
         try {
-          const data = await apiClient('/leaderboard');
+          const url = user?.uid ? `/leaderboard?userId=${user.uid}` : '/leaderboard';
+          const data = await apiClient(url);
           
-          const users = data.users.map((u: any) => {
+          const formatUsers = (users: any[]) => users.map((u: any) => {
             const emailSum = (u.email || u.username || 'user').split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
-            
             return {
               id: u.id,
               name: u.username || (u.email ? u.email.split('@')[0] : 'Unknown Player'),
@@ -41,7 +49,10 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
               player_id: u.player_id
             };
           });
-          setRealPlayers(users);
+          
+          setTopDistance(formatUsers(data.topDistance || []));
+          setTopCoins(formatUsers(data.topCoins || []));
+          if (data.userRank) setUserRank(data.userRank);
         } catch (err) {
           console.error("Failed to fetch users:", err);
         }
@@ -74,17 +85,14 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
   const { guilds } = leaderboardData;
 
   const getSortedPlayers = () => {
-    const list = [...leaderboardData.players, ...realPlayers];
-    const uniqueList = Array.from(new Map(list.map(item => [item.id, item])).values());
     switch (activeTab) {
       case 'weekly':
-        return uniqueList.sort((a, b) => b.weeklyPoints - a.weeklyPoints).slice(0, 20);
       case 'monthly':
-        return uniqueList.sort((a, b) => b.monthlyPoints - a.monthlyPoints).slice(0, 20);
+        return topCoins;
       case 'total':
-        return uniqueList.sort((a, b) => b.totalMileageKm - a.totalMileageKm).slice(0, 20);
+        return topDistance;
       default:
-        return uniqueList.slice(0, 20);
+        return topCoins;
     }
   };
 
@@ -98,6 +106,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
 
   const renderPlayerList = () => {
     const sorted = getSortedPlayers();
+    
     return (
       <div className="space-y-3 mt-4">
         {sorted.map((player, idx) => (
@@ -221,9 +230,44 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
           </button>
         </div>
 
-        <div className="p-4 overflow-y-auto flex-1">
+        <div className="p-4 overflow-y-auto flex-1 relative">
           {activeTab === 'guild' ? renderGuildList() : renderPlayerList()}
         </div>
+        
+        {/* Sticky Personal Rank Footer */}
+        {userRank && activeTab !== 'guild' && (
+          <div className="bg-white/90 backdrop-blur-md border-t-2 border-[#1d3539] p-4 shrink-0 shadow-[0_-4px_15px_rgba(0,0,0,0.05)] flex items-center gap-3 sm:gap-4 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-[#fff4d6]/50 to-[#e9efce]/50 -z-10"></div>
+            
+            <div className="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-full flex items-center justify-center font-black text-white bg-amber-500 shadow-[2px_2px_0px_0px_#1d3539] text-sm sm:text-base border-2 border-[#1d3539]">
+              #{activeTab === 'total' ? userRank.distanceRank : userRank.coinsRank}
+            </div>
+            
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-100 flex items-center justify-center text-xl sm:text-2xl overflow-hidden shrink-0 border-2 border-[#1d3539] shadow-[2px_2px_0px_0px_#1d3539]">
+              {avatar ? (
+                <img src={resolveAvatarUrl(avatar, username || 'user')} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <img src={`https://api.dicebear.com/7.x/bottts/svg?seed=${username || 'user'}`} alt="Avatar" className="w-full h-full object-cover" />
+              )}
+            </div>
+            
+            <div className="flex-1 min-w-0">
+              <h3 className="font-black text-[#1d3539] text-base sm:text-lg truncate">Your Rank</h3>
+              <p className="text-[10px] sm:text-xs font-bold text-slate-500 truncate">Keep pushing to climb!</p>
+            </div>
+            
+            <div className="text-right shrink-0">
+              <p className="font-black text-amber-600 text-lg sm:text-xl">
+                {activeTab === 'total' 
+                  ? Number(userRank.distanceScore || 0).toFixed(2) 
+                  : (userRank.coinsScore || 0)}
+              </p>
+              <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">
+                {activeTab === 'total' ? 'KM' : 'PTS'}
+              </p>
+            </div>
+          </div>
+        )}
 
       </div>
       <UserProfileModal isOpen={!!selectedPlayer} onClose={() => setSelectedPlayer(null)} player={selectedPlayer} />

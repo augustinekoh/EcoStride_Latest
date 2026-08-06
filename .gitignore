@@ -11,3 +11,5 @@ node_modules/
 
 /*.js
 old_backups/
+
+*.zip

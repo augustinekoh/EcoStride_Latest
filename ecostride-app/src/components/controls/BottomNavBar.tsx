@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useDemoStore } from '../../stores/useDemoStore';
 import { useUserStore } from '../../stores/useUserStore';
+import { useMailStore } from '../../stores/useMailStore';
 import { Home, Map as MapIcon, Users, User, Building } from 'lucide-react';
 
 export const BottomNavBar: React.FC = () => {
@@ -8,7 +9,8 @@ export const BottomNavBar: React.FC = () => {
   const [isExpanded, setIsExpanded] = useState(false);
   const communityUnreadCount = useUserStore(state => state.communityUnreadCount);
   const friendsUnreadCount = useUserStore(state => state.friendsUnreadCount);
-  const totalSocialUnread = communityUnreadCount + friendsUnreadCount;
+  const unreadRequestsCount = useMailStore(state => state.unreadRequestsCount);
+  const totalSocialUnread = communityUnreadCount + friendsUnreadCount + unreadRequestsCount;
 
   const showBar = activeView !== 'map' || isExpanded;
 

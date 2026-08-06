@@ -2,11 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useUserStore } from '../../stores/useUserStore';
 import { useDemoStore } from '../../stores/useDemoStore';
 import { useAuthStore } from '../../stores/useAuthStore';
-import { Settings, Edit2, Check, Globe, Building2, TreePine, Users, Award, Ticket, X, QrCode, Clock, Store, Camera, Loader2 } from 'lucide-react';
+import { Settings, Edit2, Check, Globe, Building2, TreePine, Users, Award, Ticket, X, QrCode, Clock, Store, Camera, Loader2, Coins } from 'lucide-react';
 import { apiClient, resolveAvatarUrl } from '../../lib/api';
 import QRCode from 'react-qr-code';
 import imageCompression from 'browser-image-compression';
 import { AvatarCropModal } from '../modals/AvatarCropModal';
+import { BadgeInfoModal } from '../modals/BadgeInfoModal';
+import { BadgeShowcaseModal } from '../modals/BadgeShowcaseModal';
+import { PointsStoreModal } from '../modals/PointsStoreModal';
+import { PullCord } from 'pullcord';
+import 'pullcord/pullcord.css';
 
 export const ProfileView: React.FC = () => {
   const { 
@@ -20,7 +25,16 @@ export const ProfileView: React.FC = () => {
     avatar,
     guildName,
     guildId,
-    setUserData
+    newsEnabled,
+    dailyReminderEnabled,
+    newFollowerEnabled,
+    shareActivity,
+    doNotDisturb,
+    isDarkMode,
+    activityHistory,
+    setUserData,
+    showcasedBadges,
+    userCoins
   } = useUserStore();
   
   const { user } = useAuthStore();
@@ -41,6 +55,13 @@ export const ProfileView: React.FC = () => {
   const [showRedeemModal, setShowRedeemModal] = useState(false);
   const [redeemLoading, setRedeemLoading] = useState(false);
   const [countdown, setCountdown] = useState<number>(0);
+  
+  // Badge Info Modal
+  const [selectedBadge, setSelectedBadge] = useState<any | null>(null);
+  const [isEditingShowcase, setIsEditingShowcase] = useState(false);
+  
+  // Store Modal
+  const [showStore, setShowStore] = useState(false);
 
   useEffect(() => {
     if (user?.uid) {
@@ -219,18 +240,25 @@ export const ProfileView: React.FC = () => {
         )}
       </div>
 
-      {/* Friends & Group (Social) */}
+      {/* Eco Coins & Group (Social) */}
       <div className="grid grid-cols-2 gap-4 relative z-10">
-        <div onClick={() => alert("Friend List feature coming soon!")} className="glass-card p-4 flex flex-col gap-2 cursor-pointer hover:shadow-md hover:-translate-y-1 transition-transform group border border-white/60">
-          <div className="w-10 h-10 bg-indigo-100/50 rounded-full flex items-center justify-center text-indigo-500 group-hover:scale-110 transition-transform"><Users size={20}/></div>
-          <span className="text-xs font-bold text-[var(--color-text-muted)]">Friends</span>
-          <span className="text-xl font-black text-[var(--color-text-main)]">0</span>
-          <span className="text-[10px] text-[var(--color-teal-dark)] font-bold mt-1 group-hover:underline">View List &rarr;</span>
+        <div onClick={() => setShowStore(true)} className="glass-card p-4 flex flex-col gap-2 cursor-pointer hover:shadow-md hover:-translate-y-1 transition-transform group border border-white/60 relative overflow-hidden">
+          <div className="absolute -right-4 -bottom-4 opacity-10 rotate-12 scale-150">
+            <Coins size={100} />
+          </div>
+          <div className="w-10 h-10 bg-amber-100/50 rounded-full flex items-center justify-center text-amber-500 group-hover:scale-110 transition-transform shadow-sm relative z-10"><Coins size={20}/></div>
+          <span className="text-xs font-bold text-[var(--color-text-muted)] relative z-10">Eco Coins</span>
+          <span className="text-2xl font-black text-[var(--color-text-main)] relative z-10">{userCoins || 0}</span>
+          <span className="text-[10px] text-amber-600 font-bold mt-1 group-hover:underline relative z-10 flex items-center gap-1">Spend in Store <Store size={10}/></span>
         </div>
-        <div onClick={() => setActiveView('social')} className="glass-card p-4 flex flex-col gap-2 group cursor-pointer hover:shadow-md hover:-translate-y-1 transition-transform border border-white/60">
-          <div className="w-10 h-10 bg-blue-100/50 rounded-full flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform"><Users size={20}/></div>
-          <span className="text-xs font-bold text-[var(--color-text-muted)]">Group</span>
-          <span className="text-xl font-black text-[var(--color-text-main)] truncate">{guildName || (guildId && guildId !== 'None' ? guildId : 'None')}</span>
+        <div onClick={() => setActiveView('group')} className="glass-card p-4 flex flex-col gap-2 group cursor-pointer hover:shadow-md hover:-translate-y-1 transition-transform border border-white/60 relative overflow-hidden">
+          <div className="absolute -right-4 -bottom-4 opacity-5 rotate-12 scale-150">
+            <Building2 size={100} />
+          </div>
+          <div className="w-10 h-10 bg-blue-100/50 rounded-full flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform shadow-sm relative z-10"><Building2 size={20}/></div>
+          <span className="text-xs font-bold text-[var(--color-text-muted)] relative z-10">Group</span>
+          <span className="text-xl font-black text-[var(--color-text-main)] truncate relative z-10">{guildName || (guildId && guildId !== 'None' ? guildId : 'None')}</span>
+          <span className="text-[10px] text-blue-600 font-bold mt-1 group-hover:underline relative z-10 flex items-center gap-1">View Group &rarr;</span>
         </div>
       </div>
 
@@ -253,19 +281,58 @@ export const ProfileView: React.FC = () => {
       </div>
 
       {/* Achievement Badges */}
-      <h3 className="text-sm font-black text-[var(--color-text-muted)] uppercase tracking-widest pl-2 relative z-10 mt-6">Achievements</h3>
+      <div className="flex items-center gap-2 pl-2 mt-6 relative z-10 mb-2">
+        <h3 className="text-sm font-black text-[var(--color-text-muted)] uppercase tracking-widest">Achievements</h3>
+        <button onClick={() => setIsEditingShowcase(true)} className="p-1.5 glass-card rounded-md hover:text-[var(--color-text-main)] transition-colors text-[var(--color-text-muted)] flex items-center justify-center">
+          <Edit2 size={12} />
+        </button>
+      </div>
       <div className="glass-card p-5 relative z-10 border border-white/60">
         <div className="flex flex-wrap gap-4">
-          {unlockedBadges.length > 0 ? (
-            unlockedBadges.map((badge, idx) => (
-              <div key={idx} className="w-20 h-20 bg-gradient-to-br from-[var(--color-soft-green)] to-white rounded-2xl flex flex-col items-center justify-center border border-white shadow-sm hover:shadow-md hover:-translate-y-1 transition-transform">
-                <Award size={28} className="text-[var(--color-teal-dark)] mb-1" />
-                <span className="text-[10px] font-bold text-[var(--color-text-main)] text-center uppercase tracking-wider">{badge.replace('_', ' ')}</span>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm font-bold text-[var(--color-text-muted)] py-4 w-full text-center">No badges unlocked yet.</p>
-          )}
+          {(() => {
+            let parsedUnlocked: any[] = [];
+            if (typeof unlockedBadges === 'string') {
+              try { parsedUnlocked = JSON.parse(unlockedBadges); } catch(e) {}
+            } else if (Array.isArray(unlockedBadges)) {
+              parsedUnlocked = unlockedBadges;
+            }
+
+            let parsedShowcased: string[] = [];
+            if (typeof showcasedBadges === 'string') {
+              try { parsedShowcased = JSON.parse(showcasedBadges); } catch(e) {}
+            } else if (Array.isArray(showcasedBadges)) {
+              parsedShowcased = showcasedBadges;
+            }
+
+            let badgesToRender: any[] = [];
+            if (parsedShowcased.length > 0) {
+              // Filter unlocked to only showcased
+              badgesToRender = parsedUnlocked.filter(b => parsedShowcased.includes(b.id));
+            } else {
+              // Default: top 4 highest level, or first 4
+              badgesToRender = [...parsedUnlocked].sort((a, b) => b.level - a.level).slice(0, 4);
+            }
+            
+            return badgesToRender.length > 0 ? (
+              badgesToRender.map((badge: any, idx) => (
+                <div 
+                  key={idx} 
+                  onClick={() => setSelectedBadge(badge)}
+                  className="w-20 h-20 bg-gradient-to-br from-[var(--color-soft-green)] to-white rounded-2xl flex flex-col items-center justify-center border border-white shadow-sm hover:shadow-md hover:-translate-y-1 transition-transform relative cursor-pointer"
+                >
+                  <span className="text-3xl mb-1 drop-shadow-sm">{badge.icon}</span>
+                  <span className="text-[9px] font-black text-slate-800 text-center uppercase tracking-wider leading-tight px-1">{badge.name}</span>
+                  {badge.level > 1 && (
+                    <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full border border-white shadow-sm">
+                      Lv.{badge.level}
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <p className="text-sm font-bold text-[var(--color-text-muted)] py-4 w-full text-center">No badges unlocked yet.</p>
+            );
+          })()}
           <div className="w-20 h-20 bg-white/40 rounded-2xl flex items-center justify-center border-dashed border-2 border-white/80 opacity-60">
             <Award size={28} className="text-[var(--color-text-muted)]" />
           </div>
@@ -279,6 +346,17 @@ export const ProfileView: React.FC = () => {
         imageSrc={cropImageSrc}
         onConfirm={handleAvatarCropped}
       />
+      
+      {/* Badge Info Modal */}
+      <BadgeInfoModal 
+        badge={selectedBadge}
+        onClose={() => setSelectedBadge(null)}
+      />
+      
+      {/* Badge Showcase Modal */}
+      {isEditingShowcase && (
+        <BadgeShowcaseModal onClose={() => setIsEditingShowcase(false)} />
+      )}
     </div>
   );
 
@@ -346,24 +424,38 @@ export const ProfileView: React.FC = () => {
     </div>
   );
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   return (
-    <div className="h-full w-full pb-32 overflow-y-auto relative">
-      {/* 3D Ethereal Floating Tree Illusion Component (Abstract representation) */}
+    <div 
+      className="h-full w-full overflow-y-auto pb-32 relative bg-[var(--color-bg-main)] transition-colors duration-500 custom-scrollbar"
+    >
+      <div className="absolute top-0 left-0 w-full h-[50vh] bg-gradient-to-b from-[var(--color-pastel-yellow)]/30 to-transparent pointer-events-none transition-colors duration-500"></div>
+
       <div className="absolute top-20 right-0 w-64 h-64 bg-[var(--color-pastel-yellow)] rounded-full mix-blend-overlay filter blur-3xl opacity-60 animate-pulse pointer-events-none"></div>
       <div className="absolute bottom-40 left-[-2rem] w-80 h-80 bg-[var(--color-soft-green-2)] rounded-full mix-blend-overlay filter blur-3xl opacity-40 pointer-events-none"></div>
       
       {/* Header Nav */}
-      <div className="flex justify-between items-center p-4 md:p-8 relative z-20">
+      <div className="relative flex justify-between items-center p-4 md:p-8 z-50">
         <div className="flex items-center gap-2 px-3 py-1.5 glass-card rounded-full shadow-sm border border-white/60">
           <Globe size={14} className="text-[var(--color-teal-dark)]"/>
           <span className="text-xs font-black text-[var(--color-text-main)] uppercase tracking-widest">{nationality || 'Global Citizen'}</span>
         </div>
-        <button 
-          onClick={() => setActiveView('settings')}
-          className="w-10 h-10 glass-card rounded-full flex items-center justify-center hover:-translate-y-1 transition-transform border border-white/60 shadow-sm"
-        >
-          <Settings size={20} className="text-[var(--color-text-main)]" />
-        </button>
+        
+        <div className="relative" style={{ transform: 'translateZ(0)', '--pullcord-top': '-15px', '--pullcord-right': '20px', '--pullcord-z': 0 } as React.CSSProperties}>
+          {/* Easter Egg Theme Toggle anchored to Settings button */}
+          <PullCord 
+            onPull={() => setUserData({ isDarkMode: !isDarkMode })}
+            pulled={isDarkMode}
+            ariaLabel="Toggle theme"
+          />
+          <button 
+            onClick={() => setActiveView('settings')}
+            className="w-10 h-10 glass-card rounded-full flex items-center justify-center hover:-translate-y-1 transition-transform border border-white/60 shadow-sm relative z-10"
+          >
+            <Settings size={20} className="text-[var(--color-text-main)]" />
+          </button>
+        </div>
       </div>
 
       <div className="px-4 md:px-8 mt-2">
@@ -491,6 +583,7 @@ export const ProfileView: React.FC = () => {
           </p>
         </div>
       )}
+      {showStore && <PointsStoreModal onClose={() => setShowStore(false)} />}
     </div>
   );
 };

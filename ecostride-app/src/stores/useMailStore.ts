@@ -16,7 +16,8 @@ interface MailState {
 
 const socialTitles = [
   'Friend Request', 'Friend Request Accepted', 'Friend Request Rejected', 'Friend Request Sent', 'Friend Removed',
-  'New Join Request', 'Join Request Approved', 'Join Request Rejected', 'Kicked from Community', 'Promoted to Admin'
+  'New Join Request', 'Join Request Approved', 'Join Request Rejected', 'Kicked from Community', 'Promoted to Admin',
+  'Community Terminated'
 ];
 
 function isSocial(m: any) {

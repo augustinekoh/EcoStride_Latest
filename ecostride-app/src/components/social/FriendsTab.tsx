@@ -108,12 +108,12 @@ export function FriendsTab() {
         <h2 className="text-sm font-black uppercase text-slate-500 mb-3 tracking-widest">Find Friends</h2>
         <form onSubmit={handleSearch} className="relative flex items-center group">
           <Search size={20} className="absolute left-5 text-slate-400 group-focus-within:text-[var(--color-teal-dark)] transition-colors" />
-          <input
-            type="text"
-            placeholder="Search by username or ID..."
+          <input 
+            type="text" 
+            placeholder="Search by username or ID..." 
+            className="w-full glass-card rounded-full pl-14 pr-12 py-4 text-[15px] font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-[3px] focus:ring-[var(--color-teal-dark)]/20 transition-all shadow-[0_8px_30px_rgb(0,0,0,0.04)]"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-white rounded-full pl-14 pr-12 py-4 text-[15px] font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-[3px] focus:ring-[var(--color-teal-dark)]/20 transition-all border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)]"
           />
           <button 
             type="submit" 
@@ -137,8 +137,8 @@ export function FriendsTab() {
               return (
                 <div 
                   key={user.id} 
+                  className="glass-card rounded-[1.5rem] p-4 flex items-center justify-between cursor-pointer hover:shadow-md transition-all shadow-[0_4px_20px_rgb(0,0,0,0.03)]"
                   onClick={() => setSelectedProfile(user)}
-                  className="bg-white rounded-[1.5rem] p-4 flex items-center justify-between cursor-pointer hover:shadow-md transition-all shadow-[0_4px_20px_rgb(0,0,0,0.03)] border border-slate-50"
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-[var(--color-teal-dark)]/20 flex items-center justify-center text-[var(--color-teal-dark)] overflow-hidden shrink-0">
@@ -181,17 +181,17 @@ export function FriendsTab() {
         <h2 className="text-sm font-black uppercase text-slate-500 mb-3 tracking-widest">My Friends</h2>
         {loadingFriends ? (
           <div className="text-center p-4"><div className="animate-spin text-2xl mx-auto w-fit">⌛</div></div>
-        ) : friends.filter(f => f.status === 'accepted').length === 0 ? (
+        ) : friends.filter(f => f.status === 'accepted' && (!searchQuery.trim() || f.username?.toLowerCase().includes(searchQuery.toLowerCase()) || f.player_id?.includes(searchQuery.trim()))).length === 0 ? (
           <div className="glass-card rounded-2xl p-6 text-center border border-dashed border-black/10">
-            <p className="font-bold text-slate-400">No friends added yet.</p>
+            <p className="font-bold text-slate-400">No friends found.</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {friends.filter(f => f.status === 'accepted').map(friend => (
+            {friends.filter(f => f.status === 'accepted' && (!searchQuery.trim() || f.username?.toLowerCase().includes(searchQuery.toLowerCase()) || f.player_id?.includes(searchQuery.trim()))).map(friend => (
               <div 
                 key={friend.id} 
+                className="glass-card rounded-[1.5rem] p-4 flex items-center justify-between cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all shadow-[0_8px_30px_rgb(0,0,0,0.04)]"
                 onClick={() => setSelectedProfile(friend)}
-                className="bg-white rounded-[1.5rem] p-4 flex items-center justify-between cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-50"
               >
                 <div className="flex items-center gap-3">
                   <div className="relative shrink-0">

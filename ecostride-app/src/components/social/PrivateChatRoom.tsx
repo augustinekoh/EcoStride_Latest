@@ -50,19 +50,19 @@ export function PrivateChatRoom() {
   if (!activePrivateChat || !currentUserId) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-[#faf9f6]/95 backdrop-blur-xl flex flex-col pointer-events-auto">
+    <div className="fixed inset-0 z-[100] bg-[var(--color-bg-main)]/95 backdrop-blur-xl flex flex-col pointer-events-auto transition-colors">
       <div className="flex-1 w-full h-full flex flex-col">
         {/* Header */}
-        <div className="px-4 py-3 border-b border-black/5 flex items-center bg-white/70 backdrop-blur-xl z-10 sticky top-0 shadow-sm">
+        <div className="px-4 py-3 border-b border-black/5 dark:border-white/5 flex items-center justify-center glass-card border-none rounded-none backdrop-blur-xl z-10 sticky top-0 shadow-sm">
           <button 
             onClick={() => setActivePrivateChat(null)}
-            className="p-2 -ml-2 rounded-full text-[var(--color-teal-dark)] active:bg-black/5 transition-colors absolute left-4 flex items-center"
+            className="p-2 -ml-2 rounded-full text-[#5496a2] hover:text-[var(--color-text-main)] active:bg-black/5 transition-colors absolute left-4 flex items-center"
           >
-            <ArrowLeft size={26} strokeWidth={2.5} />
+            <ArrowLeft size={24} strokeWidth={2} />
           </button>
           <div className="flex-1 flex flex-col items-center justify-center">
-            <h2 className="text-lg font-bold text-slate-800 tracking-tight leading-none mb-1">{activePrivateChat.friendUsername}</h2>
-            <div className="flex items-center text-[10px] font-semibold text-slate-400 leading-none">
+            <h2 className="text-[16px] font-bold text-[var(--color-text-main)]">{activePrivateChat.friendUsername}</h2>
+            <div className="flex items-center text-[10px] font-semibold text-[#5496a2]">
               <div className={`w-1.5 h-1.5 rounded-full mr-1.5 ${isConnected ? 'bg-emerald-400' : 'bg-rose-400 animate-pulse'}`} />
               {isConnected ? 'Online' : 'Connecting...'}
             </div>
@@ -111,7 +111,7 @@ export function PrivateChatRoom() {
                 <React.Fragment key={msg.id || idx}>
                   {showDateDivider && (
                     <div className="flex justify-center my-6">
-                      <span className="bg-white text-[#5496a2] text-xs font-bold px-3 py-1 rounded-full border border-[#1d3539]/10 shadow-sm">
+                      <span className="bg-white dark:bg-slate-800 text-[#5496a2] text-xs font-bold px-3 py-1 rounded-full border border-[#1d3539]/10 shadow-sm">
                         {dateHeaderText}
                       </span>
                     </div>
@@ -131,7 +131,7 @@ export function PrivateChatRoom() {
                       <div className={`max-w-[75%] rounded-[1.3rem] px-4 py-2.5 shadow-sm ${
                         isMe 
                           ? 'bg-gradient-to-br from-[#5496a2] to-[#3a7c88] text-white rounded-br-sm shadow-[0_4px_12px_rgba(84,150,162,0.2)]' 
-                          : 'bg-white text-slate-800 border border-black/5 rounded-bl-sm shadow-[0_4px_12px_rgba(0,0,0,0.03)]'
+                          : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-black/5 dark:border-white/10 rounded-bl-sm shadow-[0_4px_12px_rgba(0,0,0,0.03)]'
                       }`}>
                         <p className="text-[15px] font-medium leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
                         <div className={`text-[10px] mt-1 font-bold ${isMe ? 'text-emerald-50' : 'text-slate-400'} text-right opacity-80`}>
@@ -147,7 +147,7 @@ export function PrivateChatRoom() {
         </div>
 
         {/* Input Area */}
-        <div className="p-4 bg-white/60 border-t border-[#1d3539]/10 backdrop-blur-md pb-8">
+        <div className="p-4 glass-card border-none rounded-none border-t border-[#1d3539]/10 dark:border-white/10 backdrop-blur-md pb-8">
           <form onSubmit={handleSend} className="relative max-w-2xl mx-auto flex items-end">
             <textarea
               ref={textareaRef}
@@ -169,7 +169,7 @@ export function PrivateChatRoom() {
               }}
               placeholder="Type a message..."
               disabled={!isConnected}
-              className="w-full bg-white text-[#1d3539] placeholder-slate-400 rounded-2xl py-4 pl-6 pr-14 outline-none border border-[#1d3539]/10 shadow-sm font-medium focus:border-[var(--color-teal-dark)] focus:ring-4 focus:ring-[var(--color-teal-dark)]/20 transition-all resize-none min-h-[56px] max-h-[150px]"
+              className="w-full bg-white dark:bg-slate-800 text-[#1d3539] dark:text-slate-100 placeholder-slate-400 rounded-2xl py-4 pl-6 pr-14 outline-none border border-[#1d3539]/10 dark:border-white/10 shadow-sm font-medium focus:border-[var(--color-teal-dark)] focus:ring-4 focus:ring-[var(--color-teal-dark)]/20 transition-all resize-none min-h-[56px] max-h-[150px]"
               rows={1}
               style={{ height: '56px' }}
             />

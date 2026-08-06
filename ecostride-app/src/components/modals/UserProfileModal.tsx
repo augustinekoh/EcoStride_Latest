@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, User, UserPlus, UserMinus, Check, Clock, TreePine, Award, Footprints, Users, AlertTriangle } from 'lucide-react';
 import { auth } from '../../firebase';
 import { apiClient } from '../../lib/api';
+import { BadgeInfoModal } from './BadgeInfoModal';
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -15,6 +16,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
   const [loading, setLoading] = useState(false);
   const [isAvatarExpanded, setIsAvatarExpanded] = useState(false);
   const [copyMsg, setCopyMsg] = useState('');
+  const [selectedBadge, setSelectedBadge] = useState<any | null>(null);
 
   useEffect(() => {
     if (!isOpen || !player?.id) return;
@@ -90,12 +92,22 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
   const nationality = displayUser.nationality || 'Global Citizen';
   const bio = displayUser.bio || "This user hasn't written a bio yet.";
 
-  // Derive badges from trees planted
-  const badges = [];
-  if (treesPlanted >= 1) badges.push({ name: 'First Seed', icon: '🌱' });
-  if (treesPlanted >= 5) badges.push({ name: 'Nature Lover', icon: '🌿' });
-  if (treesPlanted >= 10) badges.push({ name: 'Forest Guardian', icon: '🌳' });
-  if (treesPlanted >= 50) badges.push({ name: 'Eco Legend', icon: '👑' });
+  let badges: any[] = [];
+  try {
+    badges = JSON.parse(displayUser.unlocked_badges || '[]');
+  } catch (e) {}
+
+  let showcased: string[] = [];
+  try {
+    showcased = JSON.parse(displayUser.showcased_badges || '[]');
+  } catch (e) {}
+
+  let badgesToRender: any[] = [];
+  if (showcased.length > 0) {
+    badgesToRender = badges.filter(b => showcased.includes(b.id));
+  } else {
+    badgesToRender = [...badges].sort((a, b) => b.level - a.level).slice(0, 4);
+  }
 
   return (
     <div className="fixed inset-0 z-[160] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
@@ -207,14 +219,23 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
                   <Award size={22} className="text-amber-600" />
                   <span className="text-lg">Achievements</span>
                 </div>
-                <div className="flex flex-wrap gap-2.5">
-                  {badges.length > 0 ? badges.map((badge, idx) => (
-                    <div key={idx} className="bg-white/40 backdrop-blur-md border border-white/50 px-3 py-2 rounded-xl flex items-center gap-2 shadow-sm transition-transform hover:scale-105">
-                      <span className="text-xl drop-shadow-sm">{badge.icon}</span>
-                      <span className="text-xs font-black text-slate-800 drop-shadow-sm">{badge.name}</span>
+                <div className="grid grid-cols-2 gap-3 mt-2">
+                  {badgesToRender.length > 0 ? badgesToRender.map((badge, idx) => (
+                    <div 
+                      key={idx} 
+                      onClick={() => setSelectedBadge(badge)}
+                      className="aspect-[4/3] w-full bg-white/40 backdrop-blur-md border border-white/50 rounded-2xl flex flex-col items-center justify-center shadow-sm transition-transform hover:scale-105 relative cursor-pointer group"
+                    >
+                      <span className="text-3xl mb-1 drop-shadow-sm group-hover:scale-110 transition-transform">{badge.icon}</span>
+                      <span className="text-[10px] font-black text-slate-800 text-center uppercase tracking-wider leading-tight px-2 line-clamp-2">{badge.name}</span>
+                      {badge.level > 1 && (
+                        <div className="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full border border-white shadow-sm">
+                          Lv.{badge.level}
+                        </div>
+                      )}
                     </div>
                   )) : (
-                    <span className="text-sm font-bold text-slate-700/60">No achievements yet</span>
+                    <span className="text-sm font-bold text-slate-700/60 w-full text-center py-4">No achievements yet</span>
                   )}
                 </div>
               </div>
@@ -252,6 +273,12 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
           )}
 
         </div>
+        
+        {/* Badge Info Modal */}
+        <BadgeInfoModal 
+          badge={selectedBadge}
+          onClose={() => setSelectedBadge(null)}
+        />
       </div>
       
       {/* Full Screen Avatar Preview Popup */}

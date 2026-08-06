@@ -33,6 +33,7 @@ interface UserState {
   isDarkMode: boolean
   notifications: { id: string; title: string; message: string; icon: string; time: string }[]
   unlockedBadges: string[]
+  showcasedBadges: string[]
   activityHistory: { date: string; distance: number }[]
   createdAt?: number
   setUserData: (data: Partial<UserState>) => void
@@ -94,6 +95,7 @@ export const useUserStore = create<UserState>()(
       isDarkMode: false,
       notifications: [],
       unlockedBadges: [],
+      showcasedBadges: [],
       activityHistory: [],
       createdAt: undefined,
       hasReadAlerts: false,
@@ -122,6 +124,7 @@ export const useUserStore = create<UserState>()(
         return { totalCarbonSaved: newTotal };
       }),
       addActivity: (distance) => set((state) => {
+        if (distance <= 0) return state;
         const newTotal = state.totalDistanceKm + distance;
         
         syncToAPI({ totalDistanceKm: newTotal });
