@@ -7,7 +7,7 @@ import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 
 import { apiClient } from '../../lib/api';
 import { ChevronLeft, User, Bell, Lock, Sliders, HelpCircle, MessageSquare, LogOut, ChevronRight, Moon, Sun, Store } from 'lucide-react';
 
-type Tab = 'main' | 'profile' | 'notifications' | 'privacy' | 'appearance';
+type Tab = 'main' | 'profile' | 'notifications' | 'privacy';
 
 export const SettingsView: React.FC = () => {
   const { user } = useAuthStore();
@@ -131,7 +131,7 @@ export const SettingsView: React.FC = () => {
       <span className="font-bold text-[var(--color-text-main)]">{label}</span>
       <button 
         onClick={() => onChange(!checked)}
-        className={`w-12 h-6 rounded-full transition-colors relative ${checked ? 'bg-[var(--color-teal-dark)]' : 'bg-gray-300'}`}
+        className={`w-12 h-6 rounded-full transition-colors relative ${checked ? 'bg-[var(--color-teal-dark)]' : 'bg-black/20 dark:bg-white/20'}`}
       >
         <div className={`w-5 h-5 rounded-full bg-white absolute top-0.5 transition-transform ${checked ? 'translate-x-6' : 'translate-x-0.5'}`} />
       </button>
@@ -149,7 +149,7 @@ export const SettingsView: React.FC = () => {
               type="text" 
               value={(store as any)[field]}
               readOnly
-              className="bg-white/50 border border-white/60 p-3 rounded-xl font-bold text-[var(--color-text-main)] opacity-70 cursor-not-allowed focus:outline-none"
+              className="glass-card border-none bg-white/50 dark:bg-slate-800/50 p-3 rounded-xl font-bold text-[var(--color-text-main)] opacity-70 cursor-not-allowed focus:outline-none"
             />
           </div>
         ))}
@@ -160,7 +160,7 @@ export const SettingsView: React.FC = () => {
               type="text" 
               value={`#${store.player_id}`}
               readOnly
-              className="bg-white/50 border border-white/60 p-3 rounded-xl font-bold text-[var(--color-text-main)] opacity-70 cursor-not-allowed focus:outline-none"
+              className="glass-card border-none bg-white/50 dark:bg-slate-800/50 p-3 rounded-xl font-bold text-[var(--color-text-main)] opacity-70 cursor-not-allowed focus:outline-none"
             />
           </div>
         )}
@@ -169,7 +169,7 @@ export const SettingsView: React.FC = () => {
           <select 
             value={nationality}
             onChange={(e) => setNationality(e.target.value)}
-            className="bg-white/50 border border-white/60 p-3 rounded-xl font-bold text-[var(--color-text-main)] focus:outline-none focus:ring-2 focus:ring-[var(--color-teal-dark)]"
+            className="glass-card border-none bg-white/50 dark:bg-slate-800/50 p-3 rounded-xl font-bold text-[var(--color-text-main)] focus:outline-none focus:ring-2 focus:ring-[var(--color-teal-dark)]"
           >
             <option value="Global Citizen">Global Citizen</option>
             <option value="United States">United States</option>
@@ -188,7 +188,7 @@ export const SettingsView: React.FC = () => {
                 type="password" 
                 value="********"
                 readOnly
-                className="bg-white/50 border border-white/60 p-3 rounded-xl font-bold text-[var(--color-text-main)] opacity-70 flex-1"
+                className="glass-card border-none bg-white/50 dark:bg-slate-800/50 p-3 rounded-xl font-bold text-[var(--color-text-main)] opacity-70 flex-1"
               />
               <button 
                 onClick={() => setShowChangePassword(true)}
@@ -244,32 +244,16 @@ export const SettingsView: React.FC = () => {
 
   const renderPrivacy = () => {
     return (
-      <div className="space-y-2 relative z-10 animate-in slide-in-from-right-4 fade-in">
-        <h3 className="font-black text-xl text-[var(--color-text-main)] mb-6">Privacy</h3>
-        <Toggle label="Share Activity with Anyone" checked={store.shareActivity} onChange={(c) => store.setUserData({ shareActivity: c })} />
-        <Toggle label="Do Not Disturb" checked={store.doNotDisturb} onChange={(c) => store.setUserData({ doNotDisturb: c })} />
-      </div>
-    );
-  };
-
-  const renderAppearance = () => {
-    return (
       <div className="space-y-4 relative z-10 animate-in slide-in-from-right-4 fade-in">
-        <h3 className="font-black text-xl text-[var(--color-text-main)] mb-6">Appearance</h3>
-        <div className="flex gap-4">
-          <button 
-            onClick={() => store.setUserData({ isDarkMode: false })}
-            className={`flex-1 flex flex-col items-center gap-3 p-6 rounded-2xl border-2 transition-all ${!store.isDarkMode ? 'border-[var(--color-teal-dark)] glass-active shadow-md' : 'border-transparent glass-card hover:bg-white/30'}`}
-          >
-            <Sun size={32} className={!store.isDarkMode ? 'text-[var(--color-teal-dark)]' : 'text-gray-400'} />
-            <span className="font-bold text-sm">Light Mode</span>
-          </button>
-          <button 
-            onClick={() => store.setUserData({ isDarkMode: true })}
-            className={`flex-1 flex flex-col items-center gap-3 p-6 rounded-2xl border-2 transition-all ${store.isDarkMode ? 'border-[var(--color-teal-dark)] bg-slate-800 text-white shadow-md' : 'border-transparent glass-card hover:bg-white/30'}`}
-          >
-            <Moon size={32} className={store.isDarkMode ? 'text-[var(--color-teal-dark)]' : 'text-gray-400'} />
-            <span className="font-bold text-sm">Dark Mode</span>
+        <h3 className="font-black text-xl text-[var(--color-text-main)] mb-6">Privacy & Security</h3>
+        <Toggle label="Public Profile" checked={store.isPublicProfile} onChange={(c) => store.setUserData({ isPublicProfile: c })} />
+        <Toggle label="Share Activity Status" checked={store.shareActivityStatus} onChange={(c) => store.setUserData({ shareActivityStatus: c })} />
+        <Toggle label="Allow Friend Requests" checked={store.allowFriendRequests} onChange={(c) => store.setUserData({ allowFriendRequests: c })} />
+        
+        <div className="mt-8 pt-6 border-t-2 border-[var(--color-teal-dark)]/20 border-dashed">
+          <button onClick={() => setShowChangePassword(true)} className="w-full flex items-center justify-between p-4 glass-card border-none bg-white/50 dark:bg-slate-800/50 rounded-2xl hover:border-[var(--color-teal-dark)] transition-colors">
+            <span className="font-bold text-sm text-[var(--color-text-main)]">Change Password</span>
+            <ChevronRight size={20} className="text-[var(--color-text-muted)]" />
           </button>
         </div>
       </div>
@@ -277,7 +261,7 @@ export const SettingsView: React.FC = () => {
   };
 
   return (
-    <div className="h-full w-full p-4 md:p-8 pb-32 overflow-y-auto relative bg-[#faf9f6] transition-colors duration-500">
+    <div className="h-full w-full p-4 md:p-8 pb-32 overflow-y-auto relative transition-colors duration-500">
       <div className="absolute top-0 right-0 w-64 h-64 bg-[var(--color-pastel-yellow)] rounded-full mix-blend-overlay filter blur-3xl opacity-60 animate-pulse pointer-events-none"></div>
       
       <div className="flex items-center gap-4 mb-8 relative z-10 pt-2">
@@ -296,12 +280,10 @@ export const SettingsView: React.FC = () => {
         <div className="relative z-10 space-y-8 animate-in slide-in-from-left-4 fade-in">
           <section>
             <h3 className="text-sm font-black text-[var(--color-text-muted)] uppercase tracking-widest mb-4 pl-2">Account</h3>
-            <div className="flex flex-col">
-              <NavItem icon={User} title="Profile" onClick={() => setActiveTab('profile')} />
-
-              <NavItem icon={Bell} title="Notification" onClick={() => setActiveTab('notifications')} />
-              <NavItem icon={Lock} title="Privacy Setting" onClick={() => setActiveTab('privacy')} />
-              <NavItem icon={Sliders} title="Appearance" onClick={() => setActiveTab('appearance')} />
+            <div className="space-y-2">
+              <NavItem icon={User} title="Edit Profile" onClick={() => setActiveTab('profile')} />
+              <NavItem icon={Bell} title="Notifications" onClick={() => setActiveTab('notifications')} />
+              <NavItem icon={Lock} title="Privacy & Security" onClick={() => setActiveTab('privacy')} />
             </div>
           </section>
 
@@ -340,12 +322,11 @@ export const SettingsView: React.FC = () => {
       {activeTab === 'profile' && renderProfile()}
       {activeTab === 'notifications' && renderNotifications()}
       {activeTab === 'privacy' && renderPrivacy()}
-      {activeTab === 'appearance' && renderAppearance()}
 
       {showChangePassword && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-[#faf9f6] border-4 border-[#1d3539] rounded-3xl p-6 max-w-sm w-[calc(100%-8px)] sm:w-full shadow-[8px_8px_0px_0px_#1d3539]">
-            <h2 className="text-2xl font-black text-center mb-4 uppercase text-[#1d3539]">Change Password</h2>
+          <div className="bg-[var(--color-bg-main)] border-4 border-[var(--color-text-main)] rounded-3xl p-6 max-w-sm w-[calc(100%-8px)] sm:w-full shadow-[8px_8px_0px_0px_#1d3539] dark:shadow-[8px_8px_0px_0px_#ffffff]">
+            <h2 className="text-2xl font-black text-center mb-4 uppercase text-[var(--color-text-main)]">Change Password</h2>
             
             {pwError && <div className="bg-red-100 border-2 border-red-500 text-red-700 p-2 rounded-xl mb-4 text-sm font-bold">{pwError}</div>}
             {pwMsg && <div className="bg-green-100 border-2 border-green-500 text-green-700 p-2 rounded-xl mb-4 text-sm font-bold">{pwMsg}</div>}
@@ -358,7 +339,7 @@ export const SettingsView: React.FC = () => {
                   value={oldPassword}
                   onChange={(e) => setOldPassword(e.target.value)}
                   required
-                  className="w-full border-2 border-slate-900 rounded-xl px-4 py-2 font-bold focus:outline-none" 
+                  className="w-full bg-transparent border-2 border-[var(--color-text-main)] text-[var(--color-text-main)] rounded-xl px-4 py-2 font-bold focus:outline-none" 
                 />
               </div>
               <div>
@@ -368,7 +349,7 @@ export const SettingsView: React.FC = () => {
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   required
-                  className="w-full border-2 border-slate-900 rounded-xl px-4 py-2 font-bold focus:outline-none" 
+                  className="w-full bg-transparent border-2 border-[var(--color-text-main)] text-[var(--color-text-main)] rounded-xl px-4 py-2 font-bold focus:outline-none" 
                 />
               </div>
               
@@ -395,9 +376,9 @@ export const SettingsView: React.FC = () => {
 
       {showDeleteModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-[#faf9f6] border-4 border-[#1d3539] rounded-3xl p-6 max-w-sm w-[calc(100%-8px)] sm:w-full shadow-[8px_8px_0px_0px_#1d3539]">
+          <div className="bg-[var(--color-bg-main)] border-4 border-[var(--color-text-main)] rounded-3xl p-6 max-w-sm w-[calc(100%-8px)] sm:w-full shadow-[8px_8px_0px_0px_#1d3539] dark:shadow-[8px_8px_0px_0px_#ffffff]">
             <h2 className="text-2xl font-black text-center mb-2 uppercase text-red-600">Delete Account</h2>
-            <p className="text-sm font-bold text-slate-700 text-center mb-6">
+            <p className="text-sm font-bold text-[var(--color-text-main)] opacity-80 text-center mb-6">
               This action is <span className="text-red-500 font-black">permanent</span> and cannot be undone. All your coins, trees, and history will be lost.
             </p>
             
@@ -414,7 +395,7 @@ export const SettingsView: React.FC = () => {
                   onChange={(e) => setConfirmUsername(e.target.value)}
                   placeholder={store.username}
                   required
-                  className="w-full border-2 border-slate-900 rounded-xl px-4 py-2 font-bold focus:outline-none focus:border-red-500" 
+                  className="w-full bg-transparent border-2 border-[var(--color-text-main)] text-[var(--color-text-main)] rounded-xl px-4 py-2 font-bold focus:outline-none focus:border-red-500" 
                 />
               </div>
               

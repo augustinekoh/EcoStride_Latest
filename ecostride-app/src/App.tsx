@@ -15,57 +15,88 @@ import { AuthModal } from './components/modals/AuthModal';
 import { VerificationPending } from './components/landing/VerificationPending';
 import { AdminLogin } from './components/admin/AdminLogin';
 import { AdminDashboard } from './components/admin/AdminDashboard';
+import { SocialRouter } from './components/social/SocialRouter';
 import { useAuthStore } from './stores/useAuthStore';
 import { auth } from './firebase';
 import { onAuthStateChanged, setPersistence, browserSessionPersistence } from 'firebase/auth';
 import { apiClient } from './lib/api';
 import { useUserStore } from './stores/useUserStore';
 import { useMailStore } from './stores/useMailStore';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 function PublicApp() {
-  const { activeView, isWaitingForApproval } = useDemoStore();
+  const { activeView, isWaitingForApproval, isChatExpanded } = useDemoStore();
   const { user } = useAuthStore();
+  const { isDarkMode, bannedUntil } = useUserStore();
 
   if (!user || isWaitingForApproval) {
     return (
-      <div className="w-screen h-[100dvh] overflow-hidden relative text-slate-900 font-sans transition-colors duration-500">
+      <div className={`w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500 ${isDarkMode ? 'dark' : ''}`}>
         <AuthModal />
+      </div>
+    );
+  }
+
+  if (bannedUntil && bannedUntil > Date.now()) {
+    const timeLeft = Math.max(0, bannedUntil - Date.now());
+    const days = Math.floor(timeLeft / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const dateStr = new Date(bannedUntil).toLocaleDateString();
+
+    return (
+      <div className={`w-screen h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-sans transition-colors duration-500 ${isDarkMode ? 'dark' : ''}`}>
+        <div className="bg-white dark:bg-slate-800 border-4 border-red-200 dark:border-red-900/50 p-8 rounded-3xl max-w-md w-full text-center shadow-xl shadow-red-500/5">
+          <div className="text-6xl mb-6 drop-shadow-md">🚫</div>
+          <h1 className="text-2xl font-black text-red-500 uppercase tracking-widest mb-4">Account Suspended</h1>
+          <p className="text-slate-600 dark:text-slate-300 font-bold mb-2">
+            Your account has been temporarily suspended due to a violation of our community guidelines.
+          </p>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+            {bannedUntil > 4000000000000 ? (
+              <span className="text-red-500 font-black">This ban is permanent.</span>
+            ) : (
+              <span>The ban will be lifted in <span className="text-red-500 font-black">{days} days, {hours} hours</span> ({dateStr}).</span>
+            )}
+          </p>
+          <button 
+            onClick={() => auth.signOut()}
+            className="w-full bg-slate-900 dark:bg-red-600/20 hover:bg-black dark:hover:bg-red-600/30 dark:border dark:border-red-500/30 text-white font-black py-4 rounded-xl transition-all"
+          >
+            Sign Out
+          </button>
+        </div>
       </div>
     );
   }
 
   // Google sign-ins and other verified users will have emailVerified = true.
   // We only block if they explicitly registered with Email/Password and haven't verified.
-  if (!auth.currentUser?.emailVerified) {
+  if (!user?.emailVerified) {
     return (
-      <div className="w-screen h-[100dvh] overflow-hidden relative text-slate-900 font-sans transition-colors duration-500">
+      <div className={`w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500 ${isDarkMode ? 'dark' : ''}`}>
         <VerificationPending />
       </div>
     );
   }
 
   return (
-    <div className="w-screen h-[100dvh] overflow-hidden relative text-slate-900 font-sans transition-colors duration-500">
-      {activeView !== 'settings' && <BottomNavBar />}
+    <div className={`w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500 ${isDarkMode ? 'dark' : ''}`}>
+      {activeView !== 'settings' && !isChatExpanded && <BottomNavBar />}
       
       {activeView === 'landing' && <LandingPage />}
       {activeView === 'profile' && <ProfileView />}
       {activeView === 'settings' && <SettingsView />}
       {activeView === 'city' && <CityView />}
       {activeView === 'map' && (
-        <>
+        <ErrorBoundary>
           <MapView />
           <RouteSimulator />
           <ImpactReportModal />
-        </>
+        </ErrorBoundary>
       )}
       {activeView === 'merchant_dashboard' && <MerchantDashboard />}
       {activeView === 'merchant_onboarding' && <MerchantOnboardingForm />}
-      {activeView === 'group' && (
-        <div className="h-full w-full bg-brand-cream flex items-center justify-center p-8 text-center">
-          <h2 className="text-3xl font-black uppercase text-slate-400">Group System Coming Soon!</h2>
-        </div>
-      )}
+      {activeView === 'group' && <SocialRouter />}
     </div>
   );
 }
@@ -81,6 +112,16 @@ function AdminApp() {
 function App() {
   const { setUser, loading, setLoading } = useAuthStore();
   const { setUserData } = useUserStore();
+  const isDarkMode = useUserStore(state => state.isDarkMode);
+
+  useEffect(() => {
+    // Sync dark mode class to HTML tag
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
 
   useEffect(() => {
     // Passive cleanup of expired trees and signposts
@@ -96,7 +137,9 @@ function App() {
     // Force session persistence so closing the tab or opening a new tab logs out the user
     setPersistence(auth, browserSessionPersistence).catch(console.error);
     
-    let demoPollInterval: any = null;
+    let demoPollInterval: ReturnType<typeof setTimeout>;
+    let userPollInterval: ReturnType<typeof setTimeout>;
+    let isInitialMailFetch = true;
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -116,10 +159,13 @@ function App() {
                 totalTreesPlanted: data.user.total_trees_planted || 0,
                 createdAt: data.user.created_at || Date.now(), // fallback to now if not set
                 activityHistory: data.user.activityHistory || [],
-                avatar: data.user.avatar,
-                bio: data.user.bio,
-                nationality: data.user.nationality,
-                unlockedBadges: data.user.unlocked_badges ? JSON.parse(data.user.unlocked_badges) : []
+                avatar: data.user.avatar || null,
+                guildId: data.user.guild_id || null,
+                guildName: data.user.guildName || null,
+                bio: data.user.bio || '',
+                nationality: data.user.nationality || '',
+                unlockedBadges: data.user.unlocked_badges ? JSON.parse(data.user.unlocked_badges) : [],
+                bannedUntil: data.user.banned_until
               });
               
               // Handle role
@@ -130,6 +176,29 @@ function App() {
               }
             } else {
               setUser(user, 'user');
+            }
+
+            // Community Chat Unread polling
+            if (data.user && data.user.guild_id) {
+              try {
+                const unreadData = await apiClient('/chat/unread/' + data.user.guild_id);
+                useUserStore.getState().setUserData({ communityUnreadCount: unreadData.unread_count || 0 });
+              } catch (err) {
+                console.error("Failed to fetch community unread count", err);
+              }
+            } else {
+              useUserStore.getState().setUserData({ communityUnreadCount: 0 });
+            }
+
+            // Friends Chat Unread polling
+            try {
+              const friendsData = await apiClient('/friends/' + user.uid);
+              if (friendsData.friends) {
+                const totalFriendsUnread = friendsData.friends.reduce((sum: number, f: any) => sum + (f.unread_count || 0), 0);
+                useUserStore.getState().setUserData({ friendsUnreadCount: totalFriendsUnread });
+              }
+            } catch (err) {
+              console.error("Failed to fetch friends unread count", err);
             }
 
             // Mailbox listener via API
@@ -147,21 +216,39 @@ function App() {
                 if (m.recipient_type === 'guild' && userState.guildId && m.recipient_id === userState.guildId) return true;
                 return false;
               });
-              // Parse read_mails from backend
-              let backendReadMails: string[] | undefined = undefined;
-              if (data.user && data.user.read_mails) {
-                try {
-                  backendReadMails = JSON.parse(data.user.read_mails);
-                } catch(e) {}
+              
+              if (!isInitialMailFetch) {
+                const existingMails = useMailStore.getState().mails;
+                const newRequests = filtered.filter((m: any) => 
+                  (m.action_type === 'friend_request' || m.action_type === 'guild_join_request') &&
+                  !(existingMails || []).find(ex => ex.id === m.id)
+                );
+                
+                newRequests.forEach((req: any) => {
+                  let message = req.content;
+                  if (req.action_type === 'friend_request') {
+                    message = "You have a pending friend request to review";
+                  }
+                  
+                  useUserStore.getState().addNotification({
+                    title: req.title,
+                    message: message,
+                    icon: req.action_type === 'friend_request' ? 'Users' : 'Building'
+                  });
+                });
               }
+              isInitialMailFetch = false;
 
               useMailStore.getState().setMailsData(filtered.map((m: any) => ({
                 id: m.id,
                 title: m.title,
                 content: m.content,
                 sender: m.sender,
-                createdAt: m.created_at
-              })), backendReadMails);
+                createdAt: m.created_at,
+                action_type: m.action_type,
+                action_data: m.action_data,
+                category: m.category
+              })), mailData.read_mail_ids || []);
             }
           } catch (e) {
             console.error("Failed to fetch user data", e);
@@ -169,7 +256,7 @@ function App() {
           }
         };
 
-        if (user.email?.toLowerCase() === 'ecostride0@gmail.com') {
+        if (user.email?.toLowerCase() === 'ecostride0@gmail.com' || user.email?.toLowerCase() === 'ecostride_demo@gmail.com') {
           // Poll demo request status every 3 seconds
           const checkDemoStatus = async () => {
             try {
@@ -205,25 +292,20 @@ function App() {
           demoPollInterval = setInterval(checkDemoStatus, 3000);
         } else {
           fetchUserDataAndMails();
+          userPollInterval = setInterval(fetchUserDataAndMails, 60000);
         }
       } else {
         setUser(null, null);
-        setUserData({ 
-          userCoins: 0, 
-          totalCarbonSaved: 0, 
-          totalDistanceKm: 0, 
-          activityHistory: [],
-          notifications: [],
-          hasReadAlerts: true
-        });
-        useMailStore.getState().setMailsData([], []);
+        useUserStore.getState().clearUser();
         if (demoPollInterval) clearInterval(demoPollInterval);
+        if (userPollInterval) clearInterval(userPollInterval);
       }
       setLoading(false);
     });
     return () => {
       unsubscribe();
       if (demoPollInterval) clearInterval(demoPollInterval);
+      if (userPollInterval) clearInterval(userPollInterval);
     };
   }, [setUser, setLoading, setUserData]);
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Award, Globe, TreePine, MapPin } from 'lucide-react';
 import { apiClient } from '../../lib/api';
+import { BadgeInfoModal } from '../modals/BadgeInfoModal';
 
 interface Props {
   userId: string;
@@ -11,6 +12,7 @@ interface Props {
 export const PublicProfileModal: React.FC<Props> = ({ userId, isOpen, onClose }) => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedBadge, setSelectedBadge] = useState<any | null>(null);
 
   useEffect(() => {
     if (isOpen && userId) {
@@ -94,14 +96,35 @@ export const PublicProfileModal: React.FC<Props> = ({ userId, isOpen, onClose })
             {(() => {
               let badges: any[] = [];
               try { badges = JSON.parse(user.unlocked_badges || '[]'); } catch (e) {}
-              if (badges.length > 0) {
+
+              let showcased: string[] = [];
+              try { showcased = JSON.parse(user.showcased_badges || '[]'); } catch (e) {}
+
+              let badgesToRender: any[] = [];
+              if (showcased.length > 0) {
+                badgesToRender = badges.filter(b => showcased.includes(b.id));
+              } else {
+                badgesToRender = [...badges].sort((a, b) => b.level - a.level).slice(0, 4);
+              }
+
+              if (badgesToRender.length > 0) {
                 return (
                   <div className="w-full">
-                    <h3 className="text-xs font-black text-slate-400 uppercase mb-2">Unlocked Badges ({badges.length})</h3>
+                    <h3 className="text-xs font-black text-slate-400 uppercase mb-2">Showcase ({badgesToRender.length})</h3>
                     <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                      {badges.map((badge: any, idx: number) => (
-                        <div key={idx} className="w-12 h-12 shrink-0 bg-[#fff4d6] border-2 border-[#1d3539] rounded-full flex items-center justify-center text-xl shadow-[2px_2px_0px_0px_#1d3539]" title={badge.name}>
+                      {badgesToRender.map((badge: any, idx: number) => (
+                        <div 
+                          key={idx} 
+                          onClick={() => setSelectedBadge(badge)}
+                          className="w-12 h-12 shrink-0 bg-[#fff4d6] border-2 border-[#1d3539] rounded-full flex items-center justify-center text-xl shadow-[2px_2px_0px_0px_#1d3539] relative cursor-pointer hover:-translate-y-0.5 transition-transform" 
+                          title={badge.name}
+                        >
                           {badge.icon}
+                          {badge.level > 1 && (
+                            <div className="absolute -top-1 -right-1 bg-amber-500 text-white text-[9px] font-black px-1 rounded-full border border-[#1d3539] shadow-[1px_1px_0px_0px_#1d3539]">
+                              Lv.{badge.level}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -114,6 +137,12 @@ export const PublicProfileModal: React.FC<Props> = ({ userId, isOpen, onClose })
           </div>
         )}
       </div>
+
+      {/* Badge Info Modal */}
+      <BadgeInfoModal 
+        badge={selectedBadge}
+        onClose={() => setSelectedBadge(null)}
+      />
     </div>
   );
 };

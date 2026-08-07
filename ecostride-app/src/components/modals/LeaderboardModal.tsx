@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import leaderboardData from '../../mock/leaderboard.json';
 import { X, Trophy, TrendingUp, Calendar, Map as MapIcon, Shield } from 'lucide-react';
-import { apiClient } from '../../lib/api';
+import { apiClient, resolveAvatarUrl } from '../../lib/api';
+import { CommunityProfileModal } from './CommunityProfileModal';
 import { UserProfileModal } from './UserProfileModal';
+import { useAuthStore } from '../../stores/useAuthStore';
+import { useUserStore } from '../../stores/useUserStore';
 
 interface LeaderboardModalProps {
   isOpen: boolean;
@@ -11,18 +14,26 @@ interface LeaderboardModalProps {
 
 export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState<'weekly' | 'guild' | 'monthly' | 'total'>('weekly');
-  const [realPlayers, setRealPlayers] = useState<any[]>([]);
+  const [topDistance, setTopDistance] = useState<any[]>([]);
+  const [topCoins, setTopCoins] = useState<any[]>([]);
+  const [userRank, setUserRank] = useState<any | null>(null);
+  
+  const [realGuilds, setRealGuilds] = useState<any[]>([]);
+  const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<any | null>(null);
+
+  const { user } = useAuthStore();
+  const { avatar, username } = useUserStore();
 
   useEffect(() => {
     if (isOpen) {
       const fetchUsers = async () => {
         try {
-          const data = await apiClient('/leaderboard');
+          const url = user?.uid ? `/leaderboard?userId=${user.uid}` : '/leaderboard';
+          const data = await apiClient(url);
           
-          const users = data.users.map((u: any) => {
+          const formatUsers = (users: any[]) => users.map((u: any) => {
             const emailSum = (u.email || u.username || 'user').split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
-            
             return {
               id: u.id,
               name: u.username || (u.email ? u.email.split('@')[0] : 'Unknown Player'),
@@ -32,41 +43,61 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
               monthlyPoints: u.coins || 0,
               totalMileageKm: u.total_distance_km || 0,
               treesPlanted: u.total_trees_planted || 0,
-              guildName: u.guild_id && u.guild_id !== 'None' ? u.guild_id : 'Explorer',
+              guildName: u.guildName || u.guild_name || (u.guild_id && u.guild_id !== 'None' ? u.guild_id : 'Explorer'),
               isRisingStar: emailSum % 2 === 0,
-              coins: u.coins
+              coins: u.coins,
+              player_id: u.player_id
             };
           });
-          setRealPlayers(users);
+          
+          setTopDistance(formatUsers(data.topDistance || []));
+          setTopCoins(formatUsers(data.topCoins || []));
+          if (data.userRank) setUserRank(data.userRank);
         } catch (err) {
           console.error("Failed to fetch users:", err);
         }
       };
+
+      const fetchGuilds = async () => {
+        try {
+          const res = await apiClient('/guilds/recommended');
+          if (res.guilds) {
+            setRealGuilds(res.guilds.map((g: any) => ({
+              id: g.id,
+              name: g.name,
+              members: g.member_count || 0,
+              power: g.total_trees || 0,
+              icon: g.icon
+            })));
+          }
+        } catch (err) {
+          console.error("Failed to fetch guilds:", err);
+        }
+      };
+
       fetchUsers();
+      fetchGuilds();
     }
   }, [isOpen]);
 
-  if (!isOpen && !selectedPlayer) return null;
+  if (!isOpen && !selectedPlayer && !selectedCommunityId) return null;
 
   const { guilds } = leaderboardData;
 
   const getSortedPlayers = () => {
-    const list = [...leaderboardData.players, ...realPlayers];
-    const uniqueList = Array.from(new Map(list.map(item => [item.id, item])).values());
     switch (activeTab) {
       case 'weekly':
-        return uniqueList.sort((a, b) => b.weeklyPoints - a.weeklyPoints).slice(0, 20);
       case 'monthly':
-        return uniqueList.sort((a, b) => b.monthlyPoints - a.monthlyPoints).slice(0, 20);
+        return topCoins;
       case 'total':
-        return uniqueList.sort((a, b) => b.totalMileageKm - a.totalMileageKm).slice(0, 20);
+        return topDistance;
       default:
-        return uniqueList.slice(0, 20);
+        return topCoins;
     }
   };
 
   const getSortedGuilds = () => {
-    return [...guilds].sort((a, b) => b.power - a.power);
+    return [...realGuilds].sort((a, b) => b.power - a.power);
   };
 
   const handlePlayerClick = (player: any) => {
@@ -75,6 +106,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
 
   const renderPlayerList = () => {
     const sorted = getSortedPlayers();
+    
     return (
       <div className="space-y-3 mt-4">
         {sorted.map((player, idx) => (
@@ -88,7 +120,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
             </div>
             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-[#fff4d6] flex items-center justify-center text-xl sm:text-2xl shadow-inner overflow-hidden shrink-0">
               {player.avatar ? (
-                <img src={player.avatar?.includes('/r2/') ? player.avatar.substring(player.avatar.indexOf('/r2/')) : player.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                <img src={resolveAvatarUrl(player.avatar, player.username || player.name)} alt="Avatar" className="w-full h-full object-cover" />
               ) : (
                 <img src={`https://api.dicebear.com/7.x/bottts/svg?seed=${player.username || player.name}`} alt="Avatar" className="w-full h-full object-cover" />
               )}
@@ -115,37 +147,42 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
   };
 
   const renderGuildList = () => {
-    const sampleGuilds = [
-      { id: 'g1', name: 'Eco Warriors', treesPlanted: 142, members: 12 },
-      { id: 'g2', name: 'Nature Knights', treesPlanted: 98, members: 8 },
-      { id: 'g3', name: 'Green Guardians', treesPlanted: 56, members: 5 }
-    ];
+    const sortedGuilds = getSortedGuilds();
 
     return (
       <div className="space-y-4">
-        {sampleGuilds.map((guild, index) => (
-          <div key={guild.id} className="bg-[#e9efce] rounded-2xl p-3 sm:p-4 flex items-center gap-2 sm:gap-4 transition-all hover:shadow-md hover:-translate-y-1 cursor-pointer">
-            <div className="w-8 sm:w-10 text-center text-sm sm:text-base font-black text-[#5496a2] shrink-0">
+        {sortedGuilds.map((guild, index) => (
+          <div 
+            key={guild.id} 
+            className="bg-[#e9efce] rounded-2xl p-4 flex items-center transition-all hover:shadow-md hover:-translate-y-1 cursor-pointer"
+            onClick={() => setSelectedCommunityId(guild.id)}
+          >
+            <div className="w-8 sm:w-10 text-center text-lg sm:text-xl font-black text-[#5496a2] shrink-0">
               #{index + 1}
             </div>
-            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-[#fff4d6] rounded-xl flex items-center justify-center text-xl sm:text-2xl shadow-inner shrink-0">
-              🛡️
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-[#fff4d6] rounded-xl flex items-center justify-center text-xl sm:text-2xl mr-3 sm:mr-4 shadow-inner overflow-hidden shrink-0">
+              {guild.icon ? (
+                (guild.icon.startsWith('http') || guild.icon.startsWith('/')) ? (
+                  <img src={guild.icon} alt={guild.name} className="w-full h-full object-cover" />
+                ) : (
+                  guild.icon
+                )
+              ) : (
+                '🛡️'
+              )}
             </div>
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 pr-2">
               <h4 className="font-bold text-[#1d3539] text-base sm:text-lg truncate">{guild.name}</h4>
               <p className="text-xs sm:text-sm font-bold text-[#5496a2] truncate">{guild.members} Active Members</p>
             </div>
             <div className="text-right shrink-0">
               <div className="font-black text-[#1d3539] text-lg sm:text-xl flex items-center justify-end gap-1">
-                {guild.treesPlanted} 🌳
+                {guild.power || guild.members * 10} 🌳
               </div>
               <div className="text-[10px] sm:text-xs text-[#80abb1] font-bold uppercase tracking-wider">Trees Planted</div>
             </div>
           </div>
         ))}
-        <div className="text-center text-sm font-bold text-[#5496a2] mt-6">
-          Guild system and territory wars are coming in the next update!
-        </div>
       </div>
     );
   };
@@ -193,12 +230,52 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ isOpen, onCl
           </button>
         </div>
 
-        <div className="p-4 overflow-y-auto flex-1">
+        <div className="p-4 overflow-y-auto flex-1 relative">
           {activeTab === 'guild' ? renderGuildList() : renderPlayerList()}
         </div>
+        
+        {/* Sticky Personal Rank Footer */}
+        {userRank && activeTab !== 'guild' && (
+          <div className="bg-white/90 backdrop-blur-md border-t-2 border-[#1d3539] p-4 shrink-0 shadow-[0_-4px_15px_rgba(0,0,0,0.05)] flex items-center gap-3 sm:gap-4 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-[#fff4d6]/50 to-[#e9efce]/50 -z-10"></div>
+            
+            <div className="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-full flex items-center justify-center font-black text-white bg-amber-500 shadow-[2px_2px_0px_0px_#1d3539] text-sm sm:text-base border-2 border-[#1d3539]">
+              #{activeTab === 'total' ? userRank.distanceRank : userRank.coinsRank}
+            </div>
+            
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-100 flex items-center justify-center text-xl sm:text-2xl overflow-hidden shrink-0 border-2 border-[#1d3539] shadow-[2px_2px_0px_0px_#1d3539]">
+              {avatar ? (
+                <img src={resolveAvatarUrl(avatar, username || 'user')} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <img src={`https://api.dicebear.com/7.x/bottts/svg?seed=${username || 'user'}`} alt="Avatar" className="w-full h-full object-cover" />
+              )}
+            </div>
+            
+            <div className="flex-1 min-w-0">
+              <h3 className="font-black text-[#1d3539] text-base sm:text-lg truncate">Your Rank</h3>
+              <p className="text-[10px] sm:text-xs font-bold text-slate-500 truncate">Keep pushing to climb!</p>
+            </div>
+            
+            <div className="text-right shrink-0">
+              <p className="font-black text-amber-600 text-lg sm:text-xl">
+                {activeTab === 'total' 
+                  ? Number(userRank.distanceScore || 0).toFixed(2) 
+                  : (userRank.coinsScore || 0)}
+              </p>
+              <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">
+                {activeTab === 'total' ? 'KM' : 'PTS'}
+              </p>
+            </div>
+          </div>
+        )}
 
       </div>
       <UserProfileModal isOpen={!!selectedPlayer} onClose={() => setSelectedPlayer(null)} player={selectedPlayer} />
+      <CommunityProfileModal 
+        isOpen={!!selectedCommunityId} 
+        onClose={() => setSelectedCommunityId(null)} 
+        communityId={selectedCommunityId} 
+      />
     </div>
   );
 };

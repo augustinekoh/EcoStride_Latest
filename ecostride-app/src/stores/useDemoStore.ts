@@ -8,6 +8,10 @@ interface DemoState {
   showReportModal: boolean
   completedDistanceKm: number
   isWaitingForApproval: boolean
+  isChatExpanded: boolean
+  activePrivateChat: any | null
+  setIsChatExpanded: (val: boolean) => void
+  setActivePrivateChat: (chat: any | null) => void
   setIsWaitingForApproval: (val: boolean) => void
   demoRequestRejected: boolean
   setDemoRequestRejected: (val: boolean) => void
@@ -27,10 +31,14 @@ export const useDemoStore = create<DemoState>((set) => ({
   showReportModal: false,
   completedDistanceKm: 0,
   isWaitingForApproval: false,
+  isChatExpanded: false,
+  activePrivateChat: null,
   demoRequestRejected: false,
-  setMode: (mode) => set({ currentMode: mode }),
-  setIsWaitingForApproval: (val) => set({ isWaitingForApproval: val }),
   setDemoRequestRejected: (val) => set({ demoRequestRejected: val }),
+  setIsWaitingForApproval: (val) => set({ isWaitingForApproval: val }),
+  setIsChatExpanded: (val) => set({ isChatExpanded: val }),
+  setActivePrivateChat: (chat) => set({ activePrivateChat: chat }),
+  setMode: (mode) => set({ currentMode: mode }),
   setProgress: (progress) => set((state) => ({ 
     demoProgress: typeof progress === 'function' ? progress(state.demoProgress) : progress 
   })),

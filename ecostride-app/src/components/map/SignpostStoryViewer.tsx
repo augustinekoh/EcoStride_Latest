@@ -21,6 +21,7 @@ export const SignpostStoryViewer: React.FC<Props> = ({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [showLikeAnim, setShowLikeAnim] = useState(false);
 
   useEffect(() => {
     setCurrentIndex(0);
@@ -128,12 +129,39 @@ export const SignpostStoryViewer: React.FC<Props> = ({
         </div>
         
         <button 
-          onClick={(e) => { e.stopPropagation(); onLike(e, signpost); }}
-          className="w-full bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/40 rounded-xl py-2 font-bold text-white text-sm transition-colors flex items-center justify-center gap-1 active:scale-95 mt-1 pointer-events-auto"
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            setShowLikeAnim(true);
+            setTimeout(() => setShowLikeAnim(false), 1000);
+            onLike(e, signpost); 
+          }}
+          className="w-full bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/40 rounded-xl py-2 font-bold text-white text-sm transition-colors flex items-center justify-center gap-1 active:scale-95 mt-1 pointer-events-auto relative overflow-hidden"
         >
           👍 Energy <span className="bg-white/90 px-1.5 rounded-full text-slate-900 text-xs ml-1 font-black">{signpost.likes || 0}</span>
+          
+          {/* Ripple / Highlight effect */}
+          {showLikeAnim && (
+            <div className="absolute inset-0 bg-white/40 animate-ping rounded-xl pointer-events-none" />
+          )}
         </button>
       </div>
+
+      {/* Floating Thumbs Up Emoji Animation */}
+      {showLikeAnim && (
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50">
+          <div className="text-6xl animate-bounce drop-shadow-2xl opacity-0 transition-opacity duration-300" style={{ animation: 'bounce 1s ease-out forwards, fadeOutUp 1s ease-out forwards' }}>
+            👍
+          </div>
+          <style>{`
+            @keyframes fadeOutUp {
+              0% { opacity: 0; transform: translateY(20px) scale(0.5); }
+              20% { opacity: 1; transform: translateY(0) scale(1.2); }
+              80% { opacity: 1; transform: translateY(-40px) scale(1); }
+              100% { opacity: 0; transform: translateY(-80px) scale(1); }
+            }
+          `}</style>
+        </div>
+      )}
     </div>
   );
 };

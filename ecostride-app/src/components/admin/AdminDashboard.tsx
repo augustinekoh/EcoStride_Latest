@@ -14,6 +14,7 @@ export const AdminDashboard: React.FC = () => {
   const [trees, setTrees] = useState<any[]>([]);
   const [signposts, setSignposts] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [guilds, setGuilds] = useState<any[]>([]);
   const [resetInterval, setResetInterval] = useState<number>(7);
   const [isSaving, setIsSaving] = useState(false);
   const [editingCoins, setEditingCoins] = useState<{ [uid: string]: number }>({});
@@ -49,6 +50,7 @@ export const AdminDashboard: React.FC = () => {
   const [expiresForNewUsers, setExpiresForNewUsers] = useState(false);
   const [sentMails, setSentMails] = useState<any[]>([]);
   const [selectedMails, setSelectedMails] = useState<Set<string>>(new Set());
+  const [mailFilter, setMailFilter] = useState<'all' | 'admin' | 'system'>('all');
 
   const fetchDashboardData = async () => {
     setLoading(true);
@@ -65,7 +67,8 @@ export const AdminDashboard: React.FC = () => {
       
       // Map D1 data to match previous UI state expectations where possible
       setUsers(res.users.map((u: any) => ({ ...u, email: u.email, id: u.id, role: u.role, coins: u.coins })));
-      setTrees(res.trees.map((t: any) => ({ id: t.id, authorId: t.author_id, lat: t.lat, lng: t.lng, plantedAt: t.planted_at })));
+      if (res.guilds) setGuilds(res.guilds);
+      setTrees(res.trees.map((t: any) => ({ id: t.id, authorId: t.author_id, lat: t.lat, lng: t.lng, plantedAt: t.planted_at, guildId: t.guild_id, guildName: t.guildName })));
       setSignposts(res.signposts.map((s: any) => ({ id: s.id, authorId: s.author_id, lat: s.lat, lng: s.lng, emoji: s.emoji, message: s.message })));
       
       setStoreItems(res.storeItems.map((i: any) => ({ id: i.id, name: i.name, description: i.desc, price: i.price, stock: i.stock, icon: i.icon, category: i.category, merchantId: i.merchant_id })));
@@ -86,17 +89,31 @@ export const AdminDashboard: React.FC = () => {
         };
       }));
       setDemoRequests(res.demoRequests.filter((d: any) => d.status === 'pending'));
-      setSentMails(res.sentMails.map((m: any) => {
+      const socialTitles = [
+        'Friend Request', 'Friend Request Accepted', 'Friend Request Rejected', 'Friend Request Sent', 'Friend Removed',
+        'New Join Request', 'Join Request Approved', 'Join Request Rejected', 'Kicked from Community', 'Promoted to Admin',
+        'Community Terminated'
+      ];
+      
+      const filteredSentMails = res.sentMails.filter((m: any) => 
+        !socialTitles.includes(m.title) && 
+        m.action_type !== 'guild_join_request' && 
+        m.action_type !== 'friend_request'
+      );
+
+      setSentMails(filteredSentMails.map((m: any) => {
         const u = res.users.find((user: any) => user.id === m.recipient_id);
+        const g = res.guilds ? res.guilds.find((guild: any) => guild.id === m.recipient_id) : null;
         return { 
           id: m.id, 
           title: m.title, 
           content: m.content, 
           recipientType: m.recipient_type, 
           recipientId: u?.player_id || m.recipient_id,
-          recipientName: m.recipient_name,
+          recipientName: m.recipient_name || u?.username || g?.name,
           expiresForNewUsers: m.expires_for_new_users === 1,
-          createdAt: m.created_at 
+          createdAt: m.created_at,
+          sender: m.sender
         };
       }));
     } catch (err) {
@@ -154,6 +171,42 @@ export const AdminDashboard: React.FC = () => {
       await apiClient(`/users/${uid}`, { method: 'POST', body: JSON.stringify({ coins: newCoins }) });
       alert('User coins updated!');
       fetchDashboardData();
+    }
+  };
+
+  const handleBanUser = async (uid: string, e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    if (!value) return; // Prompt option
+
+    let bannedUntil = 0;
+    if (value === 'unban') {
+      bannedUntil = 0;
+    } else if (value === 'forever') {
+      bannedUntil = 4102444800000; // Year 2100
+    } else {
+      const days = Number(value);
+      bannedUntil = Date.now() + days * 24 * 60 * 60 * 1000;
+    }
+    
+    try {
+      await apiClient(`/admin/users/${uid}/ban`, { method: 'POST', body: JSON.stringify({ bannedUntil }) });
+      alert(bannedUntil === 0 ? 'User unbanned successfully.' : 'User banned successfully.');
+      fetchDashboardData();
+    } catch (err: any) {
+      alert(`Failed to update ban status: ${err.message}`);
+    }
+  };
+
+  const handleTerminateCommunity = async (guildId: string) => {
+    if (confirm('Are you SURE you want to terminate this community? This cannot be undone.')) {
+      try {
+        await apiClient(`/admin/guilds/${guildId}`, { method: 'DELETE' });
+        alert('Community terminated.');
+        fetchDashboardData();
+      } catch (err) {
+        console.error(err);
+        alert('Failed to terminate community.');
+      }
     }
   };
 
@@ -398,13 +451,18 @@ export const AdminDashboard: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-100 flex font-sans text-teal-950 relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-[#e6f4f1] via-[#ebf7f5] to-[#d6f0ea] flex font-sans text-[#152c30] relative overflow-hidden">
       
+      {/* Decorative Background Orbs */}
+      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-gradient-to-br from-teal-400/20 to-cyan-300/20 rounded-full blur-[100px] animate-pulse pointer-events-none" style={{ animationDuration: '8s' }}></div>
+      <div className="absolute bottom-[-10%] right-[-5%] w-[50%] h-[50%] bg-gradient-to-br from-emerald-300/20 to-teal-200/20 rounded-full blur-[120px] animate-pulse pointer-events-none" style={{ animationDuration: '10s' }}></div>
+
       {/* Sidebar */}
-      <div className="w-64 bg-white/40 backdrop-blur-xl border-r border-white/60 flex flex-col sticky top-0 h-screen shadow-[4px_0_24px_rgba(0,0,0,0.05)] shrink-0 z-20">
-        <div className="p-6 border-b border-slate-100">
-          <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-teal-700 to-cyan-600 tracking-tight">EcoStride</h1>
-          <p className="text-xs font-bold text-teal-700/70 uppercase tracking-wider mt-1">Admin Panel</p>
+      <div className="w-72 bg-white/40 backdrop-blur-2xl border-r border-white/60 flex flex-col sticky top-0 h-screen shadow-[8px_0_32px_rgba(0,0,0,0.03)] shrink-0 z-20 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-white/40 to-transparent pointer-events-none"></div>
+        <div className="p-8 border-b border-white/40 relative z-10 text-center">
+          <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-teal-600 to-cyan-500 tracking-tighter drop-shadow-sm">EcoStride</h1>
+          <p className="text-[10px] font-black text-teal-700/50 uppercase tracking-[0.3em] mt-2">Admin Panel</p>
         </div>
         
         <div className="flex-1 overflow-y-auto py-4">
@@ -413,13 +471,13 @@ export const AdminDashboard: React.FC = () => {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`flex items-center justify-between px-4 py-3 rounded-xl font-bold transition-all ${
+                className={`flex items-center justify-between px-5 py-4 rounded-2xl font-bold transition-all duration-300 relative overflow-hidden group ${
                   activeTab === item.id 
-                    ? 'bg-teal-500/15 text-teal-700 shadow-sm border border-teal-500/20' 
-                    : 'text-teal-700/70 hover:bg-white/50 hover:text-teal-900'
+                    ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-500/20 translate-x-2' 
+                    : 'text-teal-800/60 hover:bg-white/60 hover:text-teal-900 hover:translate-x-1'
                 }`}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 relative z-10">
                   {item.icon}
                   {item.label}
                 </div>
@@ -447,14 +505,16 @@ export const AdminDashboard: React.FC = () => {
       <div className="flex-1 overflow-y-auto h-screen p-8 bg-transparent">
         <div className="max-w-7xl mx-auto relative">
           
-          <button 
-            onClick={fetchDashboardData}
-            disabled={loading}
-            className="absolute top-0 right-0 z-10 flex items-center gap-2 bg-white/80 backdrop-blur border border-teal-200 text-teal-800 px-4 py-2 rounded-xl font-bold shadow-sm hover:bg-teal-50 transition-all disabled:opacity-50"
-          >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            {loading ? 'Refreshing...' : 'Refresh Data'}
-          </button>
+          <div className="flex justify-end mb-4">
+            <button 
+              onClick={fetchDashboardData}
+              disabled={loading}
+              className="flex items-center gap-2 bg-white/80 backdrop-blur border border-teal-200 text-teal-800 px-4 py-2 rounded-xl font-bold shadow-sm hover:bg-teal-50 transition-all disabled:opacity-50"
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              {loading ? 'Refreshing...' : 'Refresh Data'}
+            </button>
+          </div>
 
 
           {/* OVERVIEW TAB */}
@@ -477,6 +537,10 @@ export const AdminDashboard: React.FC = () => {
                 <div className="bg-white/60 backdrop-blur-lg p-6 rounded-3xl shadow-xl shadow-teal-900/5 border border-white/80">
                   <p className="text-sm font-bold text-teal-700/70 uppercase tracking-wider mb-2">Active Signposts</p>
                   <p className="text-4xl font-black text-orange-500">{signposts.length}</p>
+                </div>
+                <div className="bg-white/60 backdrop-blur-lg p-6 rounded-3xl shadow-xl shadow-teal-900/5 border border-white/80">
+                  <p className="text-sm font-bold text-teal-700/70 uppercase tracking-wider mb-2">Active Communities</p>
+                  <p className="text-4xl font-black text-purple-600">{guilds.length}</p>
                 </div>
               </div>
             </div>
@@ -501,34 +565,178 @@ export const AdminDashboard: React.FC = () => {
                           <p className="text-sm text-slate-500 font-bold mt-2">Plan: <span className="text-slate-800">{app.subscriptionPlan}</span></p>
                           <p className="text-sm text-slate-500 font-bold mt-1">Applicant: <span className="text-slate-800">{app.applicantUsername}</span> <span className="text-xs text-slate-400 font-mono">({app.applicantUid})</span></p>
                           <p className="text-sm text-slate-500 font-bold mt-1">Email: <span className="text-slate-800">{app.merchantEmail}</span></p>
-                          <p className="text-sm text-slate-500 font-bold mt-1 mb-3">Link: <span className="text-slate-800">{app.menuLink || 'N/A'}</span></p>
-                          
-                          {app.location ? (
-                            <button onClick={() => setViewMapLocation(app.location)} className="text-sm font-bold text-[#5496a2] bg-[#5496a2]/10 px-4 py-2 rounded-xl hover:bg-[#5496a2] hover:text-white transition-all active:scale-95 flex items-center gap-2">
-                              📍 View Location on Map
-                            </button>
-                          ) : (
-                            <p className="text-sm text-slate-400 font-bold">Location: N/A</p>
-                          )}
+                          {/* Menu Link & Location Diff */}
+                          {(() => {
+                            const originalMerchant = app.type === 'modification' ? merchants.find(m => m.ownerId === app.merchantId) : null;
+                            const isLinkModified = app.type === 'modification' && originalMerchant && originalMerchant.menuLink !== app.menuLink;
+                            const isLocationModified = app.type === 'modification' && originalMerchant && JSON.stringify(originalMerchant.location) !== JSON.stringify(app.location);
+
+                            return (
+                              <div className="flex flex-col gap-3 my-4">
+                                {/* Menu Link */}
+                                {isLinkModified ? (
+                                  <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-200">
+                                    <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">Link Modified</p>
+                                    <p className="text-sm text-slate-400 font-bold line-through decoration-slate-300">Old: {originalMerchant.menuLink || 'N/A'}</p>
+                                    <p className="text-sm text-[#1d3539] font-bold">New: <span className="text-blue-600">{app.menuLink || 'N/A'}</span></p>
+                                  </div>
+                                ) : (
+                                  <p className="text-sm text-slate-500 font-bold">Link: <span className="text-slate-800">{app.menuLink || 'N/A'}</span></p>
+                                )}
+
+                                {/* Location */}
+                                {isLocationModified ? (
+                                  <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-200">
+                                    <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">Location Modified</p>
+                                    <div className="flex gap-4 items-center mt-2">
+                                      {originalMerchant.location ? (
+                                        <button onClick={() => setViewMapLocation(originalMerchant.location)} className="text-xs font-bold text-slate-400 bg-slate-100 px-3 py-1.5 rounded-lg hover:bg-slate-200 transition-colors line-through decoration-slate-400">
+                                          📍 Old Location
+                                        </button>
+                                      ) : <span className="text-xs text-slate-400 font-bold">Old: N/A</span>}
+                                      <span className="text-blue-300 font-black">→</span>
+                                      {app.location ? (
+                                        <button onClick={() => setViewMapLocation(app.location)} className="text-xs font-bold text-white bg-blue-500 px-3 py-1.5 rounded-lg shadow-md shadow-blue-500/20 hover:bg-blue-600 transition-colors">
+                                          📍 New Location
+                                        </button>
+                                      ) : <span className="text-xs text-slate-800 font-bold">New: N/A</span>}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  app.location ? (
+                                    <button onClick={() => setViewMapLocation(app.location)} className="text-sm font-bold text-[#5496a2] bg-[#5496a2]/10 px-4 py-2 rounded-xl hover:bg-[#5496a2] hover:text-white transition-all active:scale-95 flex items-center gap-2 w-max">
+                                      📍 View Location on Map
+                                    </button>
+                                  ) : (
+                                    <p className="text-sm text-slate-400 font-bold">Location: N/A</p>
+                                  )
+                                )}
+                              </div>
+                            );
+                          })()}
                           
                           {app.vouchers && app.vouchers.length > 0 && (
                             <div className="mt-6 bg-slate-50 p-4 rounded-2xl border-2 border-slate-200">
-                              <h5 className="text-xs font-black text-[#1d3539] uppercase tracking-widest mb-3">Proposed Vouchers</h5>
+                              <h5 className="text-xs font-black text-[#1d3539] uppercase tracking-widest mb-3">Vouchers Review</h5>
                               <div className="space-y-3">
-                                {app.vouchers.map((v: any, vIdx: number) => (
-                                  <div key={vIdx} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm gap-4">
-                                    <div className="flex items-center gap-3">
-                                      <span className="text-3xl bg-slate-50 p-2 rounded-xl">{v.icon}</span>
-                                      <div>
-                                        <p className="font-black text-[#1d3539]">{v.name} <span className="text-xs font-bold text-slate-400 ml-1">x{v.stock}</span></p>
-                                        <p className="text-xs font-bold text-slate-500 mt-0.5">{v.desc}</p>
+                                {app.type !== 'modification' ? (
+                                  app.vouchers.map((v: any, vIdx: number) => (
+                                    <div key={vIdx} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm gap-4">
+                                      <div className="flex items-center gap-3">
+                                        <span className="text-3xl bg-slate-50 p-2 rounded-xl">{v.icon}</span>
+                                        <div>
+                                          <p className="font-black text-[#1d3539]">{v.name} <span className="text-xs font-bold text-slate-400 ml-1">x{v.stock}</span></p>
+                                          <p className="text-xs font-bold text-slate-500 mt-0.5">{v.desc}</p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-1 bg-orange-50 px-3 py-1.5 rounded-lg border border-orange-100 shrink-0">
+                                        <span className="font-black text-orange-500 text-lg">🪙{v.price}</span>
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-1 bg-orange-50 px-3 py-1.5 rounded-lg border border-orange-100 shrink-0">
-                                      <span className="font-black text-orange-500 text-lg">🪙{v.price}</span>
-                                    </div>
-                                  </div>
-                                ))}
+                                  ))
+                                ) : (
+                                  (() => {
+                                    const currentMerchantVouchers = storeItems.filter(i => i.merchantId === app.merchantId && i.status !== 'disabled');
+                                    const submittedVouchers = app.vouchers || [];
+                                    const newVouchers = submittedVouchers.filter((v: any) => !v.originalId);
+                                    const deletedVouchers = currentMerchantVouchers.filter((cv: any) => !submittedVouchers.find((sv: any) => sv.originalId === cv.id));
+                                    const keptVouchers = submittedVouchers.filter((sv: any) => sv.originalId).map((sv: any) => {
+                                      const original = currentMerchantVouchers.find((cv: any) => cv.id === sv.originalId);
+                                      return { sv, original };
+                                    }).filter((pair: any) => pair.original);
+
+                                    return (
+                                      <div className="space-y-4">
+                                        {newVouchers.map((v: any, i: number) => (
+                                          <div key={`new-${i}`} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-emerald-50 p-3 rounded-xl border border-emerald-200 shadow-sm gap-4 relative overflow-hidden">
+                                            <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[9px] font-black uppercase px-2 py-1 rounded-bl-lg">NEW</div>
+                                            <div className="flex items-center gap-3">
+                                              <span className="text-3xl bg-white p-2 rounded-xl shadow-sm border border-emerald-100">{v.icon}</span>
+                                              <div>
+                                                <p className="font-black text-[#1d3539]">{v.name} <span className="text-xs font-bold text-slate-400 ml-1">x{v.stock}</span></p>
+                                                <p className="text-xs font-bold text-slate-500 mt-0.5">{v.desc}</p>
+                                              </div>
+                                            </div>
+                                            <div className="flex items-center gap-1 bg-orange-50 px-3 py-1.5 rounded-lg border border-orange-100 shrink-0">
+                                              <span className="font-black text-orange-500 text-lg">🪙{v.price}</span>
+                                            </div>
+                                          </div>
+                                        ))}
+
+                                        {deletedVouchers.map((v: any, i: number) => (
+                                          <div key={`del-${i}`} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-red-50 p-3 rounded-xl border border-red-200 shadow-sm gap-4 opacity-60 relative overflow-hidden">
+                                            <div className="absolute top-0 right-0 bg-red-500 text-white text-[9px] font-black uppercase px-2 py-1 rounded-bl-lg">REMOVED</div>
+                                            <div className="flex items-center gap-3 grayscale">
+                                              <span className="text-3xl bg-white p-2 rounded-xl border border-red-100">{v.icon}</span>
+                                              <div>
+                                                <p className="font-black text-[#1d3539] line-through">{v.name} <span className="text-xs font-bold text-slate-400 ml-1">x{v.stock}</span></p>
+                                                <p className="text-xs font-bold text-slate-500 mt-0.5 line-through">{v.desc}</p>
+                                              </div>
+                                            </div>
+                                            <div className="flex items-center gap-1 bg-orange-50 px-3 py-1.5 rounded-lg border border-orange-100 shrink-0 grayscale">
+                                              <span className="font-black text-orange-500 text-lg">🪙{v.price}</span>
+                                            </div>
+                                          </div>
+                                        ))}
+
+                                        {keptVouchers.map(({ sv, original }: any, i: number) => {
+                                          const isModified = sv.name !== original.name || sv.price !== original.price || sv.stock !== original.stock || sv.icon !== original.icon || (sv.desc || sv.description || '') !== (original.desc || original.description || '');
+                                          
+                                          if (!isModified) {
+                                            return (
+                                              <div key={`kept-${i}`} className="flex justify-between items-center bg-slate-100/50 p-3 rounded-xl border border-slate-200 opacity-50">
+                                                <p className="text-xs font-bold text-slate-400 flex items-center gap-2"><span>{sv.icon}</span> {sv.name} (Unchanged)</p>
+                                              </div>
+                                            );
+                                          }
+
+                                          return (
+                                            <div key={`mod-${i}`} className="flex flex-col gap-3 bg-blue-50/50 p-4 rounded-xl border border-blue-200 relative overflow-hidden">
+                                              <div className="absolute top-0 right-0 bg-blue-500 text-white text-[9px] font-black uppercase px-2 py-1 rounded-bl-lg z-10">MODIFIED</div>
+                                              
+                                              {/* Original State */}
+                                              <div className="bg-slate-100 p-3 rounded-lg border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 opacity-60">
+                                                <div className="flex items-center gap-3">
+                                                  <span className="text-2xl bg-white p-2 rounded-xl">{original.icon}</span>
+                                                  <div>
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Original</p>
+                                                    <p className="font-bold text-slate-600 line-through decoration-slate-400">{original.name} <span className="text-xs text-slate-400 ml-1">x{original.stock}</span></p>
+                                                    <p className="text-xs font-bold text-slate-400 mt-0.5 line-through decoration-slate-300">{original.desc}</p>
+                                                  </div>
+                                                </div>
+                                                <div className="flex items-center gap-1 bg-slate-200 px-3 py-1.5 rounded-lg border border-slate-300 shrink-0">
+                                                  <span className="font-black text-slate-500">🪙{original.price}</span>
+                                                </div>
+                                              </div>
+
+                                              {/* Arrow */}
+                                              <div className="flex justify-center -my-3 relative z-10">
+                                                <div className="bg-blue-100 text-blue-500 rounded-full p-1 border-2 border-white">
+                                                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+                                                </div>
+                                              </div>
+
+                                              {/* New State */}
+                                              <div className="bg-white p-3 rounded-lg border border-blue-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                                <div className="flex items-center gap-3">
+                                                  <span className="text-3xl bg-blue-50 p-2 rounded-xl">{sv.icon}</span>
+                                                  <div>
+                                                    <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-0.5">New Change</p>
+                                                    <p className="font-black text-[#1d3539]">{sv.name} <span className="text-xs font-bold text-slate-400 ml-1">x{sv.stock}</span></p>
+                                                    <p className="text-xs font-bold text-slate-500 mt-0.5">{sv.desc}</p>
+                                                  </div>
+                                                </div>
+                                                <div className="flex items-center gap-1 bg-orange-50 px-3 py-1.5 rounded-lg border border-orange-100 shrink-0">
+                                                  <span className="font-black text-orange-500 text-lg">🪙{sv.price}</span>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    );
+                                  })()
+                                )}
                               </div>
                             </div>
                           )}
@@ -765,27 +973,33 @@ export const AdminDashboard: React.FC = () => {
                 />
               </div>
               
-              <div className="bg-white/60 backdrop-blur-lg rounded-3xl shadow-xl shadow-teal-900/5 border border-white/80 overflow-hidden">
+              <div className="mb-8 bg-white/60 backdrop-blur-lg rounded-3xl shadow-xl shadow-teal-900/5 border border-white/80 overflow-hidden">
                 <div className="max-h-[700px] overflow-y-auto custom-scrollbar">
                   <table className="w-full text-left text-sm">
-                    <thead className="bg-transparent sticky top-0 z-10 shadow-sm">
+                    <thead className="bg-white/95 backdrop-blur-sm sticky top-0 z-20 border-b border-teal-100 shadow-sm">
                       <tr>
-                        <th className="px-6 py-4 font-bold text-teal-700/70 uppercase text-xs tracking-wider">User</th>
-                        <th className="px-6 py-4 font-bold text-teal-700/70 uppercase text-xs tracking-wider">Role</th>
-                        <th className="px-6 py-4 font-bold text-teal-700/70 uppercase text-xs tracking-wider">Stats</th>
-                        <th className="px-6 py-4 font-bold text-teal-700/70 uppercase text-xs tracking-wider">Coins</th>
-                        <th className="px-6 py-4 font-bold text-teal-700/70 uppercase text-xs tracking-wider text-right">Actions</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">User</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">Role</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">Stats</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">Coins</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-teal-50">
                       {filteredUsers.length === 0 && (
                         <tr><td colSpan={5} className="px-6 py-8 text-center text-teal-700/70 italic">No users found.</td></tr>
                       )}
                       {filteredUsers.map(u => (
-                        <tr key={u.id} className="hover:bg-transparent/50 transition-colors">
+                        <tr key={u.id} className="hover:bg-white/40 transition-colors">
                           <td className="px-6 py-4">
-                            <div className="font-bold text-teal-950">{u.email}</div>
-                            <div className="text-xs text-teal-700/70 font-mono mt-0.5">{u.id}</div>
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-teal-950 text-sm truncate max-w-[150px]">{u.username || 'Unknown'}</span>
+                                <span className="text-[10px] font-black font-mono text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-100">ID: {u.player_id || 'N/A'}</span>
+                              </div>
+                              <div className="text-xs text-teal-700 truncate max-w-[200px]">{u.email}</div>
+                              <div className="text-[10px] text-slate-400 font-mono truncate max-w-[200px]">UID: {u.id}</div>
+                            </div>
                           </td>
                           <td className="px-6 py-4">
                             <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
@@ -795,6 +1009,11 @@ export const AdminDashboard: React.FC = () => {
                             }`}>
                               {u.role || 'user'}
                             </span>
+                            {u.banned_until > Date.now() && (
+                              <div className="mt-2 inline-block bg-red-100 text-red-700 text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider">
+                                Banned
+                              </div>
+                            )}
                           </td>
                           <td className="px-6 py-4">
                             <div className="text-xs text-slate-600">Trees: <span className="font-bold text-teal-950">{u.totalTreesPlanted || 0}</span></div>
@@ -812,11 +1031,98 @@ export const AdminDashboard: React.FC = () => {
                             </div>
                           </td>
                           <td className="px-6 py-4 text-right">
+                            <div className="flex flex-col gap-2 items-end">
+                              <button 
+                                onClick={() => handleUpdateCoins(u.id)}
+                                className="w-full bg-teal-500/15 text-teal-700 shadow-sm border border-teal-500/20 hover:bg-urban-blue/20 hover:text-teal-600 font-bold px-3 py-1.5 rounded-lg text-xs transition-colors"
+                              >
+                                Save Coins
+                              </button>
+                              <select
+                                onChange={(e) => handleBanUser(u.id, e)}
+                                value=""
+                                className="w-full bg-red-50 text-red-600 font-bold border border-red-200 px-3 py-1.5 rounded-lg text-xs outline-none cursor-pointer hover:bg-red-100 transition-colors"
+                              >
+                                <option value="" disabled>{u.banned_until > Date.now() ? 'Manage Ban' : 'Ban User'}</option>
+                                {u.banned_until > Date.now() && <option value="unban">Unban Now</option>}
+                                <option value="1">Ban for 1 Day</option>
+                                <option value="7">Ban for 7 Days</option>
+                                <option value="30">Ban for 30 Days</option>
+                                <option value="180">Ban for Half Year</option>
+                                <option value="365">Ban for 1 Year</option>
+                                <option value="forever">Permanent Ban</option>
+                              </select>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="bg-white/60 backdrop-blur-lg rounded-3xl shadow-xl shadow-teal-900/5 border border-white/80 overflow-hidden">
+                <div className="p-6 border-b border-teal-100 bg-white/60 backdrop-blur-md">
+                  <h3 className="text-xl font-bold text-teal-950">Active Communities</h3>
+                </div>
+                <div className="max-h-[500px] overflow-y-auto custom-scrollbar">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-white/95 backdrop-blur-sm sticky top-0 z-20 border-b border-teal-100 shadow-sm">
+                      <tr>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">Icon</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">Community</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">Access</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">Total Members</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider">Admin</th>
+                        <th className="px-6 py-4 font-black text-teal-800 uppercase text-xs tracking-wider text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-teal-50">
+                      {guilds.length === 0 && (
+                        <tr><td colSpan={6} className="px-6 py-8 text-center text-teal-700/70 italic">No communities found.</td></tr>
+                      )}
+                      {guilds.map(g => (
+                        <tr key={g.id} className="hover:bg-transparent/50 transition-colors">
+                          <td className="px-6 py-4 text-3xl text-center w-16">
+                            {g.icon ? (
+                              (g.icon.startsWith('http') || g.icon.startsWith('/')) ? (
+                                <div className="w-12 h-12 rounded-xl overflow-hidden mx-auto bg-slate-100">
+                                  <img src={g.icon} alt={g.name} className="w-full h-full object-cover" />
+                                </div>
+                              ) : (
+                                g.icon
+                              )
+                            ) : (
+                              '🌍'
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="font-bold text-teal-950 text-base">{g.name}</div>
+                            <div className="text-xs text-teal-700/70 font-mono mt-0.5">UID: {g.id}</div>
+                            {g.nationality && <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mt-1">{g.nationality}</div>}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={`font-bold px-3 py-1 rounded-full text-xs ${g.require_approval ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                              {g.require_approval ? 'Approval Required' : 'Free to Join'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="bg-teal-100 text-teal-800 font-black px-3 py-1 rounded-full">{g.member_count || 0}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col">
+                              <span className="text-sm font-bold text-teal-950">
+                                {users.find(u => u.id === g.admin_id)?.username || 'No Admin'}
+                              </span>
+                              <div className="text-[10px] text-teal-700/50 truncate max-w-[120px]" title={g.admin_id}>{g.admin_id || 'N/A'}</div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-right space-x-2">
                             <button 
-                              onClick={() => handleUpdateCoins(u.id)}
-                              className="bg-teal-500/15 text-teal-700 shadow-sm border border-teal-500/20 hover:bg-urban-blue/20 hover:text-teal-600 font-bold px-3 py-1.5 rounded-lg text-xs transition-colors"
+                              onClick={() => handleTerminateCommunity(g.id)}
+                              className="bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white border border-red-500/20 hover:border-red-500 font-bold px-4 py-1.5 rounded-lg text-xs transition-colors"
                             >
-                              Save Coins
+                              Terminate
                             </button>
                           </td>
                         </tr>
@@ -916,20 +1222,39 @@ export const AdminDashboard: React.FC = () => {
                 <div className="bg-white/60 backdrop-blur-lg rounded-3xl shadow-xl shadow-teal-900/5 border border-white/80 p-6 flex flex-col">
                   <div className="flex justify-between items-center mb-6">
                     <h3 className="text-xl font-bold text-teal-950">Sent Broadcasts</h3>
-                    {selectedMails.size > 0 && (
+                    <div className="flex items-center gap-1 bg-teal-50 p-1 rounded-xl border border-teal-100/50">
+                      <button onClick={() => setMailFilter('all')} className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${mailFilter === 'all' ? 'bg-white shadow-sm text-teal-900 border border-teal-200' : 'text-teal-600/70 hover:text-teal-900 hover:bg-white/50'}`}>All</button>
+                      <button onClick={() => setMailFilter('admin')} className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${mailFilter === 'admin' ? 'bg-white shadow-sm text-teal-900 border border-teal-200' : 'text-teal-600/70 hover:text-teal-900 hover:bg-white/50'}`}>Admin</button>
+                      <button onClick={() => setMailFilter('system')} className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${mailFilter === 'system' ? 'bg-white shadow-sm text-teal-900 border border-teal-200' : 'text-teal-600/70 hover:text-teal-900 hover:bg-white/50'}`}>System</button>
+                    </div>
+                  </div>
+                  
+                  {selectedMails.size > 0 && (
+                    <div className="mb-4">
                       <button 
                         onClick={handleBatchDeleteMail}
                         className="bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 px-4 py-2 rounded-xl text-xs font-bold transition-colors border border-red-200 shadow-sm"
                       >
                         Delete Selected ({selectedMails.size})
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
+
                   <div className="flex flex-col gap-3 flex-1 overflow-y-auto max-h-[600px] pr-2 custom-scrollbar">
-                    {sentMails.length === 0 ? (
-                      <p className="text-teal-700/70 italic">No broadcasts sent yet.</p>
-                    ) : (
-                      sentMails.map(mail => (
+                    {(() => {
+                      const displayedMails = sentMails.filter(m => {
+                        if (mailFilter === 'all') return true;
+                        const isSystem = m.sender === 'System' || m.sender === 'System Admin';
+                        if (mailFilter === 'system') return isSystem;
+                        if (mailFilter === 'admin') return !isSystem;
+                        return true;
+                      });
+
+                      if (displayedMails.length === 0) {
+                        return <p className="text-teal-700/70 italic">No broadcasts sent yet.</p>;
+                      }
+
+                      return displayedMails.map(mail => (
                         <div key={mail.id} className={`rounded-xl p-4 border relative group transition-colors flex gap-4 ${selectedMails.has(mail.id) ? 'bg-teal-50 border-teal-300' : 'bg-transparent border-slate-200 hover:border-slate-300'}`}>
                           <div className="flex flex-col items-center justify-start pt-1">
                             <input 
@@ -952,8 +1277,13 @@ export const AdminDashboard: React.FC = () => {
                               Recall / Delete
                             </button>
                             
-                            <h4 className="font-bold text-teal-950 flex items-center gap-2 pr-24">
+                            <h4 className="font-bold text-teal-950 flex items-center flex-wrap gap-2 pr-24">
                               {mail.title} 
+                              {mail.sender === 'System' || mail.sender === 'System Admin' ? (
+                                <span className="text-[9px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-black uppercase tracking-wider whitespace-nowrap shrink-0">System Generated</span>
+                              ) : (
+                                <span className="text-[9px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-black uppercase tracking-wider whitespace-nowrap shrink-0">Admin Broadcast</span>
+                              )}
                               {mail.expiresForNewUsers ? (
                                 <span className="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-black uppercase tracking-wider whitespace-nowrap shrink-0">Current Users Only</span>
                               ) : (
@@ -961,14 +1291,14 @@ export const AdminDashboard: React.FC = () => {
                               )}
                             </h4>
                             <p className="text-xs text-teal-700/70 mt-1 font-bold">
-                              To: {mail.recipientType === 'all' ? 'All Users' : mail.recipientType === 'merchant_all' ? 'All Merchants' : mail.recipientType === 'user' || mail.recipientType === 'specific_user' ? `${mail.recipientName || 'Unknown User'} (${mail.recipientId || 'N/A'})` : mail.recipientType}
+                              To: {mail.recipientType === 'all' ? 'All Users' : mail.recipientType === 'merchant_all' ? 'All Merchants' : mail.recipientType === 'user' || mail.recipientType === 'specific_user' ? `${mail.recipientName || 'Unknown User'} (${mail.recipientId || 'N/A'})` : mail.recipientType === 'guild' ? `${mail.recipientName || 'Unknown Guild'} (${mail.recipientId || 'N/A'})` : mail.recipientType}
                             </p>
                             <p className="text-sm text-slate-600 mt-3 line-clamp-3 leading-relaxed">{mail.content}</p>
                             <p className="text-[10px] font-bold text-teal-700/70 mt-3 uppercase tracking-wider">{new Date(mail.createdAt).toLocaleString()}</p>
                           </div>
                         </div>
-                      ))
-                    )}
+                      ));
+                    })()}
                   </div>
                 </div>
               </div>
@@ -1104,7 +1434,7 @@ export const AdminDashboard: React.FC = () => {
                       >
                         <div className="p-3 text-teal-950 min-w-[200px] font-sans">
                           <h3 className="font-black text-lg text-emerald-600 mb-2">Tree Data</h3>
-                          <p className="text-sm text-slate-600 mb-1">Guild: <span className="font-bold text-teal-950">{selectedTree.guildId}</span></p>
+                          <p className="text-sm text-slate-600 mb-1">Guild: <span className="font-bold text-teal-950">{selectedTree.guildName || 'None'}</span></p>
                           <p className="text-xs text-teal-700/70 truncate" title={selectedTree.authorId}>Planter: <span className="font-mono">{selectedTree.authorId}</span></p>
                           <p className="text-xs text-teal-700/70 mb-4">{new Date(selectedTree.plantedAt).toLocaleString()}</p>
                           <button 

@@ -59,7 +59,7 @@ export const RouteSimulator: React.FC = () => {
       <div className="flex justify-between items-center gap-4 sm:gap-6">
         <div className="text-left">
           <div className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase truncate">Distance</div>
-          <div className="text-sm sm:text-lg font-black text-[#1d3539] whitespace-nowrap">{currentDistance.toFixed(1)} <span className="text-xs">/ {distanceToTarget.toFixed(1)} km</span></div>
+          <div className="text-sm sm:text-lg font-black text-[#1d3539] whitespace-nowrap">{currentDistance.toFixed(2)} <span className="text-xs">/ {distanceToTarget.toFixed(2)} km</span></div>
         </div>
         <div className="text-left">
           <div className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase truncate">CO2 Saved</div>
@@ -104,7 +104,7 @@ export const RouteSimulator: React.FC = () => {
 
       {/* Milestone Toast Popup */}
       {milestoneToast && (
-        <div className="absolute -top-16 left-1/2 -translate-x-1/2 bg-[#e9efce] text-[#1d3539] font-bold px-4 sm:px-6 py-2 rounded-2xl border-2 border-[#1d3539] shadow-[2px_2px_0px_0px_#1d3539] whitespace-nowrap text-xs sm:text-sm animate-in slide-in-from-bottom-2 fade-in">
+        <div className="absolute bottom-full mb-4 left-1/2 -translate-x-1/2 bg-[#e9efce] text-[#1d3539] font-bold px-4 sm:px-6 py-2 rounded-2xl border-2 border-[#1d3539] shadow-[2px_2px_0px_0px_#1d3539] w-max max-w-[90vw] text-center text-xs sm:text-sm animate-in slide-in-from-bottom-2 fade-in">
           {milestoneToast}
         </div>
       )}

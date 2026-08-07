@@ -38,6 +38,7 @@ export const MerchantOnboardingForm: React.FC = () => {
   const [error, setError] = useState('');
   const [isLocating, setIsLocating] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
+  const [step3EnteredAt, setStep3EnteredAt] = useState<number>(0);
 
   const handleUseCurrentLocation = () => {
     setIsLocating(true);
@@ -112,6 +113,35 @@ export const MerchantOnboardingForm: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (currentStep < 3) {
+      if (currentStep === 1 && !formData.storeName) {
+        setError('Please fill in your Store Name.');
+        return;
+      }
+      if (currentStep === 2 && (!formData.vouchers[0] || !formData.vouchers[0].name)) {
+        setError('Please fill in your Voucher Name.');
+        return;
+      }
+      setError('');
+      setCurrentStep(prev => {
+        if (prev === 2) setStep3EnteredAt(Date.now());
+        return prev + 1;
+      });
+      return;
+    }
+
+    // Prevent form submission if the user pressed Enter inside the search map input
+    if (document.activeElement?.tagName === 'INPUT' && (document.activeElement as HTMLInputElement).placeholder?.includes('Search a place')) {
+      handleSearch(e);
+      return;
+    }
+
+    // Prevent accidental double-click on the 'Next Step' button from immediately clicking 'Submit'
+    if (Date.now() - step3EnteredAt < 1000) {
+      return;
+    }
+
     if (!user) return;
     if (formData.vouchers.length === 0 || !formData.vouchers[0].name) {
       setError("You must create at least one Point Store voucher.");
@@ -350,7 +380,10 @@ export const MerchantOnboardingForm: React.FC = () => {
                     return;
                   }
                   setError('');
-                  setCurrentStep(prev => prev + 1);
+                  setCurrentStep(prev => {
+                    if (prev === 2) setStep3EnteredAt(Date.now());
+                    return prev + 1;
+                  });
                 }} 
                 className="flex-[2] bg-[#1d3539] text-white py-4 rounded-2xl font-black text-lg shadow-[4px_4px_0px_0px_rgba(29,53,57,0.3)] active:translate-y-1 active:shadow-none transition-all"
               >

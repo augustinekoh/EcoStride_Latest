@@ -1,13 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Trophy, Gift, X, LayoutGrid, GripHorizontal } from 'lucide-react';
+import { Trophy, Gift, X, LayoutGrid, GripHorizontal, Map, TreePine, Shield } from 'lucide-react';
 import { PointsStoreModal } from '../modals/PointsStoreModal';
 import { LeaderboardModal } from '../modals/LeaderboardModal';
 import { apiClient } from '../../lib/api';
 import leaderboardData from '../../mock/leaderboard.json';
 import { useMapStore } from '../../stores/useMapStore';
+import { useUserStore } from '../../stores/useUserStore';
 
 export const DraggableMapWidget: React.FC = () => {
   const { mapDisplayMode, setMapDisplayMode } = useMapStore();
+  const { guildId } = useUserStore();
   const [isExpanded, setIsExpanded] = useState(typeof window !== 'undefined' && window.innerWidth > 640);
   const [showEcoHubTooltip, setShowEcoHubTooltip] = useState(() => {
     if (typeof window !== 'undefined' && window.innerWidth <= 640) {
@@ -158,8 +160,18 @@ export const DraggableMapWidget: React.FC = () => {
       
       {/* Onboarding Tooltip */}
       {showEcoHubTooltip && (
-        <div className="absolute top-14 left-4 bg-[#5496a2] text-white text-xs font-bold px-3 py-2 rounded-xl shadow-lg w-[150px] text-center animate-bounce z-50 pointer-events-none leading-tight">
+        <div className="absolute top-14 left-4 bg-[#5496a2] text-white text-xs font-bold px-4 py-3 rounded-xl shadow-lg w-[160px] text-center animate-bounce z-50 pointer-events-auto leading-tight">
           <div className="absolute -top-1.5 left-6 w-3 h-3 bg-[#5496a2] rotate-45"></div>
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowEcoHubTooltip(false);
+              sessionStorage.setItem('seen_ecohub_tooltip', 'true');
+            }}
+            className="absolute -top-2 -right-2 w-5 h-5 bg-[#1d3539] rounded-full flex items-center justify-center border border-[#5496a2] shadow-sm hover:scale-110 active:scale-95 transition-transform"
+          >
+            <X size={12} strokeWidth={3} className="text-white"/>
+          </button>
           Tap here for Map Views,<br/>Ranks & Point Store!
         </div>
       )}
@@ -210,8 +222,8 @@ export const DraggableMapWidget: React.FC = () => {
                   style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                 >
                     {/* Slide 0: Map Views */}
-                    <div className="min-w-full snap-start px-1 overflow-y-auto pr-1 custom-scrollbar flex flex-col justify-center h-full pb-6">
-                      <div className="flex flex-col items-center justify-center h-full space-y-4 pt-2">
+                    <div className="min-w-full snap-start px-1 overflow-y-auto pr-1 custom-scrollbar flex flex-col justify-start pb-6">
+                      <div className="flex flex-col items-center justify-start space-y-4 pt-2">
                         <div className="w-12 h-12 bg-white rounded-full border-2 border-[#1d3539] flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(29,53,57,0.3)]">
                           <LayoutGrid size={20} className="text-[#1d3539]" />
                         </div>
@@ -220,15 +232,26 @@ export const DraggableMapWidget: React.FC = () => {
                           <p className="text-[10px] text-[#1d3539]/60 font-bold mb-1">Switch what you see on the map.</p>
                         </div>
                         
-                        <div className="w-[90%] bg-white border-2 border-[#1d3539] p-1 rounded-xl shadow-[2px_2px_0px_0px_rgba(29,53,57,0.1)] flex items-center gap-1">
-                          <button 
-                            onClick={() => setMapDisplayMode('normal')}
-                            className={`flex-1 py-2 rounded-lg text-xs font-black transition-all uppercase tracking-wider ${mapDisplayMode === 'normal' ? 'bg-[#5496a2] text-white shadow-sm' : 'text-slate-400 hover:text-slate-900'}`}
-                          >Normal</button>
-                          <button 
-                            onClick={() => setMapDisplayMode('guild')}
-                            className={`flex-1 py-2 rounded-lg text-xs font-black transition-all uppercase tracking-wider ${mapDisplayMode === 'guild' ? 'bg-[#5496a2] text-white shadow-sm' : 'text-slate-400 hover:text-slate-900'}`}
-                          >Guild</button>
+                        <div className="w-[90%] mx-auto flex flex-col items-center">
+                          <div className="w-full bg-[#1d3539]/5 p-1 rounded-2xl flex items-center mb-3">
+                            <button onClick={() => setMapDisplayMode('normal')} className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] sm:text-xs font-black uppercase transition-all ${mapDisplayMode === 'normal' ? 'bg-white text-[#5496a2] shadow-[0_2px_8px_rgba(0,0,0,0.05)]' : 'text-slate-400 hover:text-slate-600'}`}>
+                              <Map size={14} className={guildId ? "hidden xs:block" : ""} /> Normal
+                            </button>
+                            <button onClick={() => setMapDisplayMode('guild')} className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] sm:text-xs font-black uppercase transition-all ${mapDisplayMode === 'guild' ? 'bg-white text-[#5496a2] shadow-[0_2px_8px_rgba(0,0,0,0.05)]' : 'text-slate-400 hover:text-slate-600'}`}>
+                              <TreePine size={14} className={guildId ? "hidden xs:block" : ""} /> Guilds
+                            </button>
+                            {guildId && (
+                              <button onClick={() => setMapDisplayMode('my_guild')} className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] sm:text-xs font-black uppercase transition-all ${mapDisplayMode === 'my_guild' ? 'bg-white text-[#5496a2] shadow-[0_2px_8px_rgba(0,0,0,0.05)]' : 'text-slate-400 hover:text-slate-600'}`}>
+                                <Shield size={14} className="hidden xs:block" /> Mine
+                              </button>
+                            )}
+                          </div>
+                          
+                          <p className="text-[10px] text-[#1d3539]/60 font-bold text-center h-8 flex items-start justify-center">
+                            {mapDisplayMode === 'normal' && "View regular user signposts and messages."}
+                            {mapDisplayMode === 'guild' && "See territory trees planted by all global guilds."}
+                            {mapDisplayMode === 'my_guild' && "Focus entirely on your own guild's territory."}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -361,22 +384,54 @@ export const DraggableMapWidget: React.FC = () => {
               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             >
               {/* Slide 0: Map Views */}
-              <div className="min-w-full snap-center px-6 overflow-y-auto flex flex-col justify-center h-full pb-10">
-                <div className="w-20 h-20 bg-white rounded-full border-4 border-[#1d3539] flex items-center justify-center shadow-[4px_4px_0px_0px_rgba(29,53,57,0.3)] mb-6 mx-auto">
+              <div className="min-w-full snap-center px-6 overflow-y-auto flex flex-col justify-start pb-10 pt-4">
+                <div className="w-20 h-20 bg-white rounded-full border-4 border-[#1d3539] flex items-center justify-center shrink-0 shadow-[4px_4px_0px_0px_rgba(29,53,57,0.3)] mb-6 mx-auto">
                   <LayoutGrid size={32} className="text-[#1d3539]" />
                 </div>
                 <h4 className="text-lg font-black text-[#1d3539] uppercase tracking-wider mb-2 text-center">Map Display Mode</h4>
                 <p className="text-sm text-[#1d3539]/60 font-bold mb-8 text-center max-w-[200px] mx-auto">Switch between regular signposts or guild trees.</p>
                 
-                <div className="w-[90%] mx-auto bg-white border-2 border-[#1d3539] p-1.5 rounded-2xl shadow-[4px_4px_0px_0px_rgba(29,53,57,0.1)] flex items-center gap-2">
+                <div className="w-[95%] sm:w-[85%] mx-auto flex flex-col gap-3">
                   <button 
-                    onClick={() => setMapDisplayMode('normal')}
-                    className={`flex-1 py-3 rounded-xl text-sm font-black transition-all uppercase tracking-wider ${mapDisplayMode === 'normal' ? 'bg-[#5496a2] text-white shadow-sm' : 'text-slate-400 hover:text-slate-900'}`}
-                  >Normal Map</button>
+                    onClick={() => setMapDisplayMode('normal')} 
+                    className={`flex items-center gap-4 p-4 rounded-3xl border-2 transition-all ${mapDisplayMode === 'normal' ? 'bg-white border-[#5496a2] shadow-[0_4px_12px_rgba(84,150,162,0.15)] scale-[1.02]' : 'bg-[#1d3539]/5 border-transparent hover:bg-[#1d3539]/10'}`}
+                  >
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-colors ${mapDisplayMode === 'normal' ? 'bg-[#5496a2] text-white shadow-sm' : 'bg-white text-slate-400'}`}>
+                      <Map size={24} />
+                    </div>
+                    <div className="text-left">
+                      <h5 className={`font-black uppercase tracking-wider text-sm mb-0.5 ${mapDisplayMode === 'normal' ? 'text-[#1d3539]' : 'text-slate-500'}`}>Normal Mode</h5>
+                      <p className="text-xs font-bold text-slate-400 line-clamp-1">View regular signposts & messages</p>
+                    </div>
+                  </button>
+
                   <button 
-                    onClick={() => setMapDisplayMode('guild')}
-                    className={`flex-1 py-3 rounded-xl text-sm font-black transition-all uppercase tracking-wider ${mapDisplayMode === 'guild' ? 'bg-[#5496a2] text-white shadow-sm' : 'text-slate-400 hover:text-slate-900'}`}
-                  >Guild Map</button>
+                    onClick={() => setMapDisplayMode('guild')} 
+                    className={`flex items-center gap-4 p-4 rounded-3xl border-2 transition-all ${mapDisplayMode === 'guild' ? 'bg-white border-[#5496a2] shadow-[0_4px_12px_rgba(84,150,162,0.15)] scale-[1.02]' : 'bg-[#1d3539]/5 border-transparent hover:bg-[#1d3539]/10'}`}
+                  >
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-colors ${mapDisplayMode === 'guild' ? 'bg-[#5496a2] text-white shadow-sm' : 'bg-white text-slate-400'}`}>
+                      <TreePine size={24} />
+                    </div>
+                    <div className="text-left">
+                      <h5 className={`font-black uppercase tracking-wider text-sm mb-0.5 ${mapDisplayMode === 'guild' ? 'text-[#1d3539]' : 'text-slate-500'}`}>Guild Trees</h5>
+                      <p className="text-xs font-bold text-slate-400 line-clamp-1">View community planted trees globally</p>
+                    </div>
+                  </button>
+
+                  {guildId && (
+                    <button 
+                      onClick={() => setMapDisplayMode('my_guild')} 
+                      className={`flex items-center gap-4 p-4 rounded-3xl border-2 transition-all ${mapDisplayMode === 'my_guild' ? 'bg-white border-[#5496a2] shadow-[0_4px_12px_rgba(84,150,162,0.15)] scale-[1.02]' : 'bg-[#1d3539]/5 border-transparent hover:bg-[#1d3539]/10'}`}
+                    >
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-colors ${mapDisplayMode === 'my_guild' ? 'bg-[#5496a2] text-white shadow-sm' : 'bg-white text-slate-400'}`}>
+                        <Shield size={24} />
+                      </div>
+                      <div className="text-left">
+                        <h5 className={`font-black uppercase tracking-wider text-sm mb-0.5 ${mapDisplayMode === 'my_guild' ? 'text-[#1d3539]' : 'text-slate-500'}`}>My Guild Only</h5>
+                        <p className="text-xs font-bold text-slate-400 line-clamp-1">View trees from your community</p>
+                      </div>
+                    </button>
+                  )}
                 </div>
               </div>
 

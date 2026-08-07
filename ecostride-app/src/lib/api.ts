@@ -35,3 +35,15 @@ export const apiClient = async (endpoint: string, options: RequestInit = {}) => 
 
   return response.json();
 };
+
+export const resolveAvatarUrl = (url: string | undefined | null, defaultUsername?: string) => {
+  if (!url) return `https://api.dicebear.com/7.x/bottts/svg?seed=${defaultUsername || 'EcoStride'}`;
+  
+  if (url.includes('/r2/')) {
+    const r2Path = url.substring(url.indexOf('/r2/'));
+    const baseUrl = API_BASE_URL.replace('/api', '');
+    return `${baseUrl}${r2Path}`;
+  }
+  
+  return url;
+};

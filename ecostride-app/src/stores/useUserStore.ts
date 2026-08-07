@@ -17,7 +17,14 @@ interface UserState {
   player_id?: string
   bio: string
   nationality: string
-  avatar?: string
+  avatar: string | null
+  guildId: string | null
+  guildName: string | null
+  bannedUntil?: number
+  communityUnreadCount: number
+  friendsUnreadCount: number
+  setCoins: (coins: number | ((prev: number) => number)) => void
+  setGuildId: (id: string | null) => void
   totalTreesPlanted: number
   newsEnabled: boolean
   dailyReminderEnabled: boolean
@@ -27,6 +34,7 @@ interface UserState {
   isDarkMode: boolean
   notifications: { id: string; title: string; message: string; icon: string; time: string }[]
   unlockedBadges: string[]
+  showcasedBadges: string[]
   activityHistory: { date: string; distance: number }[]
   createdAt?: number
   setUserData: (data: Partial<UserState>) => void
@@ -39,6 +47,7 @@ interface UserState {
   clearNotifications: () => void
   hasReadAlerts: boolean
   setHasReadAlerts: (read: boolean) => void
+  clearUser: () => void
 }
 
 const syncToAPI = async (data: any) => {
@@ -69,7 +78,16 @@ export const useUserStore = create<UserState>()(
       email: '',
       bio: '',
       nationality: '',
-      avatar: undefined,
+      avatar: null,
+      guildId: null,
+      guildName: null,
+      bannedUntil: undefined,
+      communityUnreadCount: 0,
+      friendsUnreadCount: 0,
+      setCoins: (coins) => set((state) => ({ 
+        userCoins: typeof coins === 'function' ? coins(state.userCoins) : coins 
+      })),
+      setGuildId: (id) => set({ guildId: id }),
       totalTreesPlanted: 0,
       newsEnabled: false,
       dailyReminderEnabled: true,
@@ -79,6 +97,7 @@ export const useUserStore = create<UserState>()(
       isDarkMode: false,
       notifications: [],
       unlockedBadges: [],
+      showcasedBadges: [],
       activityHistory: [],
       createdAt: undefined,
       hasReadAlerts: false,
@@ -107,6 +126,7 @@ export const useUserStore = create<UserState>()(
         return { totalCarbonSaved: newTotal };
       }),
       addActivity: (distance) => set((state) => {
+        if (distance <= 0) return state;
         const newTotal = state.totalDistanceKm + distance;
         
         syncToAPI({ totalDistanceKm: newTotal });
@@ -132,7 +152,17 @@ export const useUserStore = create<UserState>()(
         notifications: [{ ...notif, id: Math.random().toString(), time: new Date().toISOString() }, ...state.notifications],
         hasReadAlerts: false
       })),
-      clearNotifications: () => set({ notifications: [] })
+      clearNotifications: () => set({ notifications: [] }),
+      clearUser: () => {
+        localStorage.removeItem('ecostride-user-store');
+        set({
+          userCoins: 0, totalCarbonSaved: 0, totalDistanceKm: 0, streaks: 0, vouchersCollected: 0,
+          challengesCompleted: 0, username: '', firstName: '', lastName: '', email: '',
+          bio: '', nationality: '', avatar: null, guildId: null, guildName: null,
+          totalTreesPlanted: 0, notifications: [], unlockedBadges: [], activityHistory: [],
+          hasReadAlerts: false, bannedUntil: undefined
+        });
+      }
     }),
     {
       name: 'ecostride-user-store',

@@ -1,10 +1,16 @@
 import React, { useState } from 'react';
 import { useDemoStore } from '../../stores/useDemoStore';
+import { useUserStore } from '../../stores/useUserStore';
+import { useMailStore } from '../../stores/useMailStore';
 import { Home, Map as MapIcon, Users, User, Building } from 'lucide-react';
 
 export const BottomNavBar: React.FC = () => {
   const { activeView, setActiveView } = useDemoStore();
   const [isExpanded, setIsExpanded] = useState(false);
+  const communityUnreadCount = useUserStore(state => state.communityUnreadCount);
+  const friendsUnreadCount = useUserStore(state => state.friendsUnreadCount);
+  const unreadRequestsCount = useMailStore(state => state.unreadRequestsCount);
+  const totalSocialUnread = communityUnreadCount + friendsUnreadCount + unreadRequestsCount;
 
   const showBar = activeView !== 'map' || isExpanded;
 
@@ -36,6 +42,11 @@ export const BottomNavBar: React.FC = () => {
                   className="bg-[var(--color-teal-dark)] rounded-full p-3 shadow-md hover:-translate-y-1 hover:shadow-lg transition-all flex flex-col items-center justify-center min-w-[50px] md:min-w-[60px] border-2 border-white"
                 >
                   {item.icon}
+                  {item.id === 'group' && totalSocialUnread > 0 && (
+                    <div className="absolute top-0 right-0 -mt-1 -mr-1 min-w-[18px] h-[18px] bg-rose-500 rounded-full flex items-center justify-center border-2 border-white">
+                      <span className="text-[9px] font-bold text-white">{totalSocialUnread > 99 ? '99+' : totalSocialUnread}</span>
+                    </div>
+                  )}
                 </button>
               );
             }
@@ -49,8 +60,13 @@ export const BottomNavBar: React.FC = () => {
                 }}
                 className={`flex flex-col items-center justify-center transition-all px-1 sm:px-3 flex-1 md:flex-none`}
               >
-                <div className={`p-2 rounded-[1.2rem] transition-colors ${isActive ? 'glass-active text-[var(--color-teal-dark)]' : 'text-[var(--color-text-muted)] hover:bg-white/20 hover:text-[var(--color-text-main)]'}`}>
+                <div className={`relative p-2 rounded-[1.2rem] transition-colors ${isActive ? 'glass-active text-[var(--color-teal-dark)]' : 'text-[var(--color-text-muted)] hover:bg-white/20 hover:text-[var(--color-text-main)]'}`}>
                   {item.icon}
+                  {item.id === 'group' && totalSocialUnread > 0 && (
+                    <div className="absolute top-0 right-0 -mt-1 -mr-1 min-w-[18px] h-[18px] bg-rose-500 rounded-full flex items-center justify-center border-2 border-white">
+                      <span className="text-[9px] font-bold text-white">{totalSocialUnread > 99 ? '99+' : totalSocialUnread}</span>
+                    </div>
+                  )}
                 </div>
                 <span className={`text-[10px] font-black mt-1 ${isActive ? 'block text-[var(--color-text-main)]' : 'hidden'}`}>{item.label}</span>
               </button>
