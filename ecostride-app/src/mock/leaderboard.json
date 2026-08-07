@@ -1,0 +1,26 @@
+{
+  "players": [],
+  "guilds": [
+    {
+      "id": "g1",
+      "name": "Team Green",
+      "power": 45000,
+      "members": 12,
+      "avatar": "🌿"
+    },
+    {
+      "id": "g2",
+      "name": "Eco Warriors",
+      "power": 42500,
+      "members": 15,
+      "avatar": "🛡️"
+    },
+    {
+      "id": "g3",
+      "name": "Nature Knights",
+      "power": 38000,
+      "members": 8,
+      "avatar": "⚔️"
+    }
+  ]
+}

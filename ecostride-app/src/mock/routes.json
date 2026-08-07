@@ -1,0 +1,16 @@
+{
+  "id": "route-utm-01",
+  "name": "UTM Green Academic Route",
+  "totalDistanceKm": 2.8,
+  "estimatedTimeMin": 12,
+  "carbonSavedKg": 0.85,
+  "treesEquivalent": 0.07,
+  "coinsReward": 85,
+  "pathCoordinates": [
+    [103.6380, 1.5585],
+    [103.6395, 1.5592],
+    [103.6410, 1.5605],
+    [103.6428, 1.5618],
+    [103.6450, 1.5632]
+  ]
+}

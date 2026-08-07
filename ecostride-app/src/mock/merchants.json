@@ -1,0 +1,12 @@
+[
+  {
+    "id": "mer-01",
+    "name": "85°C Energy Station",
+    "category": "Cafe & Dessert",
+    "coordinates": [103.6450, 1.5632],
+    "icon": "☕",
+    "voucherTitle": "Green Rider Exclusive $5 Voucher",
+    "discountCode": "ECO-85C-2026",
+    "oasisPerk": "30% OFF during Territory Ownership"
+  }
+]
