@@ -1,0 +1,29 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "zone-engineering",
+      "properties": {
+        "zoneName": "Engineering Zone A",
+        "ownerGuild": "Engineering Knights",
+        "colorNeutral": "#e2e8f0",
+        "colorConquered": "#86efac",
+        "isConquered": false,
+        "activePerk": "All Zone Merchants 30% OFF"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [103.6370, 1.5570],
+            [103.6460, 1.5570],
+            [103.6460, 1.5640],
+            [103.6370, 1.5640],
+            [103.6370, 1.5570]
+          ]
+        ]
+      }
+    }
+  ]
+}
