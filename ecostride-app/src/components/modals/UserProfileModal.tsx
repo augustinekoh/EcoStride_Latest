@@ -110,7 +110,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
   }
 
   return (
-    <div className="fixed inset-0 z-[160] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
+    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
       {/* Main Modal Wrapper with Vibrant Gradient and Glassmorphism borders */}
       <div 
         className="rounded-[2.5rem] w-full max-w-sm max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-90 duration-300 relative border-4 border-[#1d3539] shadow-comic"

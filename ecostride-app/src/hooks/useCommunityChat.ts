@@ -7,8 +7,11 @@ export interface ChatMessage {
   guild_id: string;
   user_id: string;
   username?: string;
+  avatar?: string;
   content: string;
   created_at: number;
+  is_edited?: boolean;
+  attachment_key?: string | null;
 }
 
 // Use VITE_API_BASE_URL to be consistent, but strip the /api suffix for WS
@@ -69,6 +72,12 @@ export function useCommunityChat(guildId: string | undefined | null, token: stri
             if (prev.some(m => m.id === data.message.id)) return prev;
             return [...prev, data.message];
           });
+        } else if (data.type === 'edit') {
+          setMessages(prev => prev.map(m => 
+            m.id === data.messageId ? { ...m, content: data.content, is_edited: true } : m
+          ));
+        } else if (data.type === 'delete') {
+          setMessages(prev => prev.filter(m => m.id !== data.messageId));
         } else if (data.type === 'error') {
           if (data.error === 'You have been muted by the admin.') {
             setIsMuted(true);
@@ -121,9 +130,21 @@ export function useCommunityChat(guildId: string | undefined | null, token: stri
     };
   }, [connect]);
 
-  const sendMessage = useCallback((content: string) => {
+  const sendMessage = useCallback((content: string, attachmentKey?: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'message', content }));
+      wsRef.current.send(JSON.stringify({ type: 'message', content, attachmentKey }));
+    }
+  }, []);
+
+  const editMessage = useCallback((messageId: string, content: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'edit', messageId, content }));
+    }
+  }, []);
+
+  const deleteMessage = useCallback((messageId: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'delete', messageId }));
     }
   }, []);
 
@@ -131,6 +152,8 @@ export function useCommunityChat(guildId: string | undefined | null, token: stri
     messages,
     isConnected,
     isMuted,
-    sendMessage
+    sendMessage,
+    editMessage,
+    deleteMessage
   };
 }

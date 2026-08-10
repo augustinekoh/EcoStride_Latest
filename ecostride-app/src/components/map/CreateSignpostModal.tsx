@@ -11,11 +11,12 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   currentLocation: [number, number] | null;
+  onSuccess?: () => void;
 }
 
 const EMOJI_LIST = ['🚴', '💪', '📸', '☕', '⚠️', '🏆'];
 
-export const CreateSignpostModal: React.FC<Props> = ({ isOpen, onClose, currentLocation }) => {
+export const CreateSignpostModal: React.FC<Props> = ({ isOpen, onClose, currentLocation, onSuccess }) => {
   const { user } = useAuthStore();
   const { username } = useUserStore();
   const { signposts, setSignposts } = useMapStore();
@@ -71,7 +72,7 @@ export const CreateSignpostModal: React.FC<Props> = ({ isOpen, onClose, currentL
       // Optimistic Update
       setSignposts([...signposts, newSignpost]);
 
-      await apiClient('/signposts', {
+      const res = await apiClient('/signposts', {
         method: 'POST',
         body: JSON.stringify({
           lng: currentLocation[0],
@@ -83,10 +84,16 @@ export const CreateSignpostModal: React.FC<Props> = ({ isOpen, onClose, currentL
           images: uploadedUrls
         })
       });
+      
+      if (res.id) {
+        const currentSignposts = useMapStore.getState().signposts;
+        setSignposts(currentSignposts.map(s => s.id === newSignpost.id ? { ...s, id: res.id } : s));
+      }
       setMessage('');
       setImages([]);
       setImagePreviews([]);
       onClose();
+      if (onSuccess) onSuccess();
     } catch (err) {
       console.error(err);
       alert("Failed to drop signpost.");

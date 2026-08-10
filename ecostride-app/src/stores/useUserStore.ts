@@ -30,6 +30,9 @@ interface UserState {
   dailyReminderEnabled: boolean
   newFollowerEnabled: boolean
   shareActivity: boolean
+  shareActivityStatus: boolean
+  isPublicProfile: boolean
+  allowFriendRequests: boolean
   doNotDisturb: boolean
   isDarkMode: boolean
   notifications: { id: string; title: string; message: string; icon: string; time: string }[]
@@ -93,6 +96,9 @@ export const useUserStore = create<UserState>()(
       dailyReminderEnabled: true,
       newFollowerEnabled: true,
       shareActivity: true,
+      shareActivityStatus: true,
+      isPublicProfile: true,
+      allowFriendRequests: true,
       doNotDisturb: false,
       isDarkMode: false,
       notifications: [],
@@ -158,9 +164,13 @@ export const useUserStore = create<UserState>()(
         set({
           userCoins: 0, totalCarbonSaved: 0, totalDistanceKm: 0, streaks: 0, vouchersCollected: 0,
           challengesCompleted: 0, username: '', firstName: '', lastName: '', email: '',
-          bio: '', nationality: '', avatar: null, guildId: null, guildName: null,
-          totalTreesPlanted: 0, notifications: [], unlockedBadges: [], activityHistory: [],
-          hasReadAlerts: false, bannedUntil: undefined
+          player_id: undefined, bio: '', nationality: '', avatar: null, guildId: null, guildName: null,
+          bannedUntil: undefined, communityUnreadCount: 0, friendsUnreadCount: 0,
+          totalTreesPlanted: 0, newsEnabled: false, dailyReminderEnabled: true,
+          newFollowerEnabled: true, shareActivity: true, doNotDisturb: false, isDarkMode: false,
+          shareActivityStatus: true, isPublicProfile: true, allowFriendRequests: true,
+          notifications: [], unlockedBadges: [], showcasedBadges: [], activityHistory: [],
+          createdAt: undefined, hasReadAlerts: false
         });
       }
     }),

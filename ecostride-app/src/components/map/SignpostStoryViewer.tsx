@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, Trash2, Send } from 'lucide-react';
+import { auth } from '../../firebase';
 
 interface Props {
   signpost: any;
@@ -8,6 +9,9 @@ interface Props {
   onLike: (e: React.MouseEvent, sp: any) => void;
   onViewProfile: (authorId: string, username: string) => void;
   onFullScreen: (img: string) => void;
+  onDelete?: (id: string) => void;
+  onShare?: (id: string) => void;
+  isPausedExternal?: boolean;
 }
 
 export const SignpostStoryViewer: React.FC<Props> = ({ 
@@ -16,7 +20,10 @@ export const SignpostStoryViewer: React.FC<Props> = ({
   onClose, 
   onLike, 
   onViewProfile,
-  onFullScreen
+  onFullScreen,
+  onDelete,
+  onShare,
+  isPausedExternal
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -29,12 +36,12 @@ export const SignpostStoryViewer: React.FC<Props> = ({
   }, [signpost.id]);
 
   useEffect(() => {
-    if (isPaused) return;
+    if (isPaused || isPausedExternal) return;
     const interval = setInterval(() => {
       setProgress(p => (p >= 100 ? 100 : p + 2));
     }, 100);
     return () => clearInterval(interval);
-  }, [isPaused]);
+  }, [isPaused, isPausedExternal]);
 
   // Handle progression when progress reaches 100
   useEffect(() => {
@@ -113,7 +120,7 @@ export const SignpostStoryViewer: React.FC<Props> = ({
       {/* Gradient Overlay for Text */}
       <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-black/90 via-black/50 to-transparent z-10 pointer-events-none" />
 
-      {/* Text & Like Button Container */}
+      {/* Text & Action Buttons Container */}
       <div className="absolute bottom-0 left-0 right-0 p-4 z-30 flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <span className="text-xl bg-white/20 backdrop-blur-sm p-1.5 rounded-xl border border-white/30 text-white">{signpost.emoji}</span>
@@ -128,22 +135,48 @@ export const SignpostStoryViewer: React.FC<Props> = ({
           </div>
         </div>
         
-        <button 
-          onClick={(e) => { 
-            e.stopPropagation(); 
-            setShowLikeAnim(true);
-            setTimeout(() => setShowLikeAnim(false), 1000);
-            onLike(e, signpost); 
-          }}
-          className="w-full bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/40 rounded-xl py-2 font-bold text-white text-sm transition-colors flex items-center justify-center gap-1 active:scale-95 mt-1 pointer-events-auto relative overflow-hidden"
-        >
-          👍 Energy <span className="bg-white/90 px-1.5 rounded-full text-slate-900 text-xs ml-1 font-black">{signpost.likes || 0}</span>
-          
-          {/* Ripple / Highlight effect */}
-          {showLikeAnim && (
-            <div className="absolute inset-0 bg-white/40 animate-ping rounded-xl pointer-events-none" />
+        <div className="flex items-center gap-2 mt-1">
+          <button 
+            onClick={(e) => { 
+              e.stopPropagation(); 
+              setShowLikeAnim(true);
+              setTimeout(() => setShowLikeAnim(false), 1000);
+              onLike(e, signpost); 
+            }}
+            className="flex-1 bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/40 rounded-xl py-2 font-bold text-white text-sm transition-colors flex items-center justify-center gap-1 active:scale-95 pointer-events-auto relative overflow-hidden"
+          >
+            👍 Energy <span className="bg-white/90 px-1.5 rounded-full text-slate-900 text-xs ml-1 font-black">{signpost.likes || 0}</span>
+            {showLikeAnim && <div className="absolute inset-0 bg-white/40 animate-ping rounded-xl pointer-events-none" />}
+          </button>
+
+          {auth.currentUser?.uid === signpost.authorId && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onShare) onShare(signpost.id);
+              }}
+              className="p-2 bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/40 rounded-xl text-white transition-colors active:scale-95 pointer-events-auto flex items-center justify-center"
+              title="Share Signpost"
+            >
+              <Send size={18} />
+            </button>
           )}
-        </button>
+
+          {auth.currentUser?.uid === signpost.authorId && onDelete && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm("Are you sure you want to delete this signpost?")) {
+                  onDelete(signpost.id);
+                }
+              }}
+              className="p-2 bg-red-500/80 hover:bg-red-600/90 backdrop-blur-md border border-red-400/50 rounded-xl text-white transition-colors active:scale-95 pointer-events-auto flex items-center justify-center"
+              title="Delete Signpost"
+            >
+              <Trash2 size={18} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Floating Thumbs Up Emoji Animation */}

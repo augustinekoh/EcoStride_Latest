@@ -325,8 +325,8 @@ export const SettingsView: React.FC = () => {
 
       {showChangePassword && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-[var(--color-bg-main)] border-4 border-[var(--color-text-main)] rounded-3xl p-6 max-w-sm w-[calc(100%-8px)] sm:w-full shadow-[8px_8px_0px_0px_#1d3539] dark:shadow-[8px_8px_0px_0px_#ffffff]">
-            <h2 className="text-2xl font-black text-center mb-4 uppercase text-[var(--color-text-main)]">Change Password</h2>
+          <div className="bg-white dark:bg-slate-800 border-4 border-slate-900 dark:border-slate-700 rounded-3xl p-6 max-w-sm w-[calc(100%-8px)] sm:w-full shadow-comic dark:shadow-[8px_8px_0px_0px_rgba(255,255,255,0.1)]">
+            <h2 className="text-2xl font-black text-center mb-4 uppercase text-slate-900 dark:text-white">Change Password</h2>
             
             {pwError && <div className="bg-red-100 border-2 border-red-500 text-red-700 p-2 rounded-xl mb-4 text-sm font-bold">{pwError}</div>}
             {pwMsg && <div className="bg-green-100 border-2 border-green-500 text-green-700 p-2 rounded-xl mb-4 text-sm font-bold">{pwMsg}</div>}
@@ -339,7 +339,7 @@ export const SettingsView: React.FC = () => {
                   value={oldPassword}
                   onChange={(e) => setOldPassword(e.target.value)}
                   required
-                  className="w-full bg-transparent border-2 border-[var(--color-text-main)] text-[var(--color-text-main)] rounded-xl px-4 py-2 font-bold focus:outline-none" 
+                  className="w-full bg-transparent border-2 border-slate-900 dark:border-slate-600 text-slate-900 dark:text-white rounded-xl px-4 py-2 font-bold focus:outline-none focus:border-[#5496a2]" 
                 />
               </div>
               <div>
@@ -349,7 +349,7 @@ export const SettingsView: React.FC = () => {
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   required
-                  className="w-full bg-transparent border-2 border-[var(--color-text-main)] text-[var(--color-text-main)] rounded-xl px-4 py-2 font-bold focus:outline-none" 
+                  className="w-full bg-transparent border-2 border-slate-900 dark:border-slate-600 text-slate-900 dark:text-white rounded-xl px-4 py-2 font-bold focus:outline-none focus:border-[#5496a2]" 
                 />
               </div>
               

@@ -8,3 +8,10 @@ node_modules/
 *.ps1
 
 *.md
+
+/*.js
+old_backups/
+
+*.zip
+
+ecostride_chat/

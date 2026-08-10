@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { checkAndAwardBadges } from './badgeEngine';
+import { AwsClient } from 'aws4fetch';
 
 export { CommunityChatRoom } from './CommunityChatRoom';
 
@@ -10,18 +11,23 @@ type Bindings = {
   FIREBASE_PROJECT_ID: string;
   CHAT_ROOM: DurableObjectNamespace;
   AVATARS_BUCKET: R2Bucket;
+  R2_ACCOUNT_ID: string;
+  R2_ACCESS_KEY_ID: string;
+  R2_SECRET_ACCESS_KEY: string;
 };
 
-const app = new Hono<{ Bindings: Bindings }>();
+type Variables = {
+  user: any;
+};
+
+const app = new Hono<{ Bindings: Bindings, Variables: Variables }>();
 
 app.use('*', cors());
 
 app.get('/api/debug-schema', async (c) => {
   const schema = await c.env.DB.prepare('PRAGMA table_info(chat_messages)').all();
-  return c.json({ schema });
+  return c.json(schema.results);
 });
-
-
 
 // Authentication Middleware
 app.use('/api/*', async (c, next) => {
@@ -59,6 +65,40 @@ app.use('/api/*', async (c, next) => {
     await next();
   } catch (err) {
     return c.json({ error: 'Invalid token' }, 401);
+  }
+});
+
+// POST chat image upload
+app.post('/api/chat/upload', async (c) => {
+  const jwtUser = c.get('user') as any;
+  if (!jwtUser || !jwtUser.sub) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  try {
+    const formData = await c.req.formData();
+    const file = formData.get('image') as File | null;
+    
+    if (!file) {
+      return c.json({ error: 'No image provided' }, 400);
+    }
+
+    const extension = file.name.split('.').pop() || 'webp';
+    const objectKey = `chat-images/${jwtUser.sub}-${Date.now()}.${extension}`;
+    
+    await c.env.AVATARS_BUCKET.put(objectKey, await file.arrayBuffer(), {
+      httpMetadata: { contentType: file.type }
+    });
+
+    const publicUrl = `${new URL(c.req.url).origin}/r2/${objectKey}`;
+
+    return c.json({
+      success: true,
+      publicUrl: publicUrl,
+      objectKey: objectKey
+    });
+  } catch (error: any) {
+    return c.json({ error: 'Failed to upload image', details: error.message }, 500);
   }
 });
 
@@ -112,13 +152,7 @@ app.post('/api/chat/read/:roomId', async (c) => {
     'INSERT INTO user_chat_reads (user_id, guild_id, last_read_at) VALUES (?, ?, ?) ON CONFLICT(user_id, guild_id) DO UPDATE SET last_read_at = ?'
   ).bind(userId, roomId, now, now).run();
   
-  // Send Mail to requester
-    const senderMailId = `mail-${Date.now()}-snd-${Math.random().toString(36).substring(2,7)}`;
-    const targetUsername = friendExists.username || 'Someone';
-    const senderContent = `Friend request sent to ${targetUsername}.`;
-    await c.env.DB.prepare(
-      'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, action_type, action_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).bind(senderMailId, 'Friend Request Sent', senderContent, 'System', 'user', id, 0, 'system', '{}', now).run();
+
 
     return c.json({ success: true });
 });
@@ -485,6 +519,75 @@ app.delete('/api/signposts/:id', async (c) => {
   return c.json({ success: true });
 });
 
+app.delete('/api/signposts/:id', async (c) => {
+  const jwtUser = c.get('user');
+  if (!jwtUser || !jwtUser.sub) return c.json({ error: 'Unauthorized' }, 401);
+  const userId = jwtUser.sub;
+  const id = c.req.param('id');
+  
+  const signpost: any = await c.env.DB.prepare('SELECT author_id FROM signposts WHERE id = ?').bind(id).first();
+  if (!signpost) return c.json({ error: 'Not found' }, 404);
+  if (signpost.author_id !== userId) return c.json({ error: 'Forbidden' }, 403);
+  
+  await c.env.DB.prepare('DELETE FROM signposts WHERE id = ?').bind(id).run();
+  return c.json({ success: true });
+});
+
+app.get('/api/signposts/:id', async (c) => {
+  const id = c.req.param('id');
+  const signpost = await c.env.DB.prepare('SELECT signposts.*, users.username as authorUsername, users.email as authorEmail FROM signposts LEFT JOIN users ON signposts.author_id = users.id WHERE signposts.id = ?').bind(id).first();
+  if (!signpost) return c.json({ error: 'Not found' }, 404);
+  return c.json({ signpost });
+});
+
+app.post('/api/signposts/:id/share', async (c) => {
+  const id = c.req.param('id');
+  const user = c.get('user');
+  if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
+  const userId = user.sub;
+
+  const body = await c.req.json();
+  const { targetId } = body;
+  if (!targetId) return c.json({ error: 'Target ID required' }, 400);
+
+  const signpost: any = await c.env.DB.prepare('SELECT emoji, message FROM signposts WHERE id = ?').bind(id).first();
+  if (!signpost) return c.json({ error: 'Signpost not found' }, 404);
+
+  const userCheck: any = await c.env.DB.prepare('SELECT username, avatar FROM users WHERE id = ?').bind(userId).first();
+  const username = userCheck ? userCheck.username : 'Unknown User';
+  const avatar = userCheck ? userCheck.avatar : null;
+
+  const content = `[SIGNPOST:${id}:${signpost.emoji || '📍'}:${signpost.message || 'Shared a signpost'}]`;
+  const msgId = crypto.randomUUID();
+  const createdAt = Date.now();
+
+  await c.env.DB.prepare(
+    "INSERT INTO chat_messages (id, guild_id, sender_id, sender_name, content, timestamp, attachment_key) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  ).bind(msgId, targetId, userId, username, content, createdAt, null).run();
+
+  const payload = {
+    action: 'message',
+    guild_id: targetId,
+    id: msgId,
+    user_id: userId,
+    username: username,
+    avatar: avatar,
+    content: content,
+    created_at: createdAt,
+    is_edited: 0,
+    attachment_key: null
+  };
+
+  const url = new URL(c.req.url);
+  const DOUrl = `${url.origin}/api/chat/community/${targetId}/system_message`;
+  await c.env.CHAT_ROOM.get(c.env.CHAT_ROOM.idFromName(targetId)).fetch(new Request(DOUrl, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }));
+
+  return c.json({ success: true, messageId: msgId });
+});
+
 app.post('/api/signposts/:id/like', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json();
@@ -568,7 +671,10 @@ app.get('/api/leaderboard', async (c) => {
     }
   }
 
-  return c.json({ topDistance: topDistance.results, topCoins: topCoins.results, userRank });
+  // Fetch Top Guilds (by territory trees, or just all guilds)
+  const topGuilds = await c.env.DB.prepare('SELECT g.id, g.name, (SELECT COUNT(*) FROM trees t JOIN users u ON t.author_id = u.id WHERE u.guild_id = g.id) as territory_trees, (SELECT COUNT(*) FROM users u WHERE u.guild_id = g.id) as member_count FROM guilds g ORDER BY territory_trees DESC LIMIT 50').all();
+
+  return c.json({ topDistance: topDistance.results, topCoins: topCoins.results, userRank, topGuilds: topGuilds.results });
 });
 
 app.get('/api/store', async (c) => {
@@ -1753,65 +1859,7 @@ app.get('/api/users/:id', async (c) => {
   return c.json({ user });
 });
 
-// POST user (sync auth user to DB or update fields)
-app.post('/api/users/:id', async (c) => {
-  const id = c.req.param('id');
-  const body = await c.req.json();
-  const jwtUser = c.get('user') as any;
-  
-  // Verify identity OR allow if the requesting user is an admin
-  if (!jwtUser) return c.json({ error: 'Unauthorized' }, 401);
-  const requestingDbUser = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(jwtUser.sub).first();
-  const isAdmin = requestingDbUser && requestingDbUser.role === 'admin';
-  
-  if (jwtUser.sub !== id && !isAdmin) {
-    return c.json({ error: 'Forbidden: Cannot modify other user data' }, 403);
-  }
-  
-  // Basic upsert or update
-  const user = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(id).first();
-  if (!user) {
-    if (!body.username) return c.json({ error: 'Username is required for new users' }, 400);
-    
-    // Check if username is already taken
-    const existingUsername = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(body.username).first();
-    if (existingUsername) return c.json({ error: 'Username is already taken' }, 400);
-
-    // Generate unique 8-digit player_id
-    let playerId = '';
-    let isUnique = false;
-    while (!isUnique) {
-      playerId = Math.floor(10000000 + Math.random() * 90000000).toString(); // 8 digits
-      const existing = await c.env.DB.prepare('SELECT id FROM users WHERE player_id = ?').bind(playerId).first();
-      if (!existing) isUnique = true;
-    }
-
-    await c.env.DB.prepare(
-      'INSERT INTO users (id, email, username, player_id, role, created_at, coins, total_distance_km) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    ).bind(id, body.email || '', body.username, playerId, body.role || 'user', Date.now(), body.coins || 0, body.totalDistanceKm || 0).run();
-  } else {
-    // Dynamic update
-    const updates: string[] = [];
-    const values: any[] = [];
-    
-    if (body.email !== undefined) { updates.push('email = ?'); values.push(body.email); }
-    if (body.username !== undefined) { updates.push('username = ?'); values.push(body.username); }
-    if (body.role !== undefined) { updates.push('role = ?'); values.push(body.role); }
-    if (body.coins !== undefined) { updates.push('coins = ?'); values.push(body.coins); }
-    if (body.totalDistanceKm !== undefined) { updates.push('total_distance_km = ?'); values.push(body.totalDistanceKm); }
-    if (body.bio !== undefined) { updates.push('bio = ?'); values.push(body.bio); }
-    if (body.nationality !== undefined) { updates.push('nationality = ?'); values.push(body.nationality); }
-    if (body.unlocked_badges !== undefined) { updates.push('unlocked_badges = ?'); values.push(typeof body.unlocked_badges === 'string' ? body.unlocked_badges : JSON.stringify(body.unlocked_badges)); }
-    if (body.avatar !== undefined) { updates.push('avatar = ?'); values.push(body.avatar); }
-    
-    if (updates.length > 0) {
-      values.push(id);
-      await c.env.DB.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
-    }
-  }
-  
-  return c.json({ success: true });
-});
+// Removed duplicated app.post('/api/users/:id') route
 
 // DELETE user
 app.delete('/api/users/:id', async (c) => {
@@ -2075,6 +2123,22 @@ app.post('/api/admin/users/:id/ban', async (c) => {
   return c.json({ success: true, bannedUntil });
 });
 
+app.post('/api/admin/users/:id/coins', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json();
+  const jwtUser = c.get('user') as any;
+  if (!jwtUser) return c.json({ error: 'Unauthorized' }, 401);
+  const requestingDbUser = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(jwtUser.sub).first();
+  if (!requestingDbUser || requestingDbUser.role !== 'admin') {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+  
+  if (body.coins !== undefined) {
+    await c.env.DB.prepare('UPDATE users SET coins = ? WHERE id = ?').bind(body.coins, id).run();
+  }
+  return c.json({ success: true });
+});
+
 app.delete('/api/admin/guilds/:id', async (c) => {
   const id = c.req.param('id');
   await c.env.DB.prepare('UPDATE users SET guild_id = NULL, muted_until = NULL WHERE guild_id = ?').bind(id).run();
@@ -2129,14 +2193,13 @@ app.post('/api/admin/cleanup', async (c) => {
   // Guild Join Requests > 3 days
   await c.env.DB.prepare("DELETE FROM mail WHERE action_type = 'guild_join_request' AND created_at < ?").bind(spThreshold).run();
   
-  // Recalibrate user stats from activity_history
+  // Recalibrate user stats from activity_history (only distance, NOT coins)
   const users = await c.env.DB.prepare('SELECT id FROM users').all();
   for (const user of users.results) {
     const history = await c.env.DB.prepare('SELECT SUM(distance) as total_dist FROM activity_history WHERE user_id = ?').bind(user.id).first();
     if (history && history.total_dist) {
       const dist = Number(history.total_dist);
-      const coins = Math.floor((dist / 5.88) * 100);
-      await c.env.DB.prepare('UPDATE users SET total_distance_km = ?, coins = ? WHERE id = ?').bind(dist, coins, user.id).run();
+      await c.env.DB.prepare('UPDATE users SET total_distance_km = ? WHERE id = ?').bind(dist, user.id).run();
     }
   }
 
