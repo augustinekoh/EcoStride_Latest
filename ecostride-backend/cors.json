@@ -1,0 +1,23 @@
+{
+  "rules": [
+    {
+      "allowedOrigins": [
+        "http://localhost:5173",
+        "https://*.pages.dev",
+        "*"
+      ],
+      "allowedMethods": [
+        "GET",
+        "PUT",
+        "POST",
+        "DELETE",
+        "HEAD"
+      ],
+      "allowedHeaders": [
+        "*"
+      ],
+      "exposeHeaders": [],
+      "maxAgeSeconds": 3000
+    }
+  ]
+}

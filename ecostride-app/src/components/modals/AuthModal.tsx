@@ -27,7 +27,7 @@ export const AuthModal: React.FC = () => {
       setUsernameStatus('checking');
       const timer = setTimeout(async () => {
         try {
-          const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/check-username?username=${encodeURIComponent(username)}`);
+          const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/check-username?username=${encodeURIComponent(username)}`);
           const data = await res.json();
           setUsernameStatus(data.available ? 'available' : 'taken');
         } catch (e) {

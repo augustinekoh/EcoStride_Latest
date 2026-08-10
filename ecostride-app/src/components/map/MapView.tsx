@@ -1,8 +1,9 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import Map, { Source, Layer, Marker, Popup } from 'react-map-gl/mapbox';
 import type { ViewState } from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { Leaf, X, ExternalLink, Gift, MapPin, ArrowLeft, Home } from 'lucide-react';
+import { Leaf, X, ExternalLink, Gift, MapPin, ArrowLeft, Home, Navigation } from 'lucide-react';
 
 import { useDemoStore } from '../../stores/useDemoStore';
 import { useMapStore } from '../../stores/useMapStore';
@@ -14,6 +15,7 @@ import * as turf from '@turf/turf';
 import routesData from '../../mock/routes.json';
 import leaderboardData from '../../mock/leaderboard.json';
 import { CreateSignpostModal } from './CreateSignpostModal';
+import { ShareSignpostModal } from './ShareSignpostModal';
 import { DraggableMapWidget } from './DraggableMapWidget';
 import { PointsStoreModal } from '../modals/PointsStoreModal';
 import { SignpostStoryViewer } from './SignpostStoryViewer';
@@ -39,8 +41,10 @@ export const MapView: React.FC = () => {
   const { userCoins, deductCoins, addCoins, guildName, guildId } = useUserStore();
 
   const mapRef = useRef(null);
+  const location = useLocation();
   const [trees, setTrees] = useState<any[]>([]);
   const [activeTree, setActiveTree] = useState<any | null>(null);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [showNavPrompt, setShowNavPrompt] = useState(() => {
     if (typeof window !== 'undefined') {
       return !sessionStorage.getItem('hide_nav_instruction');
@@ -136,6 +140,12 @@ export const MapView: React.FC = () => {
     bearing: 0,
     padding: { top: 0, bottom: 0, left: 0, right: 0 }
   });
+
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3000);
+  };
   
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -208,6 +218,20 @@ export const MapView: React.FC = () => {
     fetchMapData();
   }, [setSignposts, setTrees, setMerchants]);
 
+  // Handle flyToLocation state changes
+  useEffect(() => {
+    if (flyToLocation) {
+      setViewState(prev => ({
+        ...prev,
+        longitude: flyToLocation[0],
+        latitude: flyToLocation[1],
+        zoom: 16
+      }));
+      setIsFreeWalk(false);
+      setFlyToLocation(null);
+    }
+  }, [flyToLocation, setFlyToLocation, setIsFreeWalk]);
+
   useEffect(() => {
     if (showNavPrompt && currentMode === 'explore') {
       const timer = setTimeout(() => setShowNavPrompt(false), 8000);
@@ -271,15 +295,25 @@ export const MapView: React.FC = () => {
   }, [currentMode, mapboxRouteGeoJSON]);
 
   // Update map center when in demo mode OR when live location changes for the first time
+  const hasCentered = useRef(false);
   useEffect(() => {
-    if (currentMode === 'demo' || (currentMode === 'explore' && liveLocation)) {
+    if (currentMode === 'demo') {
       setViewState((prev) => ({
         ...prev,
         longitude: currentCoordinate[0],
         latitude: currentCoordinate[1]
       }));
+    } else if (currentMode === 'explore' && liveLocation && !hasCentered.current) {
+      hasCentered.current = true;
+      if (!flyToLocation) {
+        setViewState((prev) => ({
+          ...prev,
+          longitude: currentCoordinate[0],
+          latitude: currentCoordinate[1]
+        }));
+      }
     }
-  }, [currentCoordinate, currentMode, liveLocation]);
+  }, [currentCoordinate, currentMode, liveLocation, flyToLocation]);
 
   const handleMerchantClick = (m: any) => {
     if (mapboxRouteGeoJSON) return;
@@ -428,6 +462,18 @@ export const MapView: React.FC = () => {
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery, viewState.longitude, viewState.latitude, currentMode]);
 
+  const handleDeleteSignpost = async (id: string) => {
+    try {
+      await apiClient(`/signposts/${id}`, { method: 'DELETE' });
+      setSignposts(signposts.filter((s: any) => s.id !== id));
+      setActiveSignpost(null);
+      showToast('Signpost deleted.');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to delete signpost');
+    }
+  };
+
   const handleSelectSearchResult = (feature: any) => {
     const [lng, lat] = feature.center;
     const placeName = feature.text;
@@ -465,13 +511,32 @@ export const MapView: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    if (location.state?.flyToSignpost) {
+      const { lat, lng, id } = location.state.flyToSignpost;
+      setFlyToLocation([lng, lat]);
+      
+      const checkAndOpen = setInterval(() => {
+        const found = signposts.find((s: any) => s.id === id);
+        if (found) {
+          setActiveSignpost(found);
+          clearInterval(checkAndOpen);
+        }
+      }, 500);
+      
+      setTimeout(() => clearInterval(checkAndOpen), 5000);
+      
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state?.flyToSignpost, signposts]);
+
   return (
     <div className="relative w-full h-screen overflow-hidden bg-slate-100">
       {/* User Search Bar */}
       {true && (
         <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[200] w-11/12 max-w-sm">
           <div className="relative">
-            <form onSubmit={handleUserSearch} className="flex items-center gap-2 bg-white p-1.5 rounded-full border-2 border-[#1d3539] shadow-md transition-all focus-within:-translate-y-1 relative z-50">
+            <form onSubmit={handleUserSearch} className="flex items-center gap-2 glass-pill p-1.5 transition-all focus-within:-translate-y-1 relative z-50">
               <div className="relative">
                 <button 
                   type="button" 
@@ -480,7 +545,7 @@ export const MapView: React.FC = () => {
                     if (typeof window !== 'undefined') sessionStorage.setItem('seen_map_home_tooltip', 'true');
                     setShowMapHomeTooltip(false);
                   }} 
-                  className="bg-slate-100 text-[#1d3539] p-2 rounded-full border-2 border-transparent hover:bg-slate-200 transition-colors shrink-0 relative z-10"
+                  className="bg-white/50 text-[#1d3539] p-2 rounded-full border border-white/60 hover:bg-white/80 transition-colors shrink-0 relative z-10"
                 >
                   <Home size={18} />
                 </button>
@@ -509,19 +574,19 @@ export const MapView: React.FC = () => {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
-              <button type="submit" className="bg-[#5496a2] text-white p-2 rounded-full border-2 border-[#1d3539] hover:bg-[#80abb1]">
+              <button type="submit" className="bg-[#5496a2]/80 backdrop-blur-sm text-white p-2 rounded-full border border-white/40 hover:bg-[#5496a2] transition-colors">
                 {isSearching ? '⏳' : '🔍'}
               </button>
             </form>
             
             {/* Autocomplete Dropdown */}
             {searchResults.length > 0 && (
-              <div className="absolute top-12 left-0 w-full bg-white border-2 border-slate-900 shadow-comic rounded-2xl mt-2 overflow-hidden z-40 flex flex-col animate-in slide-in-from-top-2">
+              <div className="absolute top-12 left-0 w-full glass-card mt-2 overflow-hidden z-40 flex flex-col animate-in slide-in-from-top-2">
                 {searchResults.map((feature, index) => (
                   <button
                     key={feature.id || index}
                     onClick={() => handleSelectSearchResult(feature)}
-                    className="flex flex-col text-left px-4 py-3 hover:bg-slate-100 border-b border-slate-200 last:border-b-0 transition-colors"
+                    className="flex flex-col text-left px-4 py-3 hover:bg-white/40 border-b border-white/20 last:border-b-0 transition-colors"
                   >
                     <span className="font-bold text-slate-900 truncate">{feature.text}</span>
                     <span className="text-xs text-slate-500 truncate">{feature.place_name}</span>
@@ -645,7 +710,10 @@ export const MapView: React.FC = () => {
                     onClose={() => setActiveSignpost(null)}
                     onLike={handleLikeSignpost}
                     onViewProfile={(authorId, username) => setPublicProfileUser({ id: authorId, username })}
-                    onFullScreen={setFullScreenImage}
+                    onFullScreen={(img) => setFullScreenImage(img)}
+                    onDelete={handleDeleteSignpost}
+                    onShare={() => setShowShareModal(true)}
+                    isPausedExternal={showShareModal}
                   />
                 );
               }
@@ -822,6 +890,32 @@ export const MapView: React.FC = () => {
         
         {/* Expanded Options */}
         <div className={`flex flex-col items-center gap-4 transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${isFabOpen ? 'opacity-100 translate-y-0 mb-4' : 'opacity-0 translate-y-10 pointer-events-none mb-0'}`}>
+          
+          {/* My Location Option */}
+          <div className="relative group">
+            <button 
+              onClick={() => {
+                if (liveLocation) {
+                  setViewState(prev => ({
+                    ...prev,
+                    longitude: liveLocation[0],
+                    latitude: liveLocation[1],
+                    zoom: 16
+                  }));
+                } else {
+                  showToast('Waiting for GPS signal...');
+                }
+                setIsFabOpen(false);
+              }}
+              className="w-14 h-14 glass-pill flex items-center justify-center text-2xl hover:scale-110 hover:-translate-y-1 transition-all active:scale-95"
+            >
+              🧭
+            </button>
+            <div className="absolute right-16 top-1/2 -translate-y-1/2 whitespace-nowrap bg-slate-900 text-white text-xs font-bold px-2 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+              My Location
+            </div>
+          </div>
+
           {/* Drop Signpost Option */}
           <div className="relative group">
             <button 
@@ -829,7 +923,7 @@ export const MapView: React.FC = () => {
                 setShowSignpostModal(true);
                 setIsFabOpen(false);
               }}
-              className="w-14 h-14 bg-brand-pink/90 backdrop-blur text-slate-900 border-2 border-slate-900 shadow-[2px_2px_0px_0px_#0f172a] rounded-full text-2xl flex items-center justify-center hover:scale-110 hover:-translate-y-1 transition-all active:scale-95"
+              className="w-14 h-14 glass-pill flex items-center justify-center text-2xl hover:scale-110 hover:-translate-y-1 transition-all active:scale-95"
             >
               📍
             </button>
@@ -845,7 +939,7 @@ export const MapView: React.FC = () => {
                 setIsPlantingMode(true);
                 setIsFabOpen(false);
               }}
-              className="w-14 h-14 bg-brand-green/90 backdrop-blur text-slate-900 border-2 border-slate-900 shadow-[2px_2px_0px_0px_#0f172a] rounded-full text-2xl flex items-center justify-center hover:scale-110 hover:-translate-y-1 transition-all active:scale-95"
+              className="w-14 h-14 glass-pill flex items-center justify-center text-2xl hover:scale-110 hover:-translate-y-1 transition-all active:scale-95"
             >
               🌳
             </button>
@@ -864,9 +958,9 @@ export const MapView: React.FC = () => {
             onPointerUp={handleFabDragEnd}
             onPointerCancel={handleFabDragEnd}
             onClick={handleFabClick}
-            className={`w-16 h-16 rounded-full bg-gradient-to-br from-white/80 via-emerald-50/70 to-teal-100/60 backdrop-blur-xl border border-white/60 flex items-center justify-center transition-all duration-500 hover:scale-105 hover:bg-white/90 hover:shadow-[0_0_30px_rgba(52,211,153,0.5)] active:scale-95 z-10 relative cursor-grab active:cursor-grabbing ${isFabOpen ? 'shadow-[0_0_40px_rgba(52,211,153,0.6)] rotate-180' : 'shadow-[0_8px_32px_rgba(15,23,42,0.12),inset_0_2px_4px_rgba(255,255,255,0.8)]'}`}
+            className={`w-16 h-16 glass-pill flex items-center justify-center transition-all duration-500 hover:scale-105 hover:bg-white/50 active:scale-95 z-10 relative cursor-grab active:cursor-grabbing ${isFabOpen ? 'rotate-180' : ''}`}
           >
-            <div className="w-[50px] h-[50px] rounded-full bg-gradient-to-tr from-emerald-400 to-teal-300 shadow-[inset_0_-2px_6px_rgba(0,0,0,0.1),0_4px_10px_rgba(52,211,153,0.4)] flex items-center justify-center text-white overflow-hidden relative">
+            <div className="w-[50px] h-[50px] rounded-full bg-emerald-500/80 backdrop-blur-sm border border-white/50 flex items-center justify-center text-white overflow-hidden relative">
               <div className={`absolute transition-all duration-500 ease-in-out ${isFabOpen ? 'scale-0 opacity-0 rotate-90' : 'scale-100 opacity-100 rotate-0'}`}>
                 <Leaf size={24} strokeWidth={2.5} className="text-white drop-shadow-sm filter animate-[pulse_3s_ease-in-out_infinite]" />
               </div>
@@ -975,8 +1069,6 @@ export const MapView: React.FC = () => {
         </div>
       )}
 
-      {/* Removed separate Free Walk Floating Button as it's now handled by long-pressing the FAB */}
-
       {/* Free Walk Active Overlay */}
       {isFreeWalk && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[calc(100vw-2rem)] sm:w-auto bg-white border-2 border-[#1d3539] shadow-[4px_4px_0px_0px_#1d3539] px-4 sm:px-6 py-3 rounded-2xl sm:rounded-3xl flex items-center gap-3 sm:gap-6 z-[90] animate-in slide-in-from-bottom-10 fade-in duration-300">
@@ -1018,6 +1110,7 @@ export const MapView: React.FC = () => {
         isOpen={showSignpostModal} 
         onClose={() => setShowSignpostModal(false)} 
         currentLocation={currentCoordinate as [number, number]} 
+        onSuccess={() => showToast('Signpost dropped!')}
       />
 
       {/* Points Store Modal Filtered */}
@@ -1026,6 +1119,15 @@ export const MapView: React.FC = () => {
           merchantFilter={merchantStoreFilter} 
           onClose={() => setMerchantStoreFilter(null)} 
         />
+      )}
+
+      {/* Toast Notification */}
+      {toastMsg && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[500] animate-in fade-in slide-in-from-bottom-5">
+          <div className="bg-slate-900/90 dark:bg-white/90 text-white dark:text-slate-900 px-4 py-2 rounded-full shadow-lg text-sm font-bold backdrop-blur-sm">
+            {toastMsg}
+          </div>
+        </div>
       )}
 
       {/* Floating Left Widget */}
@@ -1071,7 +1173,10 @@ export const MapView: React.FC = () => {
                       setActiveSignpost(null);
                       setPublicProfileUser({ id: authorId, username });
                     }}
-                    onFullScreen={setFullScreenImage}
+                    onFullScreen={(img) => setFullScreenImage(img)}
+                    onDelete={handleDeleteSignpost}
+                    onShare={() => setShowShareModal(true)}
+                    isPausedExternal={showShareModal}
                   />
                 </div>
               );
@@ -1087,6 +1192,15 @@ export const MapView: React.FC = () => {
         isOpen={!!publicProfileUser} 
         onClose={() => setPublicProfileUser(null)} 
       />
+      {/* Share Signpost Modal */}
+      {activeSignpost && (
+        <ShareSignpostModal 
+          signpostId={activeSignpost.id} 
+          isOpen={showShareModal} 
+          onClose={() => setShowShareModal(false)}
+          onShared={() => showToast('Signpost shared!')}
+        />
+      )}
     </div>
   );
 };

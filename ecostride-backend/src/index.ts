@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { checkAndAwardBadges } from './badgeEngine';
+import { AwsClient } from 'aws4fetch';
 
 export { CommunityChatRoom } from './CommunityChatRoom';
 
@@ -10,6 +11,9 @@ type Bindings = {
   FIREBASE_PROJECT_ID: string;
   CHAT_ROOM: DurableObjectNamespace;
   AVATARS_BUCKET: R2Bucket;
+  R2_ACCOUNT_ID: string;
+  R2_ACCESS_KEY_ID: string;
+  R2_SECRET_ACCESS_KEY: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -80,7 +84,7 @@ app.get('/api/chat/messages/:guildId', async (c) => {
     const readRecord = await c.env.DB.prepare('SELECT last_read_at FROM user_chat_reads WHERE user_id = ? AND guild_id = ?').bind(jwtUser.sub, guildId).first();
     if (readRecord) lastReadAt = readRecord.last_read_at;
   }
-  const messages = await c.env.DB.prepare('SELECT c.id, c.guild_id, c.sender_id as user_id, u.username, u.avatar, c.content, c.timestamp as created_at FROM chat_messages c LEFT JOIN users u ON c.sender_id = u.id WHERE c.guild_id = ? ORDER BY c.timestamp ASC').bind(guildId).all();
+  const messages = await c.env.DB.prepare('SELECT c.id, c.guild_id, c.sender_id as user_id, u.username, u.avatar, c.content, c.timestamp as created_at, c.is_edited, c.attachment_key FROM chat_messages c LEFT JOIN users u ON c.sender_id = u.id WHERE c.guild_id = ? ORDER BY c.timestamp ASC').bind(guildId).all();
   return c.json({ messages: messages.results, last_read_at: lastReadAt });
 });
 
@@ -230,6 +234,7 @@ app.post('/api/users/:id', async (c) => {
     try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch(e) {}
     try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN read_mails TEXT').run(); } catch(e) {}
     try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN showcased_badges TEXT').run(); } catch(e) {}
+    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN banned_until INTEGER DEFAULT 0').run(); } catch(e) {}
     
     if (body.username !== undefined) { updates.push('username = ?'); values.push(body.username); }
     if (body.role !== undefined) { updates.push('role = ?'); values.push(body.role); }
@@ -302,6 +307,50 @@ app.post('/api/users/:id/avatar', async (c) => {
   await c.env.DB.prepare('UPDATE users SET avatar = ? WHERE id = ?').bind(publicUrl, id).run();
 
   return c.json({ success: true, avatarUrl: publicUrl });
+});
+
+// GET chat image presigned URL
+app.get('/api/chat/presigned-url', async (c) => {
+  const jwtUser = c.get('user') as any;
+  if (!jwtUser || !jwtUser.sub) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const extension = c.req.query('ext') || 'webp';
+  
+  if (!c.env.R2_ACCOUNT_ID || !c.env.R2_ACCESS_KEY_ID || !c.env.R2_SECRET_ACCESS_KEY) {
+    return c.json({ error: 'R2 API Credentials not configured' }, 500);
+  }
+
+  const objectKey = `chat-images/${jwtUser.sub}-${Date.now()}.${extension}`;
+  
+  const aws = new AwsClient({
+    accessKeyId: c.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: c.env.R2_SECRET_ACCESS_KEY,
+  });
+
+  const endpoint = new URL(`https://${c.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/ecostride/${objectKey}`);
+  endpoint.searchParams.set('X-Amz-Expires', '3600');
+
+  try {
+    const signed = await aws.sign(endpoint, {
+      method: 'PUT',
+      aws: { signQuery: true }
+    });
+
+    const url = new URL(c.req.url);
+    const publicUrl = `${url.origin}/r2/${objectKey}`;
+
+    return c.json({ 
+      success: true, 
+      uploadUrl: signed.url,
+      publicUrl: publicUrl,
+      objectKey: objectKey
+    });
+  } catch (err: any) {
+    console.error('Error generating presigned URL:', err);
+    return c.json({ error: 'Failed to generate upload URL' }, 500);
+  }
 });
 
 // DELETE user
@@ -481,8 +530,71 @@ app.post('/api/signposts/images', async (c) => {
 
 app.delete('/api/signposts/:id', async (c) => {
   const id = c.req.param('id');
+  const user = c.get('user');
+  if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
+  const userId = user.sub;
+
+  const signpost: any = await c.env.DB.prepare('SELECT author_id FROM signposts WHERE id = ?').bind(id).first();
+  if (!signpost) return c.json({ error: 'Not found' }, 404);
+  if (signpost.author_id !== userId) return c.json({ error: 'Forbidden' }, 403);
+
   await c.env.DB.prepare('DELETE FROM signposts WHERE id = ?').bind(id).run();
   return c.json({ success: true });
+});
+
+app.get('/api/signposts/:id', async (c) => {
+  const id = c.req.param('id');
+  const signpost = await c.env.DB.prepare('SELECT * FROM signposts WHERE id = ?').bind(id).first();
+  if (!signpost) return c.json({ error: 'Not found' }, 404);
+  return c.json({ signpost });
+});
+
+app.post('/api/signposts/:id/share', async (c) => {
+  const id = c.req.param('id');
+  const user = c.get('user');
+  if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
+  const userId = user.sub;
+
+  const body = await c.req.json();
+  const { targetId } = body;
+  if (!targetId) return c.json({ error: 'Target ID required' }, 400);
+
+  const signpost: any = await c.env.DB.prepare('SELECT emoji, message FROM signposts WHERE id = ?').bind(id).first();
+  if (!signpost) return c.json({ error: 'Signpost not found' }, 404);
+
+  const userCheck: any = await c.env.DB.prepare('SELECT username, avatar FROM users WHERE id = ?').bind(userId).first();
+  const username = userCheck ? userCheck.username : 'Unknown User';
+  const avatar = userCheck ? userCheck.avatar : null;
+
+  const content = `[SIGNPOST:${id}:${signpost.emoji || '📍'}:${signpost.message || 'Shared a signpost'}]`;
+  const msgId = crypto.randomUUID();
+  const createdAt = Date.now();
+
+  await c.env.DB.prepare(
+    "INSERT INTO chat_messages (id, guild_id, sender_id, sender_name, content, timestamp, attachment_key) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  ).bind(msgId, targetId, userId, username, content, createdAt, null).run();
+
+  const payload = {
+    action: 'message',
+    guild_id: targetId,
+    id: msgId,
+    user_id: userId,
+    username: username,
+    avatar: avatar,
+    content: content,
+    created_at: createdAt,
+    is_edited: 0,
+    attachment_key: null
+  };
+
+  const url = new URL(c.req.url);
+  const DOUrl = `${url.origin}/api/chat/community/${targetId}/system_message`;
+  await c.env.CHAT_ROOM.get(c.env.CHAT_ROOM.idFromName(targetId)).fetch(new Request(DOUrl, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }));
+
+  return c.json({ success: true, messageId: msgId });
 });
 
 app.post('/api/signposts/:id/like', async (c) => {
@@ -1549,6 +1661,9 @@ app.post('/api/guilds/leave', async (c) => {
 // GET /api/guilds/:id
 app.get('/api/guilds/:id', async (c) => {
   const guildId = c.req.param('id');
+  
+  // ensure muted_until exists to prevent crash
+
   const guild = await c.env.DB.prepare('SELECT * FROM guilds WHERE id = ?').bind(guildId).first();
   if (!guild) return c.json({ error: 'Not found' }, 404);
   
@@ -1938,11 +2053,7 @@ app.post('/api/signposts', async (c) => {
   return c.json({ success: true, id });
 });
 
-app.delete('/api/signposts/:id', async (c) => {
-  const id = c.req.param('id');
-  await c.env.DB.prepare('DELETE FROM signposts WHERE id = ?').bind(id).run();
-  return c.json({ success: true });
-});
+
 
 app.post('/api/signposts/:id/like', async (c) => {
   const id = c.req.param('id');

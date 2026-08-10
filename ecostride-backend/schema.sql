@@ -152,6 +152,8 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   user_id TEXT NOT NULL,
   content TEXT NOT NULL,
   created_at INTEGER NOT NULL,
+  is_edited INTEGER DEFAULT 0,
+  attachment_key TEXT,
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 

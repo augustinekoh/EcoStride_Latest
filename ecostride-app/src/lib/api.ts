@@ -23,7 +23,7 @@ export const apiClient = async (endpoint: string, options: RequestInit = {}) => 
   });
 
   if (!response.ok) {
-    let errorMsg = 'An error occurred';
+    let errorMsg = `HTTP Error ${response.status} ${response.statusText}`;
     try {
       const errorData = await response.json();
       errorMsg = errorData.error || errorMsg;

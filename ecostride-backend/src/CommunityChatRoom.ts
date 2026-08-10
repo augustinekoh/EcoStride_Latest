@@ -140,6 +140,7 @@ export class CommunityChatRoom extends DurableObject {
       
       if (data.type === 'message') {
         const content = data.content;
+        const attachmentKey = data.attachmentKey || null;
         if (typeof content !== 'string' || content.trim().length === 0) {
           throw new Error("Invalid chat message");
         }
@@ -165,20 +166,81 @@ export class CommunityChatRoom extends DurableObject {
             username: userCheck ? userCheck.username : 'Unknown User',
             avatar: userCheck ? userCheck.avatar : null,
             content: content,
-            created_at: createdAt
+            created_at: createdAt,
+            is_edited: 0,
+            attachment_key: attachmentKey
           }
         };
 
+        // Persist to D1 BEFORE broadcast
+        // @ts-ignore
+        await this.env.DB.prepare(
+          "INSERT INTO chat_messages (id, guild_id, sender_id, sender_name, content, timestamp, attachment_key) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        ).bind(msgId, guildId, userId, userCheck ? userCheck.username : 'Unknown User', content, createdAt, attachmentKey).run();
+
         // Broadcast to all connected clients in this DO using the centralized publish method
         this.publish(guildId, payload);
-
-        // Persist to D1 asynchronously
+        
+      } else if (data.type === 'edit') {
+        const { messageId, content } = data;
+        if (!messageId || typeof content !== 'string' || content.trim().length === 0) {
+          throw new Error("Invalid edit payload");
+        }
+        
+        // Fetch original message
         // @ts-ignore
-        this.env.DB.prepare(
-          "INSERT INTO chat_messages (id, guild_id, sender_id, sender_name, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)"
-        ).bind(msgId, guildId, userId, userCheck ? userCheck.username : 'Unknown User', content, createdAt).run().catch((err: any) => {
-          console.error("Failed to insert message:", err);
-        });
+        const msg = await this.env.DB.prepare('SELECT sender_id, timestamp, content FROM chat_messages WHERE id = ?').bind(messageId).first();
+        
+        if (!msg) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Message not found' }));
+          return;
+        }
+        
+        if (msg.sender_id !== userId) {
+          ws.send(JSON.stringify({ type: 'error', error: 'You can only edit your own messages' }));
+          return;
+        }
+        
+        if (msg.content.includes('[IMAGE:')) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Cannot edit image messages' }));
+          return;
+        }
+        
+        const ageMs = Date.now() - msg.timestamp;
+        if (ageMs > 5 * 60 * 1000) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Messages can only be edited within 5 minutes' }));
+          return;
+        }
+        
+        // Commit update
+        // @ts-ignore
+        await this.env.DB.prepare('UPDATE chat_messages SET content = ?, is_edited = 1 WHERE id = ?').bind(content, messageId).run();
+        
+        // Broadcast
+        this.publish(guildId, { type: 'edit', messageId, content });
+        
+      } else if (data.type === 'delete') {
+        const { messageId } = data;
+        if (!messageId) throw new Error("Invalid delete payload");
+        
+        // Fetch original message
+        // @ts-ignore
+        const msg = await this.env.DB.prepare('SELECT sender_id FROM chat_messages WHERE id = ?').bind(messageId).first();
+        
+        if (!msg) return; // already deleted or not found
+        
+        if (msg.sender_id !== userId) {
+          ws.send(JSON.stringify({ type: 'error', error: 'You can only delete your own messages' }));
+          return;
+        }
+        
+        // Commit delete
+        // @ts-ignore
+        await this.env.DB.prepare('DELETE FROM chat_messages WHERE id = ?').bind(messageId).run();
+        
+        // Broadcast
+        this.publish(guildId, { type: 'delete', messageId });
+        
       } else {
         throw new Error("Unknown message type");
       }
