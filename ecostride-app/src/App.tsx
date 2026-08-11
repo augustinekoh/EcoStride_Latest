@@ -23,10 +23,11 @@ import { apiClient } from './lib/api';
 import { useUserStore } from './stores/useUserStore';
 import { useMailStore } from './stores/useMailStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { AuthoritiesDashboard } from './components/authorities/AuthoritiesDashboard';
 
 function PublicApp() {
   const { activeView, isWaitingForApproval, isChatExpanded } = useDemoStore();
-  const { user } = useAuthStore();
+  const { user, role } = useAuthStore();
   const { isDarkMode, bannedUntil } = useUserStore();
 
   if (!user || isWaitingForApproval) {
@@ -79,6 +80,14 @@ function PublicApp() {
     );
   }
 
+  if (role === 'authority') {
+    return <Navigate to="/authorities" replace />;
+  }
+  
+  if (role === 'admin') {
+    return <Navigate to="/admin" replace />;
+  }
+
   return (
     <div className={`w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500 ${isDarkMode ? 'dark' : ''}`}>
       {activeView !== 'settings' && !isChatExpanded && <BottomNavBar />}
@@ -107,6 +116,15 @@ function AdminApp() {
     return <AdminLogin />;
   }
   return <AdminDashboard />;
+}
+
+function AuthoritiesAppWrapper() {
+  const { role } = useAuthStore();
+  
+  if (role !== 'authority') {
+    return <Navigate to="/" replace />;
+  }
+  return <AuthoritiesDashboard />;
 }
 
 function App() {
@@ -316,6 +334,7 @@ function App() {
       <Routes>
         <Route path="/" element={<PublicApp />} />
         <Route path="/admin" element={<AdminApp />} />
+        <Route path="/authorities/*" element={<AuthoritiesAppWrapper />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

@@ -3,6 +3,7 @@ import { cors } from 'hono/cors';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { checkAndAwardBadges } from './badgeEngine';
 import { AwsClient } from 'aws4fetch';
+import { authoritiesRouter } from './authorities';
 
 export { CommunityChatRoom } from './CommunityChatRoom';
 
@@ -65,6 +66,9 @@ app.use('/api/*', async (c, next) => {
     return c.json({ error: 'Invalid token' }, 401);
   }
 });
+
+// Mount Authorities Router
+app.route('/api/authorities', authoritiesRouter);
 
 // Check Username Uniqueness
 app.get('/api/check-username', async (c) => {
