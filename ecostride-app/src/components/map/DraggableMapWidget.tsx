@@ -36,6 +36,7 @@ export const DraggableMapWidget: React.FC = () => {
 
   const [leaderboardFilter, setLeaderboardFilter] = useState<'weekly' | 'guilds'>('weekly');
   const [topUsers, setTopUsers] = useState<any[]>([]);
+  const [topGuilds, setTopGuilds] = useState<any[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -69,7 +70,7 @@ export const DraggableMapWidget: React.FC = () => {
     const fetchData = async () => {
       try {
         const boardData = await apiClient('/leaderboard');
-        const users = boardData.users.map((u: any) => ({
+        const users = (boardData.topCoins || boardData.users || []).map((u: any) => ({
           email: u.username || u.email || 'Unknown',
           points: u.coins || 0
         }));
@@ -84,6 +85,18 @@ export const DraggableMapWidget: React.FC = () => {
         }
         
         setCategories(cats.slice(0, 4));
+        
+        // Fetch real guilds data exactly like LeaderboardModal does
+        const recommendedRes = await apiClient('/guilds/recommended');
+        if (recommendedRes.guilds && recommendedRes.guilds.length > 0) {
+          const formattedGuilds = recommendedRes.guilds.map((g: any) => ({
+            ...g,
+            territory_trees: g.total_trees || 0 // Map total_trees to territory_trees so the UI uses it
+          })).sort((a: any, b: any) => (b.total_trees || 0) - (a.total_trees || 0));
+          setTopGuilds(formattedGuilds);
+        } else {
+          setTopGuilds(leaderboardData.guilds); // Fallback
+        }
       } catch (err) {
         console.error(err);
       }
@@ -287,13 +300,13 @@ export const DraggableMapWidget: React.FC = () => {
                             </div>
                           ))
                         ) : (
-                          leaderboardData.guilds.slice(0,3).map((g, i) => (
+                          topGuilds.slice(0,3).map((g, i) => (
                             <div key={i} className="flex items-center justify-between bg-white border border-[#1d3539]/20 rounded-lg p-1.5 hover:border-[#5496a2] transition-colors">
                               <div className="flex items-center gap-2">
                                 <span className="text-[10px] font-black text-[#1d3539]/60 w-3">{i+1}</span>
                                 <span className="text-xs font-bold text-[#1d3539] truncate max-w-[90px]">{g.name}</span>
                               </div>
-                              <span className="text-[10px] font-black text-[#5496a2]">{g.power} pwr</span>
+                              <span className="text-[10px] font-black text-[#5496a2]">{g.territory_trees || g.power || 0} trees</span>
                             </div>
                           ))
                         )}
@@ -465,13 +478,13 @@ export const DraggableMapWidget: React.FC = () => {
                       </div>
                     ))
                   ) : (
-                    leaderboardData.guilds.slice(0,3).map((g, i) => (
+                    topGuilds.slice(0,3).map((g, i) => (
                       <div key={i} className="flex items-center justify-between bg-white border-2 border-[#1d3539]/20 rounded-xl p-3 active:bg-slate-50 transition-colors">
                         <div className="flex items-center gap-3">
                           <span className="text-sm font-black text-[#1d3539]/60 w-4">{i+1}</span>
                           <span className="text-sm font-bold text-[#1d3539] truncate max-w-[120px]">{g.name}</span>
                         </div>
-                        <span className="text-sm font-black text-[#5496a2]">{g.power} pwr</span>
+                        <span className="text-sm font-black text-[#5496a2]">{g.territory_trees || g.power || 0} trees</span>
                       </div>
                     ))
                   )}

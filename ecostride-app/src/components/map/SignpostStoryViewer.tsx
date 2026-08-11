@@ -166,7 +166,9 @@ export const SignpostStoryViewer: React.FC<Props> = ({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onDelete(signpost.id);
+                if (window.confirm("Are you sure you want to delete this signpost?")) {
+                  onDelete(signpost.id);
+                }
               }}
               className="p-2 bg-red-500/80 hover:bg-red-600/90 backdrop-blur-md border border-red-400/50 rounded-xl text-white transition-colors active:scale-95 pointer-events-auto flex items-center justify-center"
               title="Delete Signpost"

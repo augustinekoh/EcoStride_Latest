@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageCircle, X, Send, User, ArrowLeft, Camera, Loader2 } from 'lucide-react';
+import { MessageCircle, X, Send, User, ArrowLeft, Camera, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useCommunityChat } from '../../hooks/useCommunityChat';
 import { auth } from '../../firebase';
 import { useDemoStore } from '../../stores/useDemoStore';
@@ -40,7 +40,7 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
   // New features state
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  const [showOptionsFor, setShowOptionsFor] = useState<string | null>(null);
+  const [showOptionsFor, setShowOptionsFor] = useState<{ id: string, x: number, y: number } | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -63,7 +63,7 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
     const currentLastMessageId = messages[messages.length - 1].id;
     if (prevLastMessageId.current !== null && currentLastMessageId !== prevLastMessageId.current) {
       if (!isChatExpanded) {
-        setUnreadCount(prev => prev + 1);
+        setUnreadCount((prev: number) => prev + 1);
       }
     }
     prevLastMessageId.current = currentLastMessageId;
@@ -130,11 +130,13 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
     }
   };
 
-  const handleMessagePointerDown = (msgId: string) => {
+  const handleMessagePointerDown = (e: React.PointerEvent, msgId: string) => {
+    const x = e.clientX;
+    const y = e.clientY;
     if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
     longPressTimerRef.current = setTimeout(() => {
-      setShowOptionsFor(msgId);
-    }, 1500);
+      setShowOptionsFor({ id: msgId, x, y });
+    }, 500);
   };
 
   const handleMessagePointerUp = () => {
@@ -179,31 +181,18 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
     try {
       setIsUploading(true);
       
-      const extension = selectedImage.name.split('.').pop() || 'webp';
+      const formData = new FormData();
+      formData.append('image', selectedImage);
 
-      // 1. Get Presigned URL
-      const data = await apiClient(`/chat/presigned-url?ext=${extension}`, {
-        method: 'GET'
+      const data = await apiClient('/chat/upload', {
+        method: 'POST',
+        body: formData
       });
 
-      if (!data.success || !data.uploadUrl || !data.publicUrl) {
-        throw new Error(data.error || 'Failed to get upload URL');
+      if (!data.success || !data.publicUrl) {
+        throw new Error(data.error || 'Failed to upload image');
       }
 
-      // 2. Upload directly to R2
-      const uploadResponse = await fetch(data.uploadUrl, {
-        method: 'PUT',
-        body: selectedImage,
-        headers: {
-          'Content-Type': selectedImage.type || 'application/octet-stream',
-        }
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error('Failed to upload image to storage');
-      }
-
-      // 3. Send message
       sendMessage(`[IMAGE:${data.publicUrl}]`, data.objectKey);
       
       setSelectedImage(null);
@@ -321,7 +310,7 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
                       )}
                       <div 
                         className="flex justify-center my-2 select-none relative"
-                        onPointerDown={() => handleMessagePointerDown(msg.id)}
+                        onPointerDown={(e) => handleMessagePointerDown(e, msg.id)}
                         onPointerUp={handleMessagePointerUp}
                         onPointerLeave={handleMessagePointerUp}
                         onPointerCancel={handleMessagePointerUp}
@@ -359,7 +348,7 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
                         ? 'bg-[#e6f0f2] dark:bg-gradient-to-br dark:from-[#5496a2] dark:to-[#3a7c88] text-[#1d3539] dark:text-white rounded-br-sm border border-[#5496a2]/20 dark:border-none shadow-[0_4px_12px_rgba(84,150,162,0.05)] dark:shadow-[0_4px_12px_rgba(84,150,162,0.2)]'
                         : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-black/5 dark:border-white/10 rounded-bl-sm shadow-[0_4px_12px_rgba(0,0,0,0.03)]'
                         }`}
-                        onPointerDown={() => handleMessagePointerDown(msg.id)}
+                        onPointerDown={(e) => handleMessagePointerDown(e, msg.id)}
                         onPointerUp={handleMessagePointerUp}
                         onPointerLeave={handleMessagePointerUp}
                         onPointerCancel={handleMessagePointerUp}
@@ -402,36 +391,45 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
                         </div>
 
                         {/* Options Modal/Overlay for this message */}
-                        {showOptionsFor === msg.id && isMe && (
-                          <div 
-                            className="absolute z-30 bottom-[calc(100%+5px)] right-0 bg-white dark:bg-slate-800 shadow-xl border border-black/5 dark:border-white/10 rounded-xl p-1 flex flex-col gap-1 min-w-[120px] animate-in fade-in zoom-in-95"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <div className="text-[10px] uppercase font-bold text-slate-400 px-3 py-1 flex justify-between items-center">
-                              Options
-                              <button onClick={() => setShowOptionsFor(null)} className="hover:text-slate-600"><X size={12} /></button>
-                            </div>
-                            
-                            {/* Can only edit if it's text and within 5 minutes */}
-                            {!msg.content.includes('[IMAGE:') && !msg.content.includes('[SIGNPOST:') && (Date.now() - msg.created_at) <= 5 * 60 * 1000 && (
-                              <button 
-                                className="text-sm font-bold px-3 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                                onClick={() => startEdit(msg)}
-                              >
-                                Edit Message
-                              </button>
-                            )}
-                            
-                            <button 
-                              className="text-sm font-bold px-3 py-2 text-left text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
-                              onClick={() => {
-                                deleteMessage(msg.id);
-                                setShowOptionsFor(null);
+                        {showOptionsFor?.id === msg.id && isMe && (
+                          <>
+                            {/* Invisible overlay to catch taps outside */}
+                            <div 
+                              className="fixed inset-0 z-40" 
+                              onPointerDown={(e) => { e.stopPropagation(); setShowOptionsFor(null); }}
+                            />
+                            <div 
+                              className="fixed z-[100] bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.3)] dark:shadow-[0_10px_40px_-10px_rgba(0,0,0,0.5)] border border-white/40 dark:border-white/10 rounded-full p-1.5 flex flex-row items-center gap-1 origin-center animate-in fade-in zoom-in-75 slide-in-from-bottom-2 duration-200 ease-out"
+                              style={{
+                                left: Math.min(showOptionsFor.x, window.innerWidth - 220) + 'px',
+                                top: Math.max(80, showOptionsFor.y - 70) + 'px'
                               }}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              Delete
-                            </button>
-                          </div>
+                              {/* Can only edit if it's text and within 5 minutes */}
+                              {!msg.content.includes('[IMAGE:') && !msg.content.includes('[SIGNPOST:') && (Date.now() - msg.created_at) <= 5 * 60 * 1000 && (
+                                <button 
+                                  className="flex items-center gap-2 text-sm font-bold px-5 py-2.5 text-slate-700 dark:text-slate-200 hover:bg-slate-500/10 dark:hover:bg-slate-400/10 rounded-full transition-all active:scale-95 whitespace-nowrap"
+                                  onClick={() => startEdit(msg)}
+                                >
+                                  <Pencil size={16} />
+                                  Edit
+                                </button>
+                              )}
+                              
+                              <button 
+                                className="flex items-center gap-2 text-sm font-bold px-5 py-2.5 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 dark:hover:bg-rose-400/10 rounded-full transition-all active:scale-95 whitespace-nowrap"
+                                onClick={() => {
+                                  deleteMessage(msg.id);
+                                  setShowOptionsFor(null);
+                                }}
+                              >
+                                <Trash2 size={16} />
+                                Delete
+                              </button>
+                            </div>
+                          </>
                         )}
                       </div>
                     </div>

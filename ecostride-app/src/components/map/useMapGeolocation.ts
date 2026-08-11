@@ -71,7 +71,7 @@ export const useMapGeolocation = () => {
           additionalDistance = distance / 1000;
         }
       }
-      prevCoordRef.current = currentCoordinate;
+      prevCoordRef.current = currentCoordinate as [number, number];
 
       if (additionalDistance > 0) {
         setWalkedDistanceKm(prev => prev + additionalDistance);

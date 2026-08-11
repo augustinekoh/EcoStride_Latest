@@ -884,7 +884,7 @@ export const MapView: React.FC = () => {
 
       {/* Unified Radial FAB (Frosted Glass) */}
       <div 
-        className={`absolute right-8 flex flex-col items-center justify-end z-50 touch-none transition-all duration-300 ease-in-out ${isFreeWalk || mapboxRouteGeoJSON ? 'bottom-[220px]' : 'bottom-32'}`}
+        className={`absolute right-8 flex flex-col items-center justify-end z-50 touch-none ${isFabDragging ? '' : 'transition-all duration-300 ease-in-out'} ${isFreeWalk || mapboxRouteGeoJSON ? 'bottom-[220px]' : 'bottom-32'}`}
         style={{ transform: `translate(${fabOffset.x}px, ${fabOffset.y}px)` }}
       >
         
@@ -958,9 +958,9 @@ export const MapView: React.FC = () => {
             onPointerUp={handleFabDragEnd}
             onPointerCancel={handleFabDragEnd}
             onClick={handleFabClick}
-            className={`w-16 h-16 glass-pill flex items-center justify-center transition-all duration-500 hover:scale-105 hover:bg-white/50 active:scale-95 z-10 relative cursor-grab active:cursor-grabbing ${isFabOpen ? 'rotate-180' : ''}`}
+            className={`w-16 h-16 rounded-full bg-gradient-to-br from-white/80 via-emerald-50/70 to-teal-100/60 backdrop-blur-xl border border-white/60 flex items-center justify-center transition-all duration-500 hover:scale-105 hover:bg-white/90 hover:shadow-[0_0_30px_rgba(52,211,153,0.5)] active:scale-95 z-10 relative cursor-grab active:cursor-grabbing ${isFabOpen ? 'shadow-[0_0_40px_rgba(52,211,153,0.6)] rotate-180' : 'shadow-[0_8px_32px_rgba(15,23,42,0.12),inset_0_2px_4px_rgba(255,255,255,0.8)]'}`}
           >
-            <div className="w-[50px] h-[50px] rounded-full bg-emerald-500/80 backdrop-blur-sm border border-white/50 flex items-center justify-center text-white overflow-hidden relative">
+            <div className="w-[50px] h-[50px] rounded-full bg-gradient-to-tr from-emerald-400 to-teal-300 shadow-[inset_0_-2px_6px_rgba(0,0,0,0.1),0_4px_10px_rgba(52,211,153,0.4)] flex items-center justify-center text-white overflow-hidden relative">
               <div className={`absolute transition-all duration-500 ease-in-out ${isFabOpen ? 'scale-0 opacity-0 rotate-90' : 'scale-100 opacity-100 rotate-0'}`}>
                 <Leaf size={24} strokeWidth={2.5} className="text-white drop-shadow-sm filter animate-[pulse_3s_ease-in-out_infinite]" />
               </div>
@@ -984,7 +984,7 @@ export const MapView: React.FC = () => {
               >
                 <X size={12} strokeWidth={3} className="text-white"/>
               </button>
-              Tap for 📍 & 🌳,<br/>Long Press for Free Walk!
+              Tap for 📍, 🌳 & 🧭,<br/>Long Press for Free Walk!
             </div>
           )}
         </div>
