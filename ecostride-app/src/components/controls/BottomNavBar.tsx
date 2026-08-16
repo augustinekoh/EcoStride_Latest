@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useDemoStore } from '../../stores/useDemoStore';
 import { useUserStore } from '../../stores/useUserStore';
 import { useMailStore } from '../../stores/useMailStore';
-import { Home, Map as MapIcon, Users, User, Building } from 'lucide-react';
+import { Home, Map as MapIcon, Users, User, Building, ClipboardList } from 'lucide-react';
 
 export const BottomNavBar: React.FC = () => {
   const { activeView, setActiveView } = useDemoStore();

@@ -28,7 +28,8 @@ export const AdminLogin: React.FC = () => {
         setError('Unauthorized: You are not a platform administrator.');
       }
     } catch (err: any) {
-      setError('Invalid admin credentials.');
+      console.error("Admin login error:", err);
+      setError(err.message || 'Invalid admin credentials.');
     }
   };
 

@@ -1,6 +1,6 @@
 import { useUserStore } from '../stores/useUserStore';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { apiClient } from '../lib/api';
+import { apiClient, getApiBaseUrl } from '../lib/api';
 
 export interface ChatMessage {
   id: string;
@@ -13,15 +13,6 @@ export interface ChatMessage {
   is_edited?: boolean;
   attachment_key?: string | null;
 }
-
-// Use VITE_API_BASE_URL to be consistent, but strip the /api suffix for WS
-const getApiBaseUrl = () => {
-  const envUrl = import.meta.env.VITE_API_BASE_URL;
-  if (envUrl) return envUrl.replace(/\/api$/, '');
-  // Default to relative if no VITE_API_BASE_URL is provided, or the origin
-  return window.location.origin;
-};
-const API_URL = getApiBaseUrl();
 
 export function useCommunityChat(guildId: string | undefined | null, token: string | undefined | null) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -51,7 +42,8 @@ export function useCommunityChat(guildId: string | undefined | null, token: stri
     if (!guildId || !token) return;
 
     // Convert http/https to ws/wss
-    const wsUrl = new URL(`${API_URL}/api/chat/community/${guildId}?token=${token}`);
+    const baseUrl = getApiBaseUrl().replace(/\/api$/, '');
+    const wsUrl = new URL(`${baseUrl}/api/chat/community/${guildId}?token=${token}`);
     wsUrl.protocol = wsUrl.protocol.replace('http', 'ws');
 
     const ws = new WebSocket(wsUrl.toString());

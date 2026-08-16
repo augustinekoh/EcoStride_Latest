@@ -16,7 +16,9 @@ interface UserState {
   email: string
   player_id?: string
   bio: string
-  nationality: string
+  country: string
+  state: string
+  city: string
   avatar: string | null
   guildId: string | null
   guildName: string | null
@@ -80,7 +82,9 @@ export const useUserStore = create<UserState>()(
       lastName: '',
       email: '',
       bio: '',
-      nationality: '',
+      country: '',
+      state: '',
+      city: '',
       avatar: null,
       guildId: null,
       guildName: null,
@@ -164,7 +168,7 @@ export const useUserStore = create<UserState>()(
         set({
           userCoins: 0, totalCarbonSaved: 0, totalDistanceKm: 0, streaks: 0, vouchersCollected: 0,
           challengesCompleted: 0, username: '', firstName: '', lastName: '', email: '',
-          player_id: undefined, bio: '', nationality: '', avatar: null, guildId: null, guildName: null,
+          player_id: undefined, bio: '', country: '', state: '', city: '', avatar: null, guildId: null, guildName: null,
           bannedUntil: undefined, communityUnreadCount: 0, friendsUnreadCount: 0,
           totalTreesPlanted: 0, newsEnabled: false, dailyReminderEnabled: true,
           newFollowerEnabled: true, shareActivity: true, doNotDisturb: false, isDarkMode: false,

@@ -6,6 +6,7 @@ import { useDemoStore } from '../../stores/useDemoStore';
 import { useUserStore } from '../../stores/useUserStore';
 import { resolveAvatarUrl, apiClient } from '../../lib/api';
 import { SharedSignpostCard } from './SharedSignpostCard';
+import { SharedIssueCard } from './SharedIssueCard';
 
 interface FloatingChatProps {
   guildId: string;
@@ -359,7 +360,7 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
                           </div>
                         )}
                         <div className="text-[15px] font-medium leading-relaxed whitespace-pre-wrap break-words">
-                          {msg.content.split(/(\[IMAGE:.*?\]|\[SIGNPOST:.*?\])/g).map((part, i) => {
+                          {msg.content.split(/(\[IMAGE:.*?\]|\[SIGNPOST:.*?\]|\[ISSUE:.*?\])/g).map((part, i) => {
                             if (part.startsWith('[IMAGE:')) {
                               const url = part.replace('[IMAGE:', '').replace(']', '');
                               return <img 
@@ -380,6 +381,12 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
                                     <SharedSignpostCard signpostId={id} fallbackEmoji={emoji} fallbackTitle={title} />
                                   </div>
                                 );
+                              }
+                            }
+                            if (part.startsWith('[ISSUE:')) {
+                              const match = part.match(/\[ISSUE:(.*?)\]/);
+                              if (match && match[1]) {
+                                return <SharedIssueCard key={i} issueId={match[1]} />;
                               }
                             }
                             return part ? <span key={i}>{part}</span> : null;

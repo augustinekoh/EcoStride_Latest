@@ -3,14 +3,28 @@ import { auth } from '../../firebase';
 import Map, { Marker, Popup } from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { MAPBOX_TOKEN } from '../../lib/mapboxAPI';
-import { LayoutDashboard, Mail, Store, Users, FileCheck, Globe, LogOut, RefreshCw } from 'lucide-react';
+import { LayoutDashboard, Mail, Store, Users, FileCheck, Globe, LogOut, RefreshCw, Shield, Link, Copy, Check, MapPin } from 'lucide-react';
 import { apiClient } from '../../lib/api';
+import { AdminMessagesModal } from './AdminMessagesModal';
+import { MessageAuthorityModal } from './MessageAuthorityModal';
+import { formatLocation } from '../../lib/locationData';
 
 export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('overview');
+  const [isAdminMessagesOpen, setIsAdminMessagesOpen] = useState(false);
+  const [isMessageAuthorityModalOpen, setIsMessageAuthorityModalOpen] = useState(false);
+  const [selectedAuthorityForMessage, setSelectedAuthorityForMessage] = useState<any | null>(null);
 
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [adminMessages, setAdminMessages] = useState<any[]>([]);
+  const [readAdminMessageIds, setReadAdminMessageIds] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('read_admin_message_ids') || '[]');
+    } catch {
+      return [];
+    }
+  });
   const [trees, setTrees] = useState<any[]>([]);
   const [signposts, setSignposts] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -51,6 +65,12 @@ export const AdminDashboard: React.FC = () => {
   const [sentMails, setSentMails] = useState<any[]>([]);
   const [selectedMails, setSelectedMails] = useState<Set<string>>(new Set());
   const [mailFilter, setMailFilter] = useState<'all' | 'admin' | 'system'>('all');
+
+  // Authority Invitation State
+  const [authorityInviteEmail, setAuthorityInviteEmail] = useState('');
+  const [authorityInviteLink, setAuthorityInviteLink] = useState('');
+  const [isInvitingAuthority, setIsInvitingAuthority] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
 
   const fetchDashboardData = async () => {
     setLoading(true);
@@ -116,11 +136,34 @@ export const AdminDashboard: React.FC = () => {
           sender: m.sender
         };
       }));
+
+      try {
+        const msgRes = await apiClient('/admin/messages');
+        if (msgRes.messages) {
+          setAdminMessages(msgRes.messages);
+        }
+      } catch (e) {}
     } catch (err) {
       console.error(err);
     }
     setLoading(false);
   };
+
+  const handleOpenAdminMessages = () => {
+    setIsAdminMessagesOpen(true);
+    const allIds = adminMessages.map(m => m.id);
+    if (allIds.length > 0) {
+      setReadAdminMessageIds(prev => {
+        const combined = Array.from(new Set([...prev, ...allIds]));
+        localStorage.setItem('read_admin_message_ids', JSON.stringify(combined));
+        return combined;
+      });
+      apiClient('/mail/user/batch-read', { method: 'POST', body: JSON.stringify({ ids: allIds }) }).catch(() => {});
+    }
+  };
+
+  const unreadAdminCount = adminMessages.filter(m => !readAdminMessageIds.includes(m.id)).length;
+  const hasUnreadAdmin = unreadAdminCount > 0;
 
   useEffect(() => {
     fetchDashboardData();
@@ -239,6 +282,37 @@ export const AdminDashboard: React.FC = () => {
       
       fetchDashboardData();
     } catch (e) { console.error(e); }
+  };
+
+  const handleInviteAuthority = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authorityInviteEmail) return;
+    
+    setIsInvitingAuthority(true);
+    setAuthorityInviteLink('');
+    setInviteCopied(false);
+    
+    try {
+      const res = await apiClient('/admin/invite-authority', { 
+        method: 'POST', 
+        body: JSON.stringify({ email: authorityInviteEmail }) 
+      });
+      if (res.registrationUrl) {
+        setAuthorityInviteLink(res.registrationUrl);
+      }
+    } catch (err: any) {
+      alert(`Failed to generate invite: ${err.message}`);
+    } finally {
+      setIsInvitingAuthority(false);
+    }
+  };
+
+  const handleCopyLink = () => {
+    if (authorityInviteLink) {
+      navigator.clipboard.writeText(authorityInviteLink);
+      setInviteCopied(true);
+      setTimeout(() => setInviteCopied(false), 2000);
+    }
   };
 
   const handleSendMail = async (e: React.FormEvent) => {
@@ -446,6 +520,7 @@ export const AdminDashboard: React.FC = () => {
     { id: 'merchants', label: 'Active Merchants', icon: <Store size={20} /> },
     { id: 'store', label: 'Store Manager', icon: <Store size={20} /> },
     { id: 'users', label: 'Users & Economy', icon: <Users size={20} /> },
+    { id: 'authorities', label: 'Authorities', icon: <Shield size={20} /> },
     { id: 'broadcasts', label: 'Broadcasts', icon: <Mail size={20} /> },
     { id: 'world', label: 'World Control', icon: <Globe size={20} /> },
   ];
@@ -505,7 +580,7 @@ export const AdminDashboard: React.FC = () => {
       <div className="flex-1 overflow-y-auto h-screen p-8 bg-transparent">
         <div className="max-w-7xl mx-auto relative">
           
-          <div className="flex justify-end mb-4">
+          <div className="flex justify-end mb-4 gap-2 items-center">
             <button 
               onClick={fetchDashboardData}
               disabled={loading}
@@ -1134,6 +1209,142 @@ export const AdminDashboard: React.FC = () => {
             </div>
           )}
 
+          {/* AUTHORITIES TAB */}
+          {activeTab === 'authorities' && (
+            <div className="animate-in fade-in duration-300">
+              <h2 className="text-3xl font-black text-teal-950 mb-8">Authorities Management</h2>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="bg-white/60 backdrop-blur-lg rounded-3xl shadow-xl shadow-teal-900/5 border border-white/80 p-6 h-fit">
+                  <h3 className="text-xl font-bold text-teal-950 mb-6 flex items-center gap-2">
+                    <Shield size={24} className="text-teal-600" /> Invite Authority
+                  </h3>
+                  <p className="text-sm text-teal-700/70 mb-6">
+                    Generate a one-time registration link for a local government authority. The link will expire in 7 days.
+                  </p>
+                  
+                  <form onSubmit={handleInviteAuthority} className="flex flex-col gap-5">
+                    <div>
+                      <label className="block text-xs font-bold text-teal-700/70 uppercase tracking-wider mb-2">Authority Official Email</label>
+                      <input 
+                        type="email" 
+                        required
+                        value={authorityInviteEmail}
+                        onChange={(e) => setAuthorityInviteEmail(e.target.value)}
+                        placeholder="e.g. official@citycouncil.gov"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-teal-950 outline-none focus:border-teal-500"
+                      />
+                    </div>
+                    
+                    <button 
+                      type="submit"
+                      disabled={isInvitingAuthority || !authorityInviteEmail}
+                      className="bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-teal-500/20 border-none text-white font-black px-6 py-3.5 rounded-xl transition-colors mt-2 flex justify-center items-center gap-2"
+                    >
+                      {isInvitingAuthority ? 'Generating...' : 'Generate Invite Link'}
+                      <Link size={18} />
+                    </button>
+                  </form>
+
+                  {authorityInviteLink && (
+                    <div className="mt-6 p-4 bg-teal-50 border border-teal-200 rounded-xl animate-in zoom-in duration-300">
+                      <p className="text-xs font-bold text-teal-800 uppercase tracking-wider mb-2">Registration Link</p>
+                      <div className="flex gap-2 items-center">
+                        <input 
+                          type="text" 
+                          readOnly
+                          value={authorityInviteLink}
+                          className="flex-1 bg-white border border-teal-200 rounded-lg px-3 py-2 text-sm text-teal-900 outline-none select-all"
+                        />
+                        <button 
+                          onClick={handleCopyLink}
+                          className="bg-teal-600 hover:bg-teal-700 text-white p-2 rounded-lg transition-colors flex shrink-0"
+                          title="Copy to clipboard"
+                        >
+                          {inviteCopied ? <Check size={18} /> : <Copy size={18} />}
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-teal-600 mt-2 font-medium">
+                        Send this link securely to the authority. They must use the EXACT same email to register.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white/60 backdrop-blur-lg rounded-3xl shadow-xl shadow-teal-900/5 border border-white/80 p-6 flex flex-col">
+                  <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-bold text-teal-950 flex items-center gap-2">
+                      <Users size={24} className="text-teal-600" /> Active Authorities
+                    </h3>
+                    <button 
+                      onClick={handleOpenAdminMessages}
+                      className="relative flex items-center gap-2 bg-teal-50 text-teal-700 hover:bg-teal-100 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors border border-teal-200"
+                    >
+                      <Mail size={16} />
+                      <span>Messages</span>
+                      {hasUnreadAdmin && (
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                  
+                  <div className="flex flex-col gap-3 flex-1 overflow-y-auto max-h-[500px] pr-2 custom-scrollbar">
+                    {users.filter(u => u.role === 'authority').length === 0 ? (
+                      <div className="text-center py-8 text-teal-700/50 italic border-2 border-dashed border-teal-200/50 rounded-2xl">
+                        No active authorities registered yet.
+                      </div>
+                    ) : (
+                      users.filter(u => u.role === 'authority').map((u) => (
+                        <div key={u.id} className="bg-white border border-teal-100 p-4 rounded-2xl flex items-center gap-4 hover:shadow-md transition-all group relative overflow-hidden">
+                          <div className="w-12 h-12 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center shrink-0 border-2 border-white shadow-sm overflow-hidden">
+                            {u.avatar ? <img src={u.avatar} alt={u.username} className="w-full h-full object-cover" /> : <Shield size={20} />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-bold text-teal-950 truncate flex items-center gap-2">
+                              {u.username}
+                              {u.banned_until > Date.now() && <span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded-md uppercase tracking-wider">Banned</span>}
+                            </h4>
+                            <p className="text-xs text-teal-700/70 truncate">{u.position || 'Local Government'}</p>
+                            <div className="flex items-center gap-1 text-[11px] text-teal-600/90 font-medium truncate mt-0.5">
+                              <MapPin size={11} className="shrink-0 text-teal-600" />
+                              <span>{formatLocation(u.city, u.state, u.country) || 'Jurisdiction Unassigned'}</span>
+                            </div>
+                            <p className="text-[10px] text-slate-400 font-mono truncate mt-0.5">{u.email}</p>
+                          </div>
+                          <div className="shrink-0 flex gap-2">
+                            <button 
+                              onClick={() => {
+                                setSelectedAuthorityForMessage(u);
+                                setIsMessageAuthorityModalOpen(true);
+                              }}
+                              className="text-teal-600 hover:text-teal-800 hover:bg-teal-50 p-2 rounded-lg transition-colors border border-transparent hover:border-teal-200"
+                              title="Direct Message to Authority"
+                            >
+                              <Mail size={16} />
+                            </button>
+                            <select
+                                onChange={(e) => handleBanUser(u.id, e)}
+                                value=""
+                                className="bg-red-50 text-red-600 font-bold border border-red-200 px-2 py-1 rounded-lg text-[10px] uppercase outline-none cursor-pointer hover:bg-red-100 transition-colors w-24 text-center"
+                              >
+                                <option value="" disabled>{u.banned_until > Date.now() ? 'Ban' : 'Ban'}</option>
+                                <option value="unban">Unban</option>
+                                <option value="365">1 Year</option>
+                                <option value="forever">Permanent</option>
+                              </select>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* BROADCASTS TAB */}
           {activeTab === 'broadcasts' && (
             <div className="animate-in fade-in duration-300">
@@ -1535,6 +1746,26 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
       )}
+      
+      <AdminMessagesModal 
+        isOpen={isAdminMessagesOpen} 
+        onClose={() => setIsAdminMessagesOpen(false)} 
+        onMessagesRead={(ids) => {
+          setReadAdminMessageIds(prev => {
+            const combined = Array.from(new Set([...prev, ...ids]));
+            localStorage.setItem('read_admin_message_ids', JSON.stringify(combined));
+            return combined;
+          });
+        }}
+      />
+      <MessageAuthorityModal 
+        isOpen={isMessageAuthorityModalOpen} 
+        onClose={() => {
+          setIsMessageAuthorityModalOpen(false);
+          setSelectedAuthorityForMessage(null);
+        }} 
+        authority={selectedAuthorityForMessage} 
+      />
     </div>
   );
 };

@@ -74,19 +74,30 @@ export class CommunityChatRoom extends DurableObject {
     const guildId = url.searchParams.get('guildId') || url.pathname.split('/').pop()?.split('?')[0];
     const token = url.searchParams.get('token');
 
-    if (!guildId || !token) {
+    if (!guildId || !token || typeof token !== 'string') {
       return new Response('Missing token or guildId', { status: 400 });
     }
 
-    // Decode JWT payload (signature already verified by index.ts)
-    const payloadBase64 = token.split('.')[1];
-    let base64 = payloadBase64.replace(/-/g, '+').replace(/_/g, '/');
-    while (base64.length % 4) base64 += '=';
-    const payloadJson = atob(base64);
-    const userId = JSON.parse(payloadJson).sub;
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      return new Response('Invalid JWT token structure', { status: 401 });
+    }
 
-    if (!userId) {
-      return new Response('Missing userId', { status: 400 });
+    let userId: string;
+    try {
+      let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (base64.length % 4) base64 += '=';
+      const payloadJson = atob(base64);
+      const payload = JSON.parse(payloadJson);
+      if (!payload || !payload.sub || typeof payload.sub !== 'string') {
+        return new Response('Invalid token payload: missing sub claim', { status: 401 });
+      }
+      if (payload.exp && (payload.exp * 1000) < Date.now()) {
+        return new Response('Token expired', { status: 401 });
+      }
+      userId = payload.sub;
+    } catch (e) {
+      return new Response('Malformed JWT payload', { status: 401 });
     }
 
     const webSocketPair = new WebSocketPair();

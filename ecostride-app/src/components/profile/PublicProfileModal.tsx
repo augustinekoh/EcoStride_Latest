@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Award, Globe, TreePine, MapPin } from 'lucide-react';
 import { apiClient } from '../../lib/api';
 import { BadgeInfoModal } from '../modals/BadgeInfoModal';
+import { formatLocation } from '../../lib/locationData';
 
 interface Props {
   userId: string;
@@ -83,11 +84,11 @@ export const PublicProfileModal: React.FC<Props> = ({ userId, isOpen, onClose })
                 <span className="text-lg font-black text-[#1d3539]">{user.total_trees_planted || 0}</span>
               </div>
 
-              {user.nationality && (
+              {formatLocation(user.city, user.state, user.country) && (
                 <div className="bg-white border-2 border-[#1d3539] rounded-2xl p-3 flex flex-col items-center shadow-[2px_2px_0px_0px_#1d3539] col-span-2">
                   <Globe className="text-[#e07a5f] mb-1" size={24} />
-                  <span className="text-[10px] uppercase font-black text-slate-400">Nationality</span>
-                  <span className="text-lg font-black text-[#1d3539]">{user.nationality}</span>
+                  <span className="text-[10px] uppercase font-black text-slate-400">Location</span>
+                  <span className="text-sm font-black text-[#1d3539] text-center">{formatLocation(user.city, user.state, user.country)}</span>
                 </div>
               )}
             </div>

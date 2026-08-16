@@ -8,7 +8,7 @@ import {
 } from 'firebase/auth';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useDemoStore } from '../../stores/useDemoStore';
-import { apiClient } from '../../lib/api';
+import { apiClient, getApiBaseUrl } from '../../lib/api';
 
 export const AuthModal: React.FC = () => {
   const { user, loading, setUser } = useAuthStore();
@@ -27,7 +27,7 @@ export const AuthModal: React.FC = () => {
       setUsernameStatus('checking');
       const timer = setTimeout(async () => {
         try {
-          const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/check-username?username=${encodeURIComponent(username)}`);
+          const res = await fetch(`${getApiBaseUrl()}/check-username?username=${encodeURIComponent(username)}`);
           const data = await res.json();
           setUsernameStatus(data.available ? 'available' : 'taken');
         } catch (e) {

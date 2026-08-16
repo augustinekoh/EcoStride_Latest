@@ -5,7 +5,8 @@ import { useUserStore } from '../../stores/useUserStore';
 import { auth } from '../../firebase';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import { apiClient } from '../../lib/api';
-import { ChevronLeft, User, Bell, Lock, Sliders, HelpCircle, MessageSquare, LogOut, ChevronRight, Moon, Sun, Store } from 'lucide-react';
+import { getCountries, getStatesForCountry, getCitiesForState } from '../../lib/locationData';
+import { ChevronLeft, User, Bell, Lock, Sliders, HelpCircle, MessageSquare, LogOut, ChevronRight, Moon, Sun, Store, MapPin } from 'lucide-react';
 
 type Tab = 'main' | 'profile' | 'notifications' | 'privacy';
 
@@ -15,8 +16,10 @@ export const SettingsView: React.FC = () => {
   const store = useUserStore();
   const [activeTab, setActiveTab] = useState<Tab>('main');
   
-  // Profile State
-  const [nationality, setNationality] = useState(store.nationality);
+  // Profile Location State
+  const [country, setCountry] = useState(store.country || '');
+  const [state, setState] = useState(store.state || '');
+  const [city, setCity] = useState(store.city || '');
   const [saving, setSaving] = useState(false);
   
   // Change Password State
@@ -39,10 +42,10 @@ export const SettingsView: React.FC = () => {
     try {
       await apiClient(`/users/${user.uid}`, {
         method: 'POST',
-        body: JSON.stringify({ nationality })
+        body: JSON.stringify({ country, state, city })
       });
-      store.setLocalData({ nationality });
-      store.addNotification({ title: 'Profile Saved', message: 'Your profile changes have been saved.', icon: '✅' });
+      store.setLocalData({ country, state, city });
+      store.addNotification({ title: 'Profile Saved', message: 'Your location changes have been saved.', icon: '✅' });
     } catch (e: any) {
       store.addNotification({ title: 'Error', message: 'Failed to save profile.', icon: '❌' });
     } finally {
@@ -164,22 +167,69 @@ export const SettingsView: React.FC = () => {
             />
           </div>
         )}
-        <div className="flex flex-col gap-1 mt-4">
-          <label className="text-sm font-bold text-[var(--color-text-muted)]">Nationality</label>
-          <select 
-            value={nationality}
-            onChange={(e) => setNationality(e.target.value)}
-            className="glass-card border-none bg-white/50 dark:bg-slate-800/50 p-3 rounded-xl font-bold text-[var(--color-text-main)] focus:outline-none focus:ring-2 focus:ring-[var(--color-teal-dark)]"
-          >
-            <option value="Global Citizen">Global Citizen</option>
-            <option value="United States">United States</option>
-            <option value="United Kingdom">United Kingdom</option>
-            <option value="Canada">Canada</option>
-            <option value="Australia">Australia</option>
-            <option value="Malaysia">Malaysia</option>
-            <option value="Singapore">Singapore</option>
-            <option value="Japan">Japan</option>
-          </select>
+        
+        {/* Location Section */}
+        <div className="mt-4 pt-4 border-t border-[var(--color-teal-dark)]/10 dark:border-white/10">
+          <div className="flex items-center gap-2 mb-3">
+            <MapPin className="w-4 h-4 text-[var(--color-teal-dark)]" />
+            <h4 className="text-sm font-black text-[var(--color-text-main)]">Reporting Location</h4>
+          </div>
+          <p className="text-xs text-[var(--color-text-muted)] mb-3">
+            Your current location is used to assign and report environmental issues to the correct local authority.
+          </p>
+
+          <div className="space-y-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-bold text-[var(--color-text-muted)]">Country</label>
+              <select 
+                value={country}
+                onChange={(e) => {
+                  setCountry(e.target.value);
+                  setState('');
+                  setCity('');
+                }}
+                className="glass-card border-none bg-white/50 dark:bg-slate-800/50 p-3 rounded-xl font-bold text-[var(--color-text-main)] focus:outline-none focus:ring-2 focus:ring-[var(--color-teal-dark)] text-sm"
+              >
+                <option value="">Select Country</option>
+                {getCountries().map((c) => (
+                  <option key={c.code} value={c.name}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-bold text-[var(--color-text-muted)]">State / Province / Region</label>
+              <select 
+                value={state}
+                disabled={!country}
+                onChange={(e) => {
+                  setState(e.target.value);
+                  setCity('');
+                }}
+                className="glass-card border-none bg-white/50 dark:bg-slate-800/50 p-3 rounded-xl font-bold text-[var(--color-text-main)] focus:outline-none focus:ring-2 focus:ring-[var(--color-teal-dark)] text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <option value="">{country ? 'Select State / Region' : 'Select Country first'}</option>
+                {getStatesForCountry(country).map((s) => (
+                  <option key={s.code} value={s.name}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-bold text-[var(--color-text-muted)]">City / District</label>
+              <select 
+                value={city}
+                disabled={!state}
+                onChange={(e) => setCity(e.target.value)}
+                className="glass-card border-none bg-white/50 dark:bg-slate-800/50 p-3 rounded-xl font-bold text-[var(--color-text-main)] focus:outline-none focus:ring-2 focus:ring-[var(--color-teal-dark)] text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <option value="">{state ? 'Select City / District' : 'Select State first'}</option>
+                {getCitiesForState(country, state).map((cty) => (
+                  <option key={cty} value={cty}>{cty}</option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
         <div className="flex flex-col gap-1 mt-4">
             <label className="text-sm font-bold text-[var(--color-text-muted)]">Password</label>

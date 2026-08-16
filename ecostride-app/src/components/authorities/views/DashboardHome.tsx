@@ -1,21 +1,32 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../../../lib/api';
-import { useUserStore } from '../../../stores/useUserStore';
-import { Calendar as CalendarIcon, CheckCircle, Clock, AlertCircle, X, ChevronLeft, ChevronRight, Edit2, TrendingUp } from 'lucide-react';
+import { useAuthStore } from '../../../stores/useAuthStore';
+import { Calendar as CalendarIcon, CheckCircle, Clock, AlertCircle, X, ChevronLeft, ChevronRight, Edit2, TrendingUp, BarChart2, Briefcase, Plus, CalendarDays, Activity, ClipboardList, Radio, Map, Network, Layers } from 'lucide-react';
 
 interface Stats {
-  today: { reported: number };
-  monthly: { reported: number; resolved: number; data: Array<{ date: string; reported: number; resolved: number }> };
-  response: { responded: number; unresponded: number; respondedPercentage: number };
+  today: { pending: number; 'in-progress': number; resolved: number };
+  monthly: { reported: number; severity: { Minor: number; Major: number; Critical: number } };
 }
 
 interface Task {
-  id: number;
+  id: string;
   title: string;
   description: string;
-  scheduled_at: string;
+  importance: 'Low' | 'Medium' | 'High';
+  scheduled_at: number;
   completed: number;
-  created_at: string;
+  created_at: number;
+}
+
+interface Issue {
+  id: string;
+  title: string;
+  status: string;
+  severity: string;
+  created_at: number;
+  updated_at: number;
+  location?: string;
+  photos?: string;
 }
 
 function ErrorFallback({ error, reset }: { error: Error, reset: () => void }) {
@@ -24,9 +35,9 @@ function ErrorFallback({ error, reset }: { error: Error, reset: () => void }) {
       <div className="bg-red-100 text-red-600 p-4 rounded-full mb-4">
         <AlertCircle size={48} />
       </div>
-      <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-2">Something went wrong</h2>
-      <p className="text-slate-600 dark:text-slate-400 mb-6">{error.message}</p>
-      <button onClick={reset} className="px-6 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-black transition-colors">
+      <h2 className="text-2xl font-black text-slate-900 mb-2">Something went wrong</h2>
+      <p className="text-[#4A6B53] mb-6">{error.message}</p>
+      <button onClick={reset} className="px-6 py-3 bg-[#224C31] text-white rounded-xl font-bold hover:bg-[#224C31]/90 transition-colors">
         Try Again
       </button>
     </div>
@@ -34,28 +45,33 @@ function ErrorFallback({ error, reset }: { error: Error, reset: () => void }) {
 }
 
 export function DashboardHome() {
-  const user = useUserStore((state) => state.user);
+  const { user } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   
   const [stats, setStats] = useState<Stats | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [criticalReports, setCriticalReports] = useState<Issue[]>([]);
+  const [workload, setWorkload] = useState<Issue[]>([]);
   
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
-  const [editFormData, setEditFormData] = useState({ title: '', description: '', scheduled_at: '', completed: 0 });
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<number | null>(null);
+  const [newTaskData, setNewTaskData] = useState({ title: '', description: '', importance: 'Medium' as 'Low'|'Medium'|'High' });
+  const [workloadTab, setWorkloadTab] = useState<'cases'|'tasks'>('cases');
 
   const fetchData = async () => {
     try {
       const statsRes = await apiClient('/authorities/dashboard/stats');
       setStats(statsRes);
       
-      const tasksRes = await apiClient(`/authorities/tasks?page=${page}&limit=5`);
+      const tasksRes = await apiClient(`/authorities/tasks?page=1&limit=100`);
       setTasks(tasksRes.tasks || []);
-      setTotalPages(tasksRes.pagination?.totalPages || 1);
+      
+      const criticalRes = await apiClient(`/authorities/dashboard/critical`);
+      setCriticalReports(criticalRes.critical || []);
+      
+      const workloadRes = await apiClient(`/authorities/dashboard/workload`);
+      setWorkload(workloadRes.workload || []);
       
       setError(null);
     } catch (err: any) {
@@ -67,304 +83,481 @@ export function DashboardHome() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 5 * 60 * 1000); // 5 min refresh
+    const interval = setInterval(fetchData, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [page]);
+  }, []);
 
-  const handleUpdateTask = async (e: React.FormEvent) => {
+  const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTask) return;
+    if (!selectedDate) return;
     try {
-      await apiClient(`/authorities/tasks/${selectedTask.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(editFormData),
+      await apiClient(`/authorities/tasks`, {
+        method: 'POST',
+        body: JSON.stringify({
+          ...newTaskData,
+          scheduled_at: selectedDate
+        }),
       });
-      setIsModalOpen(false);
+      setIsTaskModalOpen(false);
+      setNewTaskData({ title: '', description: '', importance: 'Medium' });
       fetchData();
     } catch (err) {
       console.error(err);
-      alert('Failed to update task');
+      alert('Failed to create task');
     }
   };
+
+  const handleDeleteTask = async (taskId: string) => {
+    if (!confirm('Are you sure you want to delete this task?')) return;
+    try {
+      await apiClient(`/authorities/tasks/${taskId}`, {
+        method: 'DELETE',
+      });
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to delete task');
+    }
+  };
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 18) return 'Good Afternoon';
+    return 'Good Evening';
+  };
+
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }).format(new Date());
+  
+  // Tasks by day
+  const tasksByDay: Record<string, Task[]> = {};
+  tasks.forEach(t => {
+    const dStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }).format(new Date(t.scheduled_at));
+    if (!tasksByDay[dStr]) tasksByDay[dStr] = [];
+    tasksByDay[dStr].push(t);
+  });
 
   if (error) return <ErrorFallback error={error} reset={() => { setLoading(true); setError(null); fetchData(); }} />;
 
   return (
-    <div className="p-8 w-full max-w-[1600px] mx-auto animate-in fade-in duration-500 relative">
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+    <div className="h-full bg-[#224C31] overflow-y-auto relative">
+      {/* Subtle organic background artwork */}
+      <Network size={800} className="absolute -top-40 -left-20 text-[#34D399] opacity-[0.15] pointer-events-none stroke-1 mix-blend-overlay" />
+      <Map size={800} className="absolute bottom-0 right-0 text-[#FBBF24] opacity-[0.12] pointer-events-none stroke-1 mix-blend-overlay translate-y-1/4 translate-x-1/4" />
+      
+      <div className="w-full max-w-[1600px] mx-auto p-8 animate-in fade-in duration-500 relative z-10">
         
-        {/* LEFT / CENTER COLUMN */}
-        <div className="xl:col-span-2 flex flex-col gap-8">
-          
-          {/* Top: User Info Block */}
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-            <div>
-              <h1 className="text-4xl font-black text-white tracking-tight">
-                Welcome back, Authority
-              </h1>
-              <p className="text-emerald-100/70 mt-2 text-lg">
-                {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-              </p>
-            </div>
-            <div className="bg-white/10 text-white border border-white/20 backdrop-blur-md px-6 py-3 rounded-[24px] font-bold flex items-center gap-3">
-              <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#D5B054] opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-[#D5B054]"></span>
-              </span>
-              System Online & Syncing
-            </div>
+        {/* Header */}
+        <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-8">
+          <div>
+            <h1 className="text-4xl font-black text-white tracking-tight">
+              {getGreeting()}, {user?.username || 'Authority'}
+            </h1>
+            <p className="text-emerald-100/70 mt-2 font-bold flex items-center gap-2">
+              <Clock size={16} />
+              {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </p>
           </div>
+          <div className="bg-gradient-to-r from-[#42694D] to-[#D5A754] text-white px-6 py-3 rounded-[24px] font-bold flex items-center gap-3 shadow-lg border-none">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-400"></span>
+            </span>
+            System Online & Syncing
+          </div>
+        </div>
 
-          {/* Loading State for Stats */}
-          {loading && !stats ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="h-64 bg-white/10 animate-pulse rounded-[32px]"></div>
-              <div className="h-64 bg-white/10 animate-pulse rounded-[32px]"></div>
-            </div>
-          ) : stats ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* Two-Column Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+          
+          {/* Left Column (Content & Widgets) */}
+          <div className="lg:col-span-2 xl:col-span-3 flex flex-col gap-8">
+            
+            {/* Top Widgets Row */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               
-              {/* Left: Minimal Calendar (Takes up full height of this grid cell) */}
-              <div className="bg-white rounded-[32px] p-8 shadow-xl border-4 border-white/50 backdrop-blur-md flex flex-col justify-center">
-                <div className="flex items-center justify-between mb-8">
-                  <h3 className="font-black text-[#1B4A2E] text-lg flex items-center">
-                    <CalendarIcon size={22} className="mr-3 text-[#699361] stroke-[2.5px]" /> 
-                    Schedule
+              {/* Calendar */}
+              <div className="col-span-1 bg-white rounded-[32px] p-6 shadow-xl border-4 border-white flex flex-col h-full min-h-[320px] relative overflow-hidden">
+                <CalendarDays size={180} className="absolute -top-10 -right-10 text-[#34D399] opacity-10 pointer-events-none stroke-1 rotate-12" />
+                <div className="flex items-center justify-between mb-4 relative z-10">
+                  <h3 className="font-black text-[#1E432B] text-lg flex items-center gap-2">
+                    <span>📅</span> Schedule
                   </h3>
                 </div>
-                <div className="grid grid-cols-7 gap-y-4 gap-x-2 text-center flex-1 items-center">
-                  {['S','M','T','W','T','F','S'].map(d => <div key={d} className="text-xs font-black text-slate-400">{d}</div>)}
+                <div className="grid grid-cols-7 gap-y-3 gap-x-1 text-center flex-1 content-center relative z-10">
+                  {['S','M','T','W','T','F','S'].map(d => <div key={d} className="text-xs font-black text-[#1E432B]">{d}</div>)}
                   {Array.from({ length: 30 }).map((_, i) => {
-                    const isToday = i + 1 === new Date().getDate();
+                    const dateObj = new Date();
+                    dateObj.setDate(dateObj.getDate() - dateObj.getDate() + 1 + i); // 1st to 30th
+                    const dStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }).format(dateObj);
+                    const isToday = dStr === todayStr;
+                    const hasTasks = tasksByDay[dStr] && tasksByDay[dStr].length > 0;
+                    
                     return (
-                      <div key={i} className={`p-2 rounded-2xl text-sm font-bold transition-all ${isToday ? 'bg-[#699361] text-white shadow-lg shadow-[#699361]/30 scale-110' : 'text-slate-600 hover:bg-slate-50 cursor-pointer'}`}>
+                      <div 
+                        key={i} 
+                        onClick={() => { setSelectedDate(dateObj.getTime()); setIsTaskModalOpen(true); }}
+                        className={`p-2 rounded-xl text-sm font-bold transition-all relative cursor-pointer
+                          ${isToday ? 'bg-[#8DAA91] text-white shadow-md scale-105' : 'text-[#4A6B53] hover:bg-[#EAF0EC]'}
+                        `}
+                      >
                         {i + 1}
+                        {hasTasks && (
+                          <div className={`absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full ${isToday ? 'bg-white' : 'bg-[#D5B054]'}`}></div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Right: Metrics Grid */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Today's Reports */}
+              <div className="col-span-1 bg-white rounded-[32px] p-6 shadow-xl border-4 border-white flex flex-col justify-between min-h-[320px] relative overflow-hidden">
+                <Activity size={180} className="absolute -top-6 -right-6 text-[#FBBF24] opacity-15 pointer-events-none stroke-1 -rotate-12" />
+                <h3 className="font-black text-[#1E432B] text-lg flex items-center gap-2 mb-4 relative z-10">
+                  <span>📊</span> Today's Reports
+                </h3>
+                {loading || !stats ? (
+                  <div className="flex-1 animate-pulse bg-[#EAF0EC] rounded-2xl relative z-10"></div>
+                ) : (
+                  <div className="flex-1 flex flex-col justify-center gap-4 relative z-10">
+                    <div className="bg-gradient-to-r from-[#42694D] to-[#D5A754] p-4 rounded-2xl flex justify-between items-center shadow-md border-none">
+                      <span className="font-bold text-white/90">Pending</span>
+                      <span className="font-black text-2xl text-white drop-shadow-sm">{stats.today.pending}</span>
+                    </div>
+                    <div className="bg-gradient-to-r from-[#365A42] to-[#B09A4D] p-4 rounded-2xl flex justify-between items-center shadow-md border-none">
+                      <span className="font-bold text-white/90">In Progress</span>
+                      <span className="font-black text-2xl text-white drop-shadow-sm">{stats.today['in-progress']}</span>
+                    </div>
+                    <div className="bg-gradient-to-r from-[#294B35] to-[#8C8F47] p-4 rounded-2xl flex justify-between items-center shadow-md border-none">
+                      <span className="font-bold text-white/90">Resolved</span>
+                      <span className="font-black text-2xl text-white drop-shadow-sm">{stats.today.resolved}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Monthly Severity */}
+              <div className="col-span-1 bg-white rounded-[32px] p-6 shadow-xl border-4 border-white flex flex-col min-h-[320px] relative overflow-hidden">
+                <TrendingUp size={200} className="absolute -top-10 -right-10 text-[#34D399] opacity-10 pointer-events-none stroke-1 rotate-12" />
+                <div className="absolute inset-0 bg-gradient-to-br from-[#34D399]/5 via-transparent to-[#FBBF24]/5 pointer-events-none"></div>
+                <h3 className="font-black text-[#1E432B] text-lg flex items-center gap-2 mb-2 z-10 relative">
+                  <span>🔴</span> Monthly Severity
+                </h3>
+                {loading || !stats ? (
+                  <div className="flex-1 animate-pulse bg-[#EAF0EC] rounded-2xl mt-4 relative z-10"></div>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center relative z-10 mt-4">
+                    <div className="relative w-36 h-36">
+                      <div className="absolute inset-0 bg-gradient-to-tr from-[#34D399]/40 to-[#FBBF24]/40 rounded-full blur-3xl scale-[1.75] mix-blend-multiply"></div>
+                      <svg className="w-full h-full transform -rotate-90 drop-shadow-md" viewBox="0 0 100 100">
+                        {/* Circle logic */}
+                        {(() => {
+                          const { Minor, Major, Critical } = stats.monthly.severity;
+                          const total = Minor + Major + Critical || 1;
+                          const r = 36;
+                          const c = 2 * Math.PI * r;
+                          
+                          const minorPct = Minor / total;
+                          const majorPct = Major / total;
+                          const criticalPct = Critical / total;
+                          
+                          let offset = 0;
+                          
+                          const minorDash = minorPct * c;
+                          const majorDash = majorPct * c;
+                          const criticalDash = criticalPct * c;
+                          
+                          return (
+                            <>
+                              <circle cx="50" cy="50" r={r} stroke="#EAF0EC" strokeWidth="18" fill="transparent" />
+                              {Minor > 0 && <circle cx="50" cy="50" r={r} stroke="#34D399" strokeWidth="18" fill="transparent" strokeDasharray={`${minorDash} ${c}`} strokeDashoffset={-offset} className="transition-all duration-1000" /> }
+                              {(() => { offset += minorDash; return null; })()}
+                              {Major > 0 && <circle cx="50" cy="50" r={r} stroke="#FBBF24" strokeWidth="18" fill="transparent" strokeDasharray={`${majorDash} ${c}`} strokeDashoffset={-offset} className="transition-all duration-1000" /> }
+                              {(() => { offset += majorDash; return null; })()}
+                              {Critical > 0 && <circle cx="50" cy="50" r={r} stroke="#FB7185" strokeWidth="18" fill="transparent" strokeDasharray={`${criticalDash} ${c}`} strokeDashoffset={-offset} className="transition-all duration-1000" /> }
+                            </>
+                          );
+                        })()}
+                      </svg>
+                      <div className="absolute top-0 left-0 w-full h-full flex flex-col items-center justify-center">
+                        <span className="text-2xl font-black text-[#1E432B]">{stats.monthly.reported}</span>
+                        <span className="text-[10px] font-bold text-[#9BB3A3] uppercase">Total</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-4 mt-6">
+                      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-[#34D399]"></div><span className="text-xs font-bold text-[#4A6B53]">Minor</span></div>
+                      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-[#FBBF24]"></div><span className="text-xs font-bold text-[#4A6B53]">Major</span></div>
+                      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-[#FB7185]"></div><span className="text-xs font-bold text-[#4A6B53]">Critical</span></div>
+                    </div>
+                  </div>
+                )}
                 
-                {/* Today Card */}
-                <div className="col-span-1 bg-gradient-to-r from-[#699361] to-[#C99C3D] rounded-[28px] p-6 text-white shadow-lg relative overflow-hidden group flex flex-col justify-between">
-                  <div className="absolute top-0 right-0 -mt-8 -mr-8 w-24 h-24 bg-white/20 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700"></div>
-                  <div>
-                    <p className="text-white/90 font-bold tracking-wider text-xs mb-1">Today's Reports</p>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-4xl font-black tracking-tighter drop-shadow-md">{stats.today.reported}</span>
-                    </div>
-                  </div>
-                  <div className="mt-4 flex items-center justify-between z-10">
-                    <div className="flex items-center text-[10px] font-bold text-white bg-white/20 px-3 py-1.5 rounded-full backdrop-blur-md">
-                      <TrendingUp size={12} className="mr-1 stroke-[3px]" /> Live
-                    </div>
-                  </div>
-                </div>
-
-                {/* Monthly Stats */}
-                <div className="col-span-1 bg-white rounded-[28px] p-6 shadow-xl flex flex-col justify-between relative overflow-hidden border-4 border-white/50 backdrop-blur-md">
-                  <p className="text-[#1B4A2E] font-black tracking-wider text-xs mb-2">Monthly</p>
-                  <div className="flex justify-between items-end gap-2 h-full z-10">
-                    <div className="flex-1">
-                      <p className="text-2xl font-black text-slate-800">{stats.monthly.reported}</p>
-                      <p className="text-[10px] font-bold text-slate-400 mt-0.5">Rpt.</p>
-                    </div>
-                    <div className="w-[2px] h-6 bg-slate-100 rounded-full"></div>
-                    <div className="flex-1">
-                      <p className="text-2xl font-black text-[#699361]">{stats.monthly.resolved}</p>
-                      <p className="text-[10px] font-bold text-slate-400 mt-0.5">Res.</p>
-                    </div>
-                  </div>
-                  <div className="absolute bottom-0 left-0 w-full h-16 opacity-20 pointer-events-none">
-                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full fill-[#C99C3D]">
-                      <path d="M0,100 L0,50 Q25,20 50,60 T100,40 L100,100 Z" />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Response Chart - Stretching across 2 columns */}
-                <div className="col-span-2 bg-white rounded-[28px] p-6 shadow-xl flex items-center relative border-4 border-white/50 backdrop-blur-md">
-                  <div className="flex-1 pr-4">
-                    <p className="text-[#1B4A2E] font-black tracking-wider text-xs mb-3">Response Rate</p>
-                    <div className="space-y-3 mt-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full bg-[#699361]"></div>
-                          <span className="text-xs font-bold text-slate-500">Responded</span>
-                        </div>
-                        <span className="text-sm font-black text-slate-800">{stats.response.responded}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full bg-slate-200"></div>
-                          <span className="text-xs font-bold text-slate-500">Pending</span>
-                        </div>
-                        <span className="text-sm font-black text-slate-800">{stats.response.unresponded}</span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="relative w-24 h-24 shrink-0">
-                    <div className="absolute inset-0 bg-[#699361]/10 rounded-full blur-xl scale-110"></div>
-                    <svg className="w-full h-full transform -rotate-90 relative z-10 drop-shadow-sm" viewBox="0 0 100 100">
-                      <circle cx="50" cy="50" r="38" stroke="currentColor" strokeWidth="16" fill="transparent" className="text-slate-100" />
-                      <circle 
-                        cx="50" cy="50" r="38" stroke="currentColor" strokeWidth="16" fill="transparent" 
-                        strokeDasharray={`${2 * Math.PI * 38}`}
-                        strokeDashoffset={`${2 * Math.PI * 38 * (1 - stats.response.respondedPercentage / 100)}`}
-                        className="text-[#699361] transition-all duration-1000 ease-out" 
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center flex-col z-20">
-                      <span className="text-xl font-black text-slate-800">{stats.response.respondedPercentage.toFixed(0)}%</span>
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-            </div>
-          ) : null}
-
-          {/* Bottom Row: Reporter Cards Empty Plug */}
-          <div className="mt-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[
-                { name: 'Jel Chibuzo', role: 'Citizen' },
-                { name: 'Emlen Beaver', role: 'Staff' },
-                { name: 'Jaquon Hart', role: 'Citizen' },
-                { name: 'Joe Desuza', role: 'Staff' },
-              ].map((reporter, i) => (
-                <div key={i} className="bg-white/10 backdrop-blur-md rounded-[28px] p-5 flex flex-col items-center justify-center border border-white/20 transition-all hover:bg-white/15 cursor-pointer group">
-                  <div className="w-14 h-14 bg-white/20 rounded-full mb-3 flex items-center justify-center">
-                    <span className="text-white font-black opacity-50 text-xl">{reporter.name[0]}</span>
-                  </div>
-                  <p className="text-white font-bold text-sm text-center">{reporter.name}</p>
-                  <p className="text-emerald-100/60 text-xs font-semibold mb-3">{reporter.role}</p>
-                  <p className="text-[#D5B054] text-xs font-black uppercase tracking-wider group-hover:text-white transition-colors">Assign →</p>
-                </div>
-              ))}
-            </div>
-          </div>
-          
-        </div>
-
-        {/* RIGHT COLUMN: Tasks */}
-        <div className="xl:col-span-1 flex flex-col h-full min-h-[600px]">
-          <div className="bg-white rounded-[32px] p-8 shadow-xl border-4 border-white/50 backdrop-blur-md flex-1 flex flex-col">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="font-black text-[#1B4A2E] text-2xl">Tasks</h3>
-              <div className="flex gap-2">
-                <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="p-2.5 rounded-2xl bg-slate-50 hover:bg-slate-100 disabled:opacity-50 text-slate-600 transition-colors"><ChevronLeft size={20} strokeWidth={3} /></button>
-                <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="p-2.5 rounded-2xl bg-slate-50 hover:bg-slate-100 disabled:opacity-50 text-slate-600 transition-colors"><ChevronRight size={20} strokeWidth={3} /></button>
+                {/* Decorative background element */}
+                <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-gradient-to-br from-[#D5B054]/20 to-transparent rounded-full blur-3xl pointer-events-none"></div>
               </div>
             </div>
 
-            <div className="flex-1 space-y-4">
-              {loading && tasks.length === 0 ? (
-                [1,2,3,4].map(i => <div key={i} className="h-28 bg-slate-50 animate-pulse rounded-[24px]"></div>)
-              ) : tasks.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-slate-400 py-12">
-                  <CheckCircle size={64} className="mb-4 text-slate-200" strokeWidth={1.5} />
-                  <p className="font-black text-slate-500">No active tasks</p>
-                  <p className="text-sm font-medium mt-1">You're all caught up!</p>
-                </div>
-              ) : (
-                tasks.map((task, i) => (
-                  <div 
-                    key={task.id} 
-                    onClick={() => {
-                      setSelectedTask(task);
-                      setEditFormData({ title: task.title, description: task.description, scheduled_at: task.scheduled_at, completed: task.completed });
-                      setIsModalOpen(true);
-                    }}
-                    className="p-6 rounded-[24px] border-2 border-transparent hover:border-[#699361]/20 hover:bg-emerald-50/30 transition-all cursor-pointer bg-slate-50 flex items-center justify-between group shadow-sm"
+            {/* Bottom Section: My Workload */}
+            <div className="bg-white rounded-[32px] p-8 shadow-xl border-4 border-white flex-1 min-h-[300px] relative overflow-hidden">
+              <ClipboardList size={300} className="absolute -bottom-20 -right-10 text-[#34D399] opacity-10 pointer-events-none stroke-1 -rotate-6" />
+              <Layers size={250} className="absolute -top-20 right-1/4 text-[#FBBF24] opacity-[0.08] pointer-events-none stroke-1 rotate-12" />
+              
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4 relative z-10">
+                <h3 className="font-black text-[#1E432B] text-xl flex items-center gap-2">
+                  <span>💼</span> My Workload
+                </h3>
+                
+                <div className="flex bg-[#EAF0EC] p-1 rounded-full relative z-10">
+                  <button 
+                    onClick={() => setWorkloadTab('cases')}
+                    className={`px-4 py-2 rounded-full text-sm font-black transition-all ${workloadTab === 'cases' ? 'bg-white text-[#1E432B] shadow-sm' : 'text-[#9BB3A3] hover:text-[#4A6B53]'}`}
                   >
-                    <div className="flex-1 pr-4">
-                      <h4 className="font-black text-slate-800 uppercase tracking-wide text-sm">{task.title}</h4>
-                      <p className="text-xs font-bold text-slate-400 mt-1 line-clamp-1">{task.description}</p>
-                      <p className="text-[10px] font-black text-[#699361] uppercase tracking-wider mt-3 group-hover:text-[#1B4A2E] transition-colors">Process →</p>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <span className="text-2xl font-black text-slate-800">{String(i + 1 + (page - 1) * 5).padStart(2, '0')}</span>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">Tasks</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Interactive Modal */}
-      {isModalOpen && selectedTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-800 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700 animate-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
-              <h3 className="font-bold text-lg dark:text-white flex items-center"><Edit2 size={18} className="mr-2" /> Edit Task</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleUpdateTask} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Title</label>
-                <input 
-                  required
-                  type="text" 
-                  value={editFormData.title} 
-                  onChange={e => setEditFormData({...editFormData, title: e.target.value})}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all dark:text-white outline-none" 
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Description</label>
-                <textarea 
-                  value={editFormData.description} 
-                  onChange={e => setEditFormData({...editFormData, description: e.target.value})}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all dark:text-white outline-none min-h-[100px] resize-none" 
-                />
-              </div>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Schedule Date</label>
-                  <input 
-                    type="date" 
-                    value={editFormData.scheduled_at ? editFormData.scheduled_at.split('T')[0] : ''} 
-                    onChange={e => setEditFormData({...editFormData, scheduled_at: e.target.value})}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all dark:text-white outline-none color-scheme-light dark:color-scheme-dark" 
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Status</label>
-                  <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 cursor-pointer hover:border-emerald-500 transition-all">
-                    <input 
-                      type="checkbox" 
-                      checked={editFormData.completed === 1}
-                      onChange={e => setEditFormData({...editFormData, completed: e.target.checked ? 1 : 0})}
-                      className="w-5 h-5 rounded text-emerald-500 focus:ring-emerald-500 accent-emerald-500"
-                    />
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Completed</span>
-                  </label>
+                    Active Cases <span className="ml-2 bg-slate-200 text-[#4A6B53] px-2 py-0.5 rounded-full text-xs">{workload.length}</span>
+                  </button>
+                  <button 
+                    onClick={() => setWorkloadTab('tasks')}
+                    className={`px-4 py-2 rounded-full text-sm font-black transition-all ${workloadTab === 'tasks' ? 'bg-white text-[#1E432B] shadow-sm' : 'text-[#9BB3A3] hover:text-[#4A6B53]'}`}
+                  >
+                    Calendar Tasks <span className="ml-2 bg-slate-200 text-[#4A6B53] px-2 py-0.5 rounded-full text-xs">{tasks.length}</span>
+                  </button>
                 </div>
               </div>
               
-              <div className="pt-4 mt-6 border-t border-slate-100 dark:border-slate-700/50 flex justify-end gap-3">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors">
-                  Cancel
-                </button>
-                <button type="submit" className="px-5 py-2.5 font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors shadow-lg shadow-indigo-500/30">
-                  Save Changes
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 relative z-10">
+                {workloadTab === 'cases' ? (
+                  loading && workload.length === 0 ? (
+                    [1,2,3].map(i => <div key={i} className="h-32 bg-[#F3F7F4] animate-pulse rounded-[24px]"></div>)
+                  ) : workload.length === 0 ? (
+                    <div className="col-span-full flex flex-col items-center py-12 text-[#9BB3A3]">
+                      <CheckCircle size={48} className="mb-3 text-slate-200" />
+                      <p className="font-bold">No active workload</p>
+                    </div>
+                  ) : (
+                    workload.map(issue => {
+                      const daysOpen = Math.floor((Date.now() - issue.created_at) / (1000 * 60 * 60 * 24));
+                      return (
+                        <div key={issue.id} className="p-6 rounded-[24px] bg-white border border-[#EAF0EC] shadow-[0_2px_10px_-4px_rgba(34,76,49,0.1)] hover:-translate-y-1 hover:shadow-[0_8px_20px_-6px_rgba(34,76,49,0.15)] transition-all duration-300 cursor-pointer group flex flex-col h-full relative overflow-hidden">
+                          <div className="absolute -top-10 -right-10 w-24 h-24 bg-gradient-to-br from-[#34D399]/10 to-transparent rounded-full blur-2xl pointer-events-none group-hover:scale-150 transition-transform duration-700"></div>
+                          <h4 className="text-[17px] font-black text-[#1E432B] truncate mb-1.5 relative z-10">{issue.title}</h4>
+                          <p className="text-[13px] font-medium text-[#738F7C] line-clamp-1 mb-6 flex-1 relative z-10">
+                            <Clock size={12} className="inline mr-1" /> {daysOpen === 0 ? 'Opened today' : `${daysOpen} days open`}
+                          </p>
+                          <div className="flex items-center justify-between mt-auto relative z-10">
+                            <div className="flex flex-wrap gap-2">
+                              <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                issue.severity === 'Critical' ? 'bg-[#FFE4E6] text-[#E11D48]' :
+                                issue.severity === 'Major' ? 'bg-[#FEF3C7] text-[#D97706]' :
+                                'bg-[#D1FAE5] text-[#059669]'
+                              }`}>{issue.severity}</span>
+                              <span className="px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-600">
+                                {issue.status}
+                              </span>
+                            </div>
+                            <span className="text-xs font-black text-[#1E432B] opacity-0 group-hover:opacity-100 transition-opacity">View →</span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )
+                ) : (
+                  loading && tasks.length === 0 ? (
+                    [1,2,3].map(i => <div key={i} className="h-32 bg-[#F3F7F4] animate-pulse rounded-[24px]"></div>)
+                  ) : tasks.length === 0 ? (
+                    <div className="col-span-full flex flex-col items-center py-12 text-[#9BB3A3]">
+                      <CheckCircle size={48} className="mb-3 text-slate-200" />
+                      <p className="font-bold">No scheduled tasks</p>
+                    </div>
+                  ) : (
+                    tasks.map(task => {
+                      const dateStr = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(task.scheduled_at)).toUpperCase();
+                      return (
+                        <div key={task.id} className="p-6 rounded-[24px] bg-white border border-[#EAF0EC] shadow-[0_2px_10px_-4px_rgba(34,76,49,0.1)] hover:-translate-y-1 hover:shadow-[0_8px_20px_-6px_rgba(34,76,49,0.15)] transition-all duration-300 cursor-pointer group flex flex-col relative h-full overflow-hidden">
+                          <div className="absolute -top-10 -right-10 w-24 h-24 bg-gradient-to-br from-[#FBBF24]/10 to-transparent rounded-full blur-2xl pointer-events-none group-hover:scale-150 transition-transform duration-700"></div>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }}
+                            className="absolute top-4 right-4 text-[#B5C9BE] hover:text-[#E11D48] hover:bg-[#FFE4E6] p-1.5 rounded-full transition-colors opacity-0 group-hover:opacity-100 z-20"
+                            title="Delete Task"
+                          >
+                            <X size={16} strokeWidth={3} />
+                          </button>
+                          <h4 className="text-[17px] font-black text-[#1E432B] truncate pr-8 mb-1.5 relative z-10">{task.title}</h4>
+                          <p className="text-[13px] font-medium text-[#738F7C] line-clamp-2 flex-1 mb-6 relative z-10">{task.description || 'No description provided.'}</p>
+                          <div className="flex flex-wrap gap-2 mt-auto relative z-10">
+                            <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                              task.importance === 'High' ? 'bg-[#FFE4E6] text-[#E11D48]' :
+                              task.importance === 'Medium' ? 'bg-[#FEF3C7] text-[#D97706]' :
+                              'bg-[#D1FAE5] text-[#059669]'
+                            }`}>{task.importance}</span>
+                            <span className="px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-[#EAF0EC] text-[#4A6B53] flex items-center gap-1.5">
+                              <CalendarIcon size={12} /> {dateStr}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )
+                )}
+              </div>
+            </div>
+
+          </div>
+
+          {/* Right Column (Critical Reports) */}
+          <div className="lg:col-span-1 xl:col-span-1 flex flex-col h-full min-h-[800px]">
+            <div className="bg-white rounded-[32px] p-6 shadow-xl border-4 border-white flex-1 flex flex-col overflow-hidden relative">
+              <Radio size={350} className="absolute -top-24 -right-24 text-[#FB7185] opacity-10 pointer-events-none stroke-1" />
+              <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-to-bl from-[#FB7185]/20 to-transparent rounded-bl-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex items-center justify-between mb-6 z-10">
+                <h3 className="font-black text-[#1E432B] text-xl flex items-center gap-2">
+                  <span>🚨</span> Critical Reports
+                </h3>
+                {criticalReports.length > 0 && (
+                  <span className="bg-red-100 text-red-700 w-8 h-8 rounded-full flex items-center justify-center text-sm font-black shadow-sm">
+                    {criticalReports.length}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar z-10">
+                {loading && criticalReports.length === 0 ? (
+                  [1,2,3,4,5].map(i => <div key={i} className="h-32 bg-[#F3F7F4] animate-pulse rounded-[24px]"></div>)
+                ) : criticalReports.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-[#9BB3A3] pb-12">
+                    <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mb-4">
+                      <CheckCircle size={32} className="text-emerald-500" />
+                    </div>
+                    <p className="font-black text-[#4A6B53] text-center">No critical reports</p>
+                    <p className="text-xs font-medium text-[#9BB3A3] text-center mt-1">Everything is under control.</p>
+                  </div>
+                ) : (
+                  criticalReports.map(report => {
+                    const timeAgo = Math.floor((Date.now() - report.created_at) / (1000 * 60 * 60));
+                    const timeStr = timeAgo < 24 ? `${timeAgo} hours ago` : `${Math.floor(timeAgo/24)} days ago`;
+                          return (
+                        <div key={report.id} className="p-5 rounded-[24px] bg-white border border-[#EAF0EC] shadow-[0_2px_10px_-4px_rgba(34,76,49,0.1)] hover:-translate-y-1 hover:shadow-[0_8px_20px_-6px_rgba(34,76,49,0.15)] transition-all duration-300 cursor-pointer group flex flex-col relative h-full overflow-hidden">
+                          <div className="absolute -top-10 -right-10 w-32 h-32 bg-gradient-to-br from-[#FB7185]/10 to-transparent rounded-full blur-2xl pointer-events-none group-hover:scale-125 transition-transform duration-700"></div>
+                          <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-[#FFE4E6] to-transparent rounded-tr-[24px] rounded-bl-[100px] pointer-events-none"></div>
+                          <h4 className="text-[15px] font-black text-[#1E432B] line-clamp-2 mb-2 group-hover:text-[#E11D48] transition-colors z-10 pr-2">{report.title}</h4>
+                          
+                          <div className="flex justify-between items-center text-[12px] font-bold text-[#738F7C] mb-4 flex-1 z-10">
+                            <span className="flex items-center gap-1.5"><Clock size={12} /> {timeStr}</span>
+                          </div>
+  
+                          <div className="flex items-center justify-between mt-auto z-10">
+                            <div className="flex items-center gap-2">
+                              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FFE4E6] border border-[#FB7185]/20 text-[9px] font-black uppercase tracking-wider text-[#E11D48]">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#E11D48] animate-pulse"></span> Critical
+                              </span>
+                              <span className={`text-[9px] font-black uppercase tracking-wider ${report.status === 'in-progress' ? 'text-blue-600' : 'text-[#D97706]'}`}>
+                                {report.status}
+                              </span>
+                            </div>
+                            <span className="text-[#E11D48] opacity-0 group-hover:opacity-100 transition-opacity font-black text-[11px] uppercase tracking-wider">Review →</span>
+                          </div>
+                        </div>
+                      );
+                  })
+                )}
+              </div>
+              
+              {criticalReports.length > 0 && (
+                <div className="pt-4 mt-2 border-t border-[#E1EAE4] z-10">
+                  <button className="w-full py-3 rounded-2xl text-sm font-black text-[#738F7C] hover:bg-[#F3F7F4] hover:text-[#1E432B] transition-colors">
+                    View All Critical Cases
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      {/* Task Creation Modal */}
+      {isTaskModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#224C31]/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border-4 border-white/50">
+            <div className="px-8 py-6 border-b border-[#E1EAE4] flex items-center justify-between bg-[#F3F7F4]/50">
+              <div>
+                <h3 className="font-black text-2xl text-[#1E432B]">Record Task</h3>
+                <p className="text-sm font-bold text-[#9BB3A3] mt-1">
+                  {selectedDate && new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                </p>
+              </div>
+              <button onClick={() => setIsTaskModalOpen(false)} className="text-[#9BB3A3] hover:text-[#4A6B53] bg-white hover:bg-[#EAF0EC] p-2.5 rounded-full transition-colors shadow-sm">
+                <X size={20} strokeWidth={3} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleCreateTask} className="p-8 space-y-5">
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-[#738F7C] mb-2">Task Title</label>
+                <input 
+                  required
+                  type="text" 
+                  placeholder="E.g. Review road repairs"
+                  value={newTaskData.title} 
+                  onChange={e => setNewTaskData({...newTaskData, title: e.target.value})}
+                  className="w-full px-5 py-4 rounded-2xl bg-[#F3F7F4] border border-[#CFDDD3] focus:ring-4 focus:ring-[#224C31]/10 focus:border-[#224C31] transition-all text-[#1E432B] font-bold outline-none placeholder:text-[#B5C9BE] placeholder:font-medium" 
+                />
+              </div>
+              
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-[#738F7C] mb-2">Short Description</label>
+                <textarea 
+                  value={newTaskData.description} 
+                  placeholder="Optional details..."
+                  onChange={e => setNewTaskData({...newTaskData, description: e.target.value})}
+                  className="w-full px-5 py-4 rounded-2xl bg-[#F3F7F4] border border-[#CFDDD3] focus:ring-4 focus:ring-[#224C31]/10 focus:border-[#224C31] transition-all text-[#1E432B] font-bold outline-none min-h-[100px] resize-none placeholder:text-[#B5C9BE] placeholder:font-medium" 
+                />
+              </div>
+              
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-[#738F7C] mb-3">Degree of Importance</label>
+                <div className="flex gap-3">
+                  {(['Low', 'Medium', 'High'] as const).map(imp => (
+                    <button
+                      key={imp}
+                      type="button"
+                      onClick={() => setNewTaskData({...newTaskData, importance: imp})}
+                      className={`flex-1 py-3 rounded-2xl text-sm font-black transition-all border-2 ${
+                        newTaskData.importance === imp 
+                          ? (imp === 'High' ? 'bg-red-50 border-red-200 text-red-700 shadow-sm' : imp === 'Medium' ? 'bg-amber-50 border-amber-200 text-amber-700 shadow-sm' : 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-sm')
+                          : 'bg-white border-[#E1EAE4] text-[#9BB3A3] hover:bg-[#F3F7F4]'
+                      }`}
+                    >
+                      {imp}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="pt-4 mt-2">
+                <button type="submit" className="w-full py-4 font-black text-white bg-[#224C31] hover:bg-[#224C31]/90 rounded-2xl transition-all shadow-lg shadow-[#224C31]/30 flex items-center justify-center gap-2">
+                  <Plus size={18} strokeWidth={3} /> Save Task
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+      
+      {/* Custom Scrollbar Styles for the component */}
+      <style dangerouslySetInnerHTML={{__html: `
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background-color: #cbd5e1;
+          border-radius: 20px;
+        }
+      `}} />
     </div>
   );
 }

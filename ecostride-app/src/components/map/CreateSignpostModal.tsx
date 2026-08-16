@@ -103,7 +103,7 @@ export const CreateSignpostModal: React.FC<Props> = ({ isOpen, onClose, currentL
   };
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-[#faf9f6] w-[calc(100%-8px)] sm:w-full max-w-sm mr-2 sm:mr-0 rounded-3xl border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] flex flex-col animate-in zoom-in-95 duration-200 overflow-hidden">
         
         <div className="bg-[#5496a2] border-b-4 border-[#1d3539] px-4 py-3 flex items-center justify-between">

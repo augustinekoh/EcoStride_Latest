@@ -3,8 +3,9 @@ import { MessageCircle, ArrowLeft, Send, User, Camera, Loader2, X } from 'lucide
 import { useCommunityChat } from '../../hooks/useCommunityChat';
 import { auth } from '../../firebase';
 import { useDemoStore } from '../../stores/useDemoStore';
-import { resolveAvatarUrl, apiClient } from '../../lib/api';
+import { apiClient, resolveAvatarUrl } from '../../lib/api';
 import { SharedSignpostCard } from './SharedSignpostCard';
+import { SharedIssueCard } from './SharedIssueCard';
 
 export function PrivateChatRoom() {
   const { activePrivateChat, setActivePrivateChat } = useDemoStore();
@@ -273,7 +274,7 @@ export function PrivateChatRoom() {
                         onPointerCancel={handleMessagePointerUp}
                       >
                         <div className="text-[15px] font-medium leading-relaxed whitespace-pre-wrap break-words">
-                          {msg.content.split(/(\[IMAGE:.*?\]|\[SIGNPOST:.*?\])/g).map((part, i) => {
+                          {msg.content.split(/(\[IMAGE:.*?\]|\[SIGNPOST:.*?\]|\[ISSUE:.*?\])/g).map((part, i) => {
                             if (part.startsWith('[IMAGE:')) {
                               const url = part.replace('[IMAGE:', '').replace(']', '');
                               return <img 
@@ -292,6 +293,16 @@ export function PrivateChatRoom() {
                                 return (
                                   <div key={i} className="mt-2 mb-1" onClick={e => e.stopPropagation()}>
                                     <SharedSignpostCard signpostId={id} fallbackEmoji={emoji} fallbackTitle={title} />
+                                  </div>
+                                );
+                              }
+                            }
+                            if (part.startsWith('[ISSUE:')) {
+                              const match = part.match(/\[ISSUE:(.*?)\]/);
+                              if (match && match[1]) {
+                                return (
+                                  <div key={i} className="mt-2 mb-1" onClick={e => e.stopPropagation()}>
+                                    <SharedIssueCard issueId={match[1]} />
                                   </div>
                                 );
                               }

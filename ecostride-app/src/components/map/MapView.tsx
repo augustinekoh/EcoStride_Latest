@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import Map, { Source, Layer, Marker, Popup } from 'react-map-gl/mapbox';
 import type { ViewState } from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { Leaf, X, ExternalLink, Gift, MapPin, ArrowLeft, Home, Navigation } from 'lucide-react';
+import { Leaf, X, ExternalLink, Gift, MapPin, ArrowLeft, Home, Navigation, Send, ChevronLeft, ChevronRight, ShieldCheck, Loader2, Trash2, AlertTriangle } from 'lucide-react';
 
 import { useDemoStore } from '../../stores/useDemoStore';
 import { useMapStore } from '../../stores/useMapStore';
@@ -17,10 +17,24 @@ import leaderboardData from '../../mock/leaderboard.json';
 import { CreateSignpostModal } from './CreateSignpostModal';
 import { ShareSignpostModal } from './ShareSignpostModal';
 import { DraggableMapWidget } from './DraggableMapWidget';
+import { ImpactReportModal } from '../modals/ImpactReportModal';
+import { CreateIssueModal } from './CreateIssueModal';
+import { ShareIssueModal } from './ShareIssueModal';
 import { PointsStoreModal } from '../modals/PointsStoreModal';
 import { SignpostStoryViewer } from './SignpostStoryViewer';
 import { UserProfileModal } from '../modals/UserProfileModal';
 import { useMapGeolocation } from './useMapGeolocation';
+
+const getDurationSince = (timestamp: number) => {
+  const diffInSeconds = Math.floor((Date.now() - timestamp) / 1000);
+  if (diffInSeconds < 60) return `${diffInSeconds}s ago`;
+  const diffInMinutes = Math.floor(diffInSeconds / 60);
+  if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) return `${diffInHours}h ago`;
+  const diffInDays = Math.floor(diffInHours / 24);
+  return `${diffInDays}d ago`;
+};
 
 export const MapView: React.FC = () => {
   const { demoProgress, currentMode, setShowReportModal, setActiveView, setCompletedDistanceKm } = useDemoStore();
@@ -36,6 +50,8 @@ export const MapView: React.FC = () => {
     flyToLocation, setFlyToLocation,
     isPlantingMode, setIsPlantingMode,
     mapDisplayMode, setMapDisplayMode,
+    issues, setIssues,
+    activeIssue, setActiveIssue,
   } = useMapStore();
   
   const { userCoins, deductCoins, addCoins, guildName, guildId } = useUserStore();
@@ -43,8 +59,19 @@ export const MapView: React.FC = () => {
   const mapRef = useRef(null);
   const location = useLocation();
   const [trees, setTrees] = useState<any[]>([]);
+  const [mapFilter, setMapFilter] = useState<'all' | 'issues' | 'trees' | 'signposts'>('all');
   const [activeTree, setActiveTree] = useState<any | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showCreateIssueModal, setShowCreateIssueModal] = useState(false);
+  const [showShareIssueModal, setShowShareIssueModal] = useState(false);
+  const [activeIssueImageIndex, setActiveIssueImageIndex] = useState(0);
+  const [showTakeDownConfirm, setShowTakeDownConfirm] = useState(false);
+  const [isTakingDownIssue, setIsTakingDownIssue] = useState(false);
+
+  useEffect(() => {
+    setActiveIssueImageIndex(0);
+    setShowTakeDownConfirm(false);
+  }, [activeIssue?.id]);
   const [showNavPrompt, setShowNavPrompt] = useState(() => {
     if (typeof window !== 'undefined') {
       return !sessionStorage.getItem('hide_nav_instruction');
@@ -68,7 +95,7 @@ export const MapView: React.FC = () => {
   const [fabOffset, setFabOffset] = useState({ x: 0, y: 0 });
   const [isFabDragging, setIsFabDragging] = useState(false);
   const fabDragRef = useRef<{ startX: number; startY: number; initX: number; initY: number } | null>(null);
-  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLongPressedRef = useRef(false);
 
   const handleFabDragStart = (e: React.PointerEvent) => {
@@ -146,6 +173,27 @@ export const MapView: React.FC = () => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3000);
   };
+
+  const handleTakeDownIssue = async () => {
+    if (!activeIssue) return;
+    setIsTakingDownIssue(true);
+    try {
+      await apiClient(`/authorities/issues/${activeIssue.id}/take-down`, {
+        method: 'POST'
+      });
+
+      const removedId = activeIssue.id;
+      setActiveIssue(null);
+      setShowTakeDownConfirm(false);
+      setIssues(issues.filter(i => i.id !== removedId));
+      showToast('Issue taken down. Notification sent to user mailbox.');
+    } catch (err: any) {
+      console.error('Failed to take down issue:', err);
+      showToast(err.message || 'Failed to take down issue');
+    } finally {
+      setIsTakingDownIssue(false);
+    }
+  };
   
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -154,7 +202,9 @@ export const MapView: React.FC = () => {
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [merchantStoreFilter, setMerchantStoreFilter] = useState<string | null>(null);
   const [publicProfileUser, setPublicProfileUser] = useState<any | null>(null);
-  const { user } = useAuthStore();
+  const { user, role } = useAuthStore();
+  const isAuthority = role === 'authority';
+  const effectiveFilter = isAuthority ? 'issues' : mapFilter;
 
   const {
     currentCoordinate,
@@ -217,6 +267,25 @@ export const MapView: React.FC = () => {
     
     fetchMapData();
   }, [setSignposts, setTrees, setMerchants]);
+
+  // Fetch issues bounded by map viewport
+  const fetchIssues = async (mapInstance: any) => {
+    if (!mapInstance) return;
+    try {
+      const bounds = mapInstance.getBounds();
+      const res = await apiClient(`/issues?minLat=${bounds.getSouth()}&maxLat=${bounds.getNorth()}&minLng=${bounds.getWest()}&maxLng=${bounds.getEast()}`);
+      if (res.issues) {
+        setIssues(res.issues);
+      }
+    } catch (err) {
+      console.error('Failed to fetch issues:', err);
+    }
+  };
+
+  // Initial fetch on map load
+  useEffect(() => {
+    if (mapRef.current) fetchIssues(mapRef.current);
+  }, [mapRef.current]);
 
   // Handle flyToLocation state changes
   useEffect(() => {
@@ -533,7 +602,7 @@ export const MapView: React.FC = () => {
   return (
     <div className="relative w-full h-screen overflow-hidden bg-slate-100">
       {/* User Search Bar */}
-      {true && (
+      {!isAuthority && (
         <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[200] w-11/12 max-w-sm">
           <div className="relative">
             <form onSubmit={handleUserSearch} className="flex items-center gap-2 glass-pill p-1.5 transition-all focus-within:-translate-y-1 relative z-50">
@@ -602,6 +671,7 @@ export const MapView: React.FC = () => {
         ref={mapRef}
         {...viewState}
         onMove={evt => setViewState(evt.viewState)}
+        onMoveEnd={(evt) => fetchIssues(evt.target)}
         onClick={handleMapClick}
         mapStyle="mapbox://styles/mapbox/outdoors-v12"
         mapboxAccessToken={MAPBOX_TOKEN}
@@ -652,8 +722,184 @@ export const MapView: React.FC = () => {
           </Source>
         )}
 
+        {/* Reported Issues */}
+        {(effectiveFilter === 'all' || effectiveFilter === 'issues') && issues.filter(issue => issue.status !== 'resolved').map((issue) => (
+          <Marker 
+            key={issue.id} 
+            longitude={issue.lng} 
+            latitude={issue.lat} 
+            anchor="bottom"
+            onClick={(e) => {
+              e.originalEvent.stopPropagation();
+              setActiveIssue(issue);
+            }}
+          >
+            <div className="text-3xl cursor-pointer hover:scale-110 transition-transform">
+              🚨
+            </div>
+          </Marker>
+        ))}
+
+        {/* Issue Popup */}
+        {activeIssue && (
+          <Popup
+            longitude={activeIssue.lng}
+            latitude={activeIssue.lat}
+            anchor="top"
+            closeButton={false}
+            closeOnClick={true}
+            onClose={() => setActiveIssue(null)}
+            offset={[0, 10]}
+            className="signpost-story-popup z-50"
+          >
+            {(() => {
+              let imgs: string[] = [];
+              try {
+                imgs = typeof activeIssue.photos === 'string' ? JSON.parse(activeIssue.photos) : (activeIssue.photos || []);
+              } catch(e) {}
+              const hasImage = imgs.length > 0;
+              const isOwner = user?.uid === activeIssue.author_id;
+
+              const nextImage = (e: React.MouseEvent) => {
+                e.stopPropagation();
+                setActiveIssueImageIndex((prev) => (prev + 1) % imgs.length);
+              };
+              
+              const prevImage = (e: React.MouseEvent) => {
+                e.stopPropagation();
+                setActiveIssueImageIndex((prev) => (prev - 1 + imgs.length) % imgs.length);
+              };
+
+              return (
+                <div className="glass-card p-4 rounded-[28px] flex flex-col gap-3 w-[360px] relative mt-2">
+                  {/* Top: Image */}
+                  <div className="w-full relative group">
+                    {hasImage ? (
+                      <>
+                        <img src={imgs[activeIssueImageIndex]} alt="Issue preview" className="w-full h-64 object-cover rounded-[20px] shadow-sm" />
+                        {imgs.length > 1 && (
+                          <>
+                            <button onClick={prevImage} className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-transparent rounded-full flex items-center justify-center text-white hover:bg-black/20 transition-colors drop-shadow-md">
+                              <ChevronLeft size={24} className="-ml-0.5 drop-shadow" />
+                            </button>
+                            <button onClick={nextImage} className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-transparent rounded-full flex items-center justify-center text-white hover:bg-black/20 transition-colors drop-shadow-md">
+                              <ChevronRight size={24} className="-mr-0.5 drop-shadow" />
+                            </button>
+                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-full font-medium pointer-events-none">
+                              {activeIssueImageIndex + 1} / {imgs.length}
+                            </div>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <div className="w-full h-64 bg-slate-100/50 rounded-[20px] flex items-center justify-center text-slate-500 shadow-inner border border-white/40">
+                        No Image
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Title */}
+                  <h3 className="font-bold text-slate-900 text-[22px] leading-tight px-1 mt-1">{activeIssue.title}</h3>
+                  
+                  {/* Description */}
+                  {activeIssue.description && (
+                    <div className="flex items-start gap-2 text-slate-800 px-1">
+                      <span className="text-[15px] font-medium leading-snug line-clamp-3">
+                        {activeIssue.description}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Official Authority Response if present */}
+                  {activeIssue.authority_response && (
+                    <div className="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-3 mx-1">
+                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 uppercase tracking-wider mb-1">
+                        <ShieldCheck size={14} className="text-emerald-600 flex-shrink-0" />
+                        <span>Official Authority Response</span>
+                      </div>
+                      <p className="text-xs text-slate-700 font-medium leading-relaxed">
+                        {activeIssue.authority_response}
+                      </p>
+                    </div>
+                  )}
+                  
+                  {/* Footer */}
+                  <div className="flex items-center justify-between mt-1 px-1">
+                    <div className="flex items-center gap-2">
+                      <div className={`px-3 py-1.5 rounded-xl font-bold text-xs tracking-wide ${
+                        activeIssue.status === 'resolved' ? 'bg-emerald-100 text-emerald-800' :
+                        activeIssue.status === 'in-progress' ? 'bg-blue-100 text-blue-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {activeIssue.status === 'pending' ? 'PENDING' : activeIssue.status.toUpperCase()}
+                      </div>
+
+                      {/* Take Down Button (Only on authority map) */}
+                      {isAuthority && !showTakeDownConfirm && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowTakeDownConfirm(true);
+                          }}
+                          className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+                          title="Take down this issue due to incorrect location"
+                        >
+                          <Trash2 size={13} />
+                          <span>Take Down</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {isOwner && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setShowShareIssueModal(true); }}
+                        className="p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 transition-colors shadow-sm border border-slate-200"
+                        title="Share to Community"
+                      >
+                        <Send size={16} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Authority Take Down Confirmation Box */}
+                  {isAuthority && showTakeDownConfirm && (
+                    <div className="mt-2 p-3 bg-red-50/95 border border-red-200 rounded-2xl flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle size={16} className="text-red-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs font-bold text-red-900 leading-tight">Take Down Issue Report?</p>
+                          <p className="text-[11px] text-red-700 mt-1 leading-relaxed">
+                            This will remove the issue from the map and send an official notification to the reporter's mailbox stating that the assigned location is incorrect.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end gap-2 mt-1 pt-2 border-t border-red-200/60">
+                        <button
+                          onClick={() => setShowTakeDownConfirm(false)}
+                          disabled={isTakingDownIssue}
+                          className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold border border-slate-200 shadow-sm"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleTakeDownIssue}
+                          disabled={isTakingDownIssue}
+                          className="px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all active:scale-95"
+                        >
+                          {isTakingDownIssue ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                          <span>Confirm Take Down</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </Popup>
+        )}
+
         {/* Real Signposts */}
-        {mapDisplayMode === 'normal' && signposts.map((sp) => (
+        {!isAuthority && mapDisplayMode === 'normal' && signposts.map((sp) => (
           <Marker 
             key={sp.id} 
             longitude={sp.location[0]} 
@@ -679,7 +925,7 @@ export const MapView: React.FC = () => {
         ))}
 
         {/* Signpost Popup */}
-        {activeSignpost && (
+        {!isAuthority && activeSignpost && (
           <Popup
             longitude={activeSignpost.location[0]}
             latitude={activeSignpost.location[1]}
@@ -746,7 +992,7 @@ export const MapView: React.FC = () => {
         )}
 
         {/* Real Merchants from Firestore */}
-        {merchants.map((m) => (
+        {!isAuthority && merchants.map((m) => (
           <Marker 
             key={m.id} 
             longitude={m.location[0]} 
@@ -770,14 +1016,14 @@ export const MapView: React.FC = () => {
         ))}
 
         {/* Custom Pinned Destination */}
-        {selectedMerchant?.id === 'custom-destination' && (
+        {!isAuthority && selectedMerchant?.id === 'custom-destination' && (
           <Marker longitude={selectedMerchant.location[0]} latitude={selectedMerchant.location[1]} anchor="bottom">
             <div className="text-4xl animate-bounce">📍</div>
           </Marker>
         )}
 
         {/* Planted Trees */}
-        {(mapDisplayMode === 'guild' || mapDisplayMode === 'my_guild') && trees
+        {!isAuthority && (mapDisplayMode === 'guild' || mapDisplayMode === 'my_guild') && trees
           .filter(tree => mapDisplayMode === 'my_guild' ? tree.guildId === guildId : true)
           .map((tree) => (
           <Marker 
@@ -800,7 +1046,7 @@ export const MapView: React.FC = () => {
         ))}
 
         {/* Tree Popup */}
-        {activeTree && (
+        {!isAuthority && activeTree && (
           <Popup
             longitude={activeTree.location[0]}
             latitude={activeTree.location[1]}
@@ -827,6 +1073,7 @@ export const MapView: React.FC = () => {
         )}
 
         {/* Player Avatar */}
+        {!isAuthority && (
         <Marker longitude={currentCoordinate[0]} latitude={currentCoordinate[1]} anchor="center" style={{ transition: 'all 50ms linear' }}>
           <div className="relative flex items-center justify-center">
             <div className="w-5 h-5 bg-[#5496a2] border-[3px] border-[#1d3539] rounded-full shadow-lg z-10 relative"></div>
@@ -838,11 +1085,12 @@ export const MapView: React.FC = () => {
             )}
           </div>
         </Marker>
+        )}
 
       </Map>
 
       {/* Navigation Prompt */}
-      {showNavPrompt && liveLocation && !activeRouteData && !selectedMerchant && !isPlantingMode && !isFreeWalk && (
+      {!isAuthority && showNavPrompt && liveLocation && !activeRouteData && !selectedMerchant && !isPlantingMode && !isFreeWalk && (
         <div className="absolute top-1/2 sm:top-24 left-1/2 -translate-x-1/2 -translate-y-1/2 sm:translate-y-0 bg-[#fff4d6] border-2 border-[#1d3539] shadow-[4px_4px_0px_0px_#1d3539] px-6 py-3 rounded-full flex items-center justify-center gap-3 z-[80] animate-bounce w-[90%] sm:w-auto text-center pointer-events-auto">
           <p className="text-sm font-black text-[#1d3539]">Click anywhere to navigate, or long press 🍃 for Free Walk!</p>
           <button 
@@ -855,7 +1103,7 @@ export const MapView: React.FC = () => {
       )}
 
       {/* Hide Navigation Instruction Confirm Modal */}
-      {showNavPromptConfirm && (
+      {!isAuthority && showNavPromptConfirm && (
         <div className="fixed inset-0 z-[200] bg-[#1d3539]/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-[#fff4d6] border-2 border-[#1d3539] rounded-[2rem] p-6 max-w-sm w-full shadow-[8px_8px_0px_0px_#1d3539] text-center animate-in zoom-in-95 duration-200">
             <h3 className="text-xl font-black text-[#1d3539] uppercase tracking-wider mb-2">Hide Instruction?</h3>
@@ -883,6 +1131,7 @@ export const MapView: React.FC = () => {
       )}
 
       {/* Unified Radial FAB (Frosted Glass) */}
+      {!isAuthority && (
       <div 
         className={`absolute right-8 flex flex-col items-center justify-end z-50 touch-none ${isFabDragging ? '' : 'transition-all duration-300 ease-in-out'} ${isFreeWalk || mapboxRouteGeoJSON ? 'bottom-[220px]' : 'bottom-32'}`}
         style={{ transform: `translate(${fabOffset.x}px, ${fabOffset.y}px)` }}
@@ -932,6 +1181,22 @@ export const MapView: React.FC = () => {
             </div>
           </div>
           
+          {/* Report Issue Option */}
+          <div className="relative group">
+            <button 
+              onClick={() => {
+                setShowCreateIssueModal(true);
+                setIsFabOpen(false);
+              }}
+              className="w-14 h-14 bg-red-100/90 backdrop-blur-md shadow-lg border border-red-200 rounded-full flex items-center justify-center text-2xl hover:scale-110 hover:-translate-y-1 transition-all active:scale-95"
+            >
+              🚨
+            </button>
+            <div className="absolute right-16 top-1/2 -translate-y-1/2 whitespace-nowrap bg-white text-slate-900 border border-slate-900 shadow-[2px_2px_0px_0px_#0f172a] text-xs font-black px-3 py-1.5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity">
+              Report Issue
+            </div>
+          </div>
+
           {/* Plant Tree Option */}
           <div className="relative group">
             <button 
@@ -999,9 +1264,10 @@ export const MapView: React.FC = () => {
           </div>
         )}
       </div>
+      )}
 
       {/* Merchant Confirmation Overlay */}
-      {selectedMerchant && !activeRouteData && (
+      {!isAuthority && selectedMerchant && !activeRouteData && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-[#fff4d6] border-2 border-[#80abb1] shadow-2xl p-6 rounded-3xl flex flex-col items-center gap-4 z-50 w-[340px] sm:w-[400px] text-center animate-in slide-in-from-bottom-10 fade-in duration-300 pointer-events-auto">
           <button 
             onClick={(e) => { e.stopPropagation(); setSelectedMerchant(null); }} 
@@ -1044,7 +1310,7 @@ export const MapView: React.FC = () => {
       )}
 
       {/* Distance Overlay (Navigation Active) */}
-      {currentMode === 'explore' && distanceToTarget !== null && selectedMerchant && activeRouteData && (
+      {!isAuthority && currentMode === 'explore' && distanceToTarget !== null && selectedMerchant && activeRouteData && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[calc(100vw-2rem)] sm:w-auto bg-white border-2 border-slate-900 shadow-comic px-4 sm:px-6 py-3 rounded-2xl sm:rounded-full flex items-center gap-3 sm:gap-4 z-40 animate-in slide-in-from-bottom-10 fade-in duration-300">
           <div className="flex-1 min-w-0">
             <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase leading-tight truncate">Navigating to:</p>
@@ -1070,7 +1336,7 @@ export const MapView: React.FC = () => {
       )}
 
       {/* Free Walk Active Overlay */}
-      {isFreeWalk && (
+      {!isAuthority && isFreeWalk && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[calc(100vw-2rem)] sm:w-auto bg-white border-2 border-[#1d3539] shadow-[4px_4px_0px_0px_#1d3539] px-4 sm:px-6 py-3 rounded-2xl sm:rounded-3xl flex items-center gap-3 sm:gap-6 z-[90] animate-in slide-in-from-bottom-10 fade-in duration-300">
           <div className="flex-1 min-w-0 flex gap-4 sm:gap-8 justify-between">
             <div>
@@ -1105,13 +1371,32 @@ export const MapView: React.FC = () => {
         </div>
       )}
 
-      {/* Congrats Modal for Liking */}
-      <CreateSignpostModal 
-        isOpen={showSignpostModal} 
-        onClose={() => setShowSignpostModal(false)} 
-        currentLocation={currentCoordinate as [number, number]} 
-        onSuccess={() => showToast('Signpost dropped!')}
-      />
+      {showSignpostModal && (
+        <CreateSignpostModal 
+          isOpen={showSignpostModal} 
+          onClose={() => setShowSignpostModal(false)} 
+          currentLocation={liveLocation}
+        />
+      )}
+
+      {showCreateIssueModal && (
+        <CreateIssueModal
+          isOpen={showCreateIssueModal}
+          onClose={() => setShowCreateIssueModal(false)}
+          currentLocation={liveLocation}
+          onSuccess={() => {
+            if (mapRef.current) fetchIssues(mapRef.current);
+          }}
+        />
+      )}
+
+      {showShareIssueModal && activeIssue && (
+        <ShareIssueModal
+          issueId={activeIssue.id}
+          isOpen={showShareIssueModal}
+          onClose={() => setShowShareIssueModal(false)}
+        />
+      )}
 
       {/* Points Store Modal Filtered */}
       {merchantStoreFilter && (
@@ -1131,7 +1416,7 @@ export const MapView: React.FC = () => {
       )}
 
       {/* Floating Left Widget */}
-      <DraggableMapWidget />
+      {!isAuthority && <DraggableMapWidget />}
       {/* Full Screen Image Modal */}
       {fullScreenImage && (
         <div 

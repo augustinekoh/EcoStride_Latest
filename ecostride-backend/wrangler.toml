@@ -22,6 +22,14 @@ preview_bucket_name = "ecostride"
 name = "CHAT_ROOM"
 class_name = "CommunityChatRoom"
 
+[[durable_objects.bindings]]
+name = "ISSUE_CHAT"
+class_name = "IssueConversationDO"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["CommunityChatRoom"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["IssueConversationDO"]

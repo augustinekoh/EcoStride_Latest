@@ -1,12 +1,20 @@
 import { Hono } from 'hono';
 
-export const authoritiesRouter = new Hono<{ Bindings: any }>();
+export const authoritiesRouter = new Hono<{ Bindings: any, Variables: { user: any } }>();
 
 // 1. requireAuthority middleware
 authoritiesRouter.use('/*', async (c, next) => {
   const jwtUser = c.get('user') as any;
   if (!jwtUser || !jwtUser.sub) return c.json({ error: 'Unauthorized' }, 401);
-  const dbUser = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(jwtUser.sub).first() as any;
+  
+  let dbUser = await c.env.DB.prepare('SELECT id, role FROM users WHERE id = ?').bind(jwtUser.sub).first() as any;
+  if (!dbUser && jwtUser.email) {
+    dbUser = await c.env.DB.prepare('SELECT id, role FROM users WHERE email = ?').bind(jwtUser.email).first() as any;
+    if (dbUser) {
+      await c.env.DB.prepare('UPDATE users SET id = ? WHERE id = ?').bind(jwtUser.sub, dbUser.id).run();
+    }
+  }
+
   if (!dbUser || dbUser.role !== 'authority') {
     return c.json({ error: 'Forbidden: requires authority role' }, 403);
   }
@@ -46,8 +54,15 @@ authoritiesRouter.use('/*', async (c, next) => {
 
 // 2. GET /dashboard/stats
 authoritiesRouter.get('/dashboard/stats', async (c) => {
+  const jwtUser = c.get('user') as any;
   const now = new Date();
   
+  // Get authority jurisdiction
+  const authUser: any = await c.env.DB.prepare('SELECT country, state, city FROM users WHERE id = ?').bind(jwtUser.sub).first();
+  const authCountry = authUser?.country || '';
+  const authState = authUser?.state || '';
+  const authCity = authUser?.city || '';
+
   // Calculate KL time boundaries (UTC+8)
   const klDateString = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
   const [month, day, year] = klDateString.split('/');
@@ -58,42 +73,61 @@ authoritiesRouter.get('/dashboard/stats', async (c) => {
   const klStartOfMonthStr = `${year}-${month}-01T00:00:00.000+08:00`;
   const startOfMonthMs = new Date(klStartOfMonthStr).getTime();
 
-  // Queries
-  const todayReported = await c.env.DB.prepare('SELECT COUNT(*) as count FROM infrastructure_reports WHERE created_at >= ?').bind(startOfTodayMs).first() as any;
-  const monthlyTotal = await c.env.DB.prepare('SELECT COUNT(*) as count FROM infrastructure_reports WHERE created_at >= ?').bind(startOfMonthMs).first() as any;
-  const monthlyResolved = await c.env.DB.prepare('SELECT COUNT(*) as count FROM infrastructure_reports WHERE created_at >= ? AND status = ?').bind(startOfMonthMs, 'resolved').first() as any;
-  
-  // Group monthly records by day for chart data
-  const monthRecords = await c.env.DB.prepare('SELECT created_at, status FROM infrastructure_reports WHERE created_at >= ?').bind(startOfMonthMs).all();
-  const daysMap: Record<string, { reported: number, resolved: number }> = {};
-  
-  for (const r of monthRecords.results) {
-    const row = r as any;
-    // Get YYYY-MM-DD in KL time
-    const dStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(row.created_at));
-    if (!daysMap[dStr]) daysMap[dStr] = { reported: 0, resolved: 0 };
-    daysMap[dStr].reported++;
-    if (row.status === 'resolved') daysMap[dStr].resolved++;
-  }
-  const monthlyDataArray = Object.keys(daysMap).sort().map(d => ({ date: d, ...daysMap[d] }));
+  // Queries for today by status matching authority jurisdiction OR assigned to this authority
+  const todayRecords = await c.env.DB.prepare(`
+    SELECT status FROM infrastructure_reports 
+    WHERE created_at >= ? AND deleted_at IS NULL
+      AND (((country = ? AND state = ? AND city = ?) OR authority_id = ?))
+  `).bind(startOfTodayMs, authCountry, authState, authCity, jwtUser.sub).all();
 
-  // Response Ratio
-  const totalCases = await c.env.DB.prepare('SELECT COUNT(*) as count FROM infrastructure_reports').first() as any;
-  const respondedCases = await c.env.DB.prepare('SELECT COUNT(*) as count FROM infrastructure_reports WHERE authority_response IS NOT NULL AND authority_response != ""').first() as any;
+  const todayStats = { pending: 0, 'in-progress': 0, resolved: 0 };
+  for (const r of todayRecords.results) {
+    const status = (r as any).status;
+    if (status === 'pending') todayStats.pending++;
+    else if (status === 'in-progress') todayStats['in-progress']++;
+    else if (status === 'resolved') todayStats.resolved++;
+  }
+
+  // Monthly stats by severity matching authority jurisdiction OR assigned to this authority
+  const monthlyRecords = await c.env.DB.prepare(`
+    SELECT severity FROM infrastructure_reports 
+    WHERE created_at >= ? AND deleted_at IS NULL
+      AND (((country = ? AND state = ? AND city = ?) OR authority_id = ?))
+  `).bind(startOfMonthMs, authCountry, authState, authCity, jwtUser.sub).all();
+
+  const monthlySeverity = { Minor: 0, Major: 0, Critical: 0 };
+  let monthlyReported = 0;
+  for (const r of monthlyRecords.results) {
+    monthlyReported++;
+    const sev = (r as any).severity || 'Minor';
+    if (sev === 'Minor') monthlySeverity.Minor++;
+    else if (sev === 'Major') monthlySeverity.Major++;
+    else if (sev === 'Critical') monthlySeverity.Critical++;
+  }
+
+  // Response Ratio matching authority jurisdiction OR assigned to this authority
+  const totalCases = await c.env.DB.prepare(`
+    SELECT COUNT(*) as count FROM infrastructure_reports 
+    WHERE deleted_at IS NULL
+      AND (((country = ? AND state = ? AND city = ?) OR authority_id = ?))
+  `).bind(authCountry, authState, authCity, jwtUser.sub).first() as any;
+
+  const respondedCases = await c.env.DB.prepare(`
+    SELECT COUNT(*) as count FROM infrastructure_reports 
+    WHERE authority_response IS NOT NULL AND authority_response != "" AND deleted_at IS NULL
+      AND (((country = ? AND state = ? AND city = ?) OR authority_id = ?))
+  `).bind(authCountry, authState, authCity, jwtUser.sub).first() as any;
   
-  const respondedCount = respondedCases.count || 0;
-  const totalCount = totalCases.count || 0;
+  const respondedCount = respondedCases?.count || 0;
+  const totalCount = totalCases?.count || 0;
   const unrespondedCount = totalCount - respondedCount;
   const respondedPercentage = totalCount > 0 ? (respondedCount / totalCount) * 100 : 0;
 
   return c.json({
-    today: {
-      reported: todayReported.count
-    },
+    today: todayStats,
     monthly: {
-      reported: monthlyTotal.count,
-      resolved: monthlyResolved.count,
-      data: monthlyDataArray
+      reported: monthlyReported,
+      severity: monthlySeverity
     },
     response: {
       responded: respondedCount,
@@ -103,8 +137,41 @@ authoritiesRouter.get('/dashboard/stats', async (c) => {
   });
 });
 
-// 3. GET /tasks
+// 2b. GET /dashboard/workload
+authoritiesRouter.get('/dashboard/workload', async (c) => {
+  const jwtUser = c.get('user') as any;
+  const issues = await c.env.DB.prepare(`
+    SELECT r.id, r.title, r.status, r.severity, r.created_at, r.updated_at
+    FROM infrastructure_reports r
+    WHERE r.authority_id = ? AND r.status != 'resolved' AND r.deleted_at IS NULL
+    ORDER BY r.created_at ASC
+  `).bind(jwtUser.sub).all();
+  return c.json({ workload: issues.results });
+});
+
+// 2c. GET /dashboard/critical
+authoritiesRouter.get('/dashboard/critical', async (c) => {
+  const jwtUser = c.get('user') as any;
+  
+  const authUser: any = await c.env.DB.prepare('SELECT country, state, city FROM users WHERE id = ?').bind(jwtUser.sub).first();
+  const authCountry = authUser?.country || '';
+  const authState = authUser?.state || '';
+  const authCity = authUser?.city || '';
+
+  const issues = await c.env.DB.prepare(`
+    SELECT r.id, r.title, r.status, r.severity, r.created_at, r.updated_at, r.specific_location as location, r.country, r.state, r.city, r.photos
+    FROM infrastructure_reports r
+    WHERE r.severity = 'Critical' AND r.status != 'resolved' AND r.deleted_at IS NULL
+      AND (((r.country = ? AND r.state = ? AND r.city = ?) OR r.authority_id = ?))
+    ORDER BY r.created_at ASC
+    LIMIT 20
+  `).bind(authCountry, authState, authCity, jwtUser.sub).all();
+  return c.json({ critical: issues.results });
+});
+
+// 3. GET /tasks (filtered by logged-in authority)
 authoritiesRouter.get('/tasks', async (c) => {
+  const jwtUser = c.get('user') as any;
   const page = parseInt(c.req.query('page') || '1');
   let limit = parseInt(c.req.query('limit') || '10');
   
@@ -113,11 +180,11 @@ authoritiesRouter.get('/tasks', async (c) => {
   
   const offset = (page - 1) * limit;
 
-  const tasks = await c.env.DB.prepare('SELECT * FROM authority_tasks WHERE completed = 0 AND deleted_at IS NULL ORDER BY scheduled_at ASC LIMIT ? OFFSET ?')
-    .bind(limit, offset)
+  const tasks = await c.env.DB.prepare('SELECT * FROM authority_tasks WHERE created_by = ? AND completed = 0 AND deleted_at IS NULL ORDER BY scheduled_at ASC LIMIT ? OFFSET ?')
+    .bind(jwtUser.sub, limit, offset)
     .all();
     
-  const countRes = await c.env.DB.prepare('SELECT COUNT(*) as c FROM authority_tasks WHERE completed = 0 AND deleted_at IS NULL').first() as any;
+  const countRes = await c.env.DB.prepare('SELECT COUNT(*) as c FROM authority_tasks WHERE created_by = ? AND completed = 0 AND deleted_at IS NULL').bind(jwtUser.sub).first() as any;
 
   return c.json({ 
     tasks: tasks.results,
@@ -143,12 +210,17 @@ authoritiesRouter.post('/tasks', async (c) => {
     return c.json({ error: 'Invalid scheduled date' }, 400);
   }
   
+  if (body.importance && !['Low', 'Medium', 'High'].includes(body.importance)) {
+    return c.json({ error: 'Invalid importance' }, 400);
+  }
+  
+  const importance = body.importance || 'Medium';
   const taskId = crypto.randomUUID();
   const now = Date.now();
   
   await c.env.DB.prepare(
-    'INSERT INTO authority_tasks (id, title, description, scheduled_at, completed, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?, ?)'
-  ).bind(taskId, body.title.trim(), body.description || '', body.scheduled_at, jwtUser.sub, now, now).run();
+    'INSERT INTO authority_tasks (id, title, description, importance, scheduled_at, completed, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)'
+  ).bind(taskId, body.title.trim(), body.description || '', importance, body.scheduled_at, jwtUser.sub, now, now).run();
   
   return c.json({ success: true, taskId });
 });
@@ -156,6 +228,7 @@ authoritiesRouter.post('/tasks', async (c) => {
 // 5. PATCH /tasks/:id
 authoritiesRouter.patch('/tasks/:id', async (c) => {
   const id = c.req.param('id');
+  const jwtUser = c.get('user') as any;
   const body = await c.req.json();
   const now = Date.now();
   
@@ -173,32 +246,226 @@ authoritiesRouter.patch('/tasks/:id', async (c) => {
     if (typeof body.scheduled_at !== 'number' || isNaN(new Date(body.scheduled_at).getTime())) return c.json({ error: 'Invalid scheduled_at' }, 400);
     updates.push('scheduled_at = ?'); values.push(body.scheduled_at);
   }
+  if (body.importance !== undefined) {
+    if (!['Low', 'Medium', 'High'].includes(body.importance)) return c.json({ error: 'Invalid importance' }, 400);
+    updates.push('importance = ?'); values.push(body.importance);
+  }
   if (body.completed !== undefined) {
     if (![0, 1].includes(body.completed)) return c.json({ error: 'Invalid completed state' }, 400);
     updates.push('completed = ?'); values.push(body.completed);
   }
   
   values.push(id);
+  values.push(jwtUser.sub);
   
-  await c.env.DB.prepare(`UPDATE authority_tasks SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
+  await c.env.DB.prepare(`UPDATE authority_tasks SET ${updates.join(', ')} WHERE id = ? AND created_by = ?`).bind(...values).run();
   
   return c.json({ success: true });
 });
 
-// 6. DELETE /tasks/:id
+// 6. DELETE /tasks/:id (only own tasks)
 authoritiesRouter.delete('/tasks/:id', async (c) => {
   const id = c.req.param('id');
+  const jwtUser = c.get('user') as any;
   const now = Date.now();
   
-  // Soft delete
-  await c.env.DB.prepare('UPDATE authority_tasks SET deleted_at = ?, updated_at = ? WHERE id = ?')
-    .bind(now, now, id)
+  // Soft delete — only allow deleting own tasks
+  await c.env.DB.prepare('UPDATE authority_tasks SET deleted_at = ?, updated_at = ? WHERE id = ? AND created_by = ?')
+    .bind(now, now, id, jwtUser.sub)
     .run();
     
   return c.json({ success: true });
 });
 
-// 7. PATCH /reports/:id
+// 7. GET /issues (Paginated list of issues for authorities)
+authoritiesRouter.get('/issues', async (c) => {
+  const jwtUser = c.get('user') as any;
+  const page = parseInt(c.req.query('page') || '1');
+  let limit = parseInt(c.req.query('limit') || '10');
+  
+  if (isNaN(page) || page < 1) return c.json({ error: 'Invalid page' }, 400);
+  if (isNaN(limit) || limit < 1 || limit > 100) limit = 10;
+  
+  const offset = (page - 1) * limit;
+
+  const authUser: any = await c.env.DB.prepare('SELECT country, state, city FROM users WHERE id = ?').bind(jwtUser.sub).first();
+  const authCountry = authUser?.country || '';
+  const authState = authUser?.state || '';
+  const authCity = authUser?.city || '';
+
+  const issues = await c.env.DB.prepare(`
+    SELECT r.*, 
+           u.username as author_username,
+           u.avatar as author_avatar,
+           auth.username as authority_username
+    FROM infrastructure_reports r 
+    LEFT JOIN users u ON r.author_id = u.id 
+    LEFT JOIN users auth ON r.authority_id = auth.id
+    WHERE r.deleted_at IS NULL 
+      AND (((r.country = ? AND r.state = ? AND r.city = ?) OR r.authority_id = ?))
+    ORDER BY r.created_at DESC 
+    LIMIT ? OFFSET ?
+  `).bind(authCountry, authState, authCity, jwtUser.sub, limit, offset).all();
+    
+  const countRes = await c.env.DB.prepare(`
+    SELECT COUNT(*) as c FROM infrastructure_reports 
+    WHERE deleted_at IS NULL 
+      AND (((country = ? AND state = ? AND city = ?) OR authority_id = ?))
+  `).bind(authCountry, authState, authCity, jwtUser.sub).first() as any;
+
+  return c.json({ 
+    issues: issues.results,
+    pagination: {
+      total: countRes?.c || 0,
+      page,
+      limit,
+      totalPages: Math.ceil((countRes?.c || 0) / limit)
+    }
+  });
+});
+
+// 8. PATCH /issues/:id/claim
+authoritiesRouter.patch('/issues/:id/claim', async (c) => {
+  const id = c.req.param('id');
+  const jwtUser = c.get('user') as any;
+  const now = Date.now();
+  
+  const issue = await c.env.DB.prepare('SELECT status, authority_id, country, state, city FROM infrastructure_reports WHERE id = ?').bind(id).first() as any;
+  if (!issue) return c.json({ error: 'Issue not found' }, 404);
+
+  const authUser: any = await c.env.DB.prepare('SELECT country, state, city FROM users WHERE id = ?').bind(jwtUser.sub).first();
+  const isSameJurisdiction = authUser && authUser.country === issue.country && authUser.state === issue.state && authUser.city === issue.city;
+  const isAssigned = issue.authority_id === jwtUser.sub;
+
+  if (!isSameJurisdiction && !isAssigned) {
+    return c.json({ error: 'Forbidden: Report is outside your department jurisdiction' }, 403);
+  }
+  
+  const isReassignment = issue.authority_id && issue.authority_id !== jwtUser.sub;
+  const activityType = isReassignment ? 'REPORT_REASSIGNED' : 'REPORT_ASSIGNED';
+  const activityTitle = isReassignment ? 'Report Reassigned' : 'Report Assigned';
+  const activityDesc = isReassignment ? 'The report was reassigned to a new authority.' : 'An authority has been assigned to this report.';
+
+  const updateIssue = c.env.DB.prepare('UPDATE infrastructure_reports SET status = ?, authority_id = ?, updated_at = ? WHERE id = ?')
+    .bind('in-progress', jwtUser.sub, now, id);
+
+  const activityId = crypto.randomUUID();
+  const insertActivity = c.env.DB.prepare(`
+    INSERT INTO report_activity 
+    (id, report_id, actor_id, actor_type, activity_type, title, description, created_at) 
+    VALUES (?, ?, ?, 'authority', ?, ?, ?, ?)
+  `).bind(activityId, id, jwtUser.sub, activityType, activityTitle, activityDesc, now);
+    
+  await c.env.DB.batch([updateIssue, insertActivity]);
+    
+  return c.json({ success: true });
+});
+
+// 9. PATCH /issues/:id/resolve
+authoritiesRouter.patch('/issues/:id/resolve', async (c) => {
+  const id = c.req.param('id');
+  const jwtUser = c.get('user') as any;
+  const now = Date.now();
+  
+  const issue = await c.env.DB.prepare('SELECT status, authority_id FROM infrastructure_reports WHERE id = ?').bind(id).first() as any;
+  if (!issue) return c.json({ error: 'Issue not found' }, 404);
+  if (issue.authority_id !== jwtUser.sub) return c.json({ error: 'You can only resolve issues you have claimed' }, 403);
+  if (issue.status !== 'in-progress') return c.json({ error: 'Only in-progress issues can be resolved' }, 400);
+  
+  const updateIssue = c.env.DB.prepare('UPDATE infrastructure_reports SET status = ?, updated_at = ?, resolved_at = ? WHERE id = ?')
+    .bind('resolved', now, now, id);
+
+  const activityId = crypto.randomUUID();
+  const insertActivity = c.env.DB.prepare(`
+    INSERT INTO report_activity 
+    (id, report_id, actor_id, actor_type, activity_type, title, description, created_at) 
+    VALUES (?, ?, ?, 'authority', 'REPORT_RESOLVED', 'Report Resolved', 'The authority marked the report as resolved.', ?)
+  `).bind(activityId, id, jwtUser.sub, now);
+
+  await c.env.DB.batch([updateIssue, insertActivity]);
+    
+  return c.json({ success: true });
+});
+
+// 10. POST /issues/:id/updates
+authoritiesRouter.post('/issues/:id/updates', async (c) => {
+  const id = c.req.param('id');
+  const jwtUser = c.get('user') as any;
+  const body = await c.req.json();
+  const now = Date.now();
+
+  if (!body.description || typeof body.description !== 'string' || body.description.trim() === '') {
+    return c.json({ error: 'Description is required' }, 400);
+  }
+
+  const issue = await c.env.DB.prepare('SELECT status, authority_id FROM infrastructure_reports WHERE id = ?').bind(id).first() as any;
+  if (!issue) return c.json({ error: 'Issue not found' }, 404);
+  if (issue.authority_id !== jwtUser.sub) return c.json({ error: 'You can only post updates to issues you have claimed' }, 403);
+  if (issue.status === 'resolved') return c.json({ error: 'Cannot post updates to resolved issues' }, 400);
+
+  const activityId = crypto.randomUUID();
+  await c.env.DB.prepare(`
+    INSERT INTO report_activity 
+    (id, report_id, actor_id, actor_type, activity_type, title, description, created_at) 
+    VALUES (?, ?, ?, 'authority', 'TASK_UPDATE', 'Task Update', ?, ?)
+  `).bind(activityId, id, jwtUser.sub, body.description.trim(), now).run();
+
+  return c.json({ success: true, activityId });
+});
+
+// 10c. POST /issues/:id/take-down & DELETE /issues/:id (Authority Take Down Issue)
+const handleTakeDownIssue = async (c: any) => {
+  const id = c.req.param('id');
+  const jwtUser = c.get('user') as any;
+  const now = Date.now();
+
+  // Validate that caller is an authority or admin
+  let dbUser = await c.env.DB.prepare('SELECT id, role, username FROM users WHERE id = ?').bind(jwtUser.sub).first() as any;
+  if (!dbUser && jwtUser.email) {
+    dbUser = await c.env.DB.prepare('SELECT id, role, username FROM users WHERE email = ?').bind(jwtUser.email).first() as any;
+  }
+  if (!dbUser || (dbUser.role !== 'authority' && dbUser.role !== 'admin')) {
+    return c.json({ error: 'Forbidden. Only authorities can take down issues.' }, 403);
+  }
+
+  const issue = await c.env.DB.prepare('SELECT id, title, author_id, lng, lat FROM infrastructure_reports WHERE id = ? AND deleted_at IS NULL').bind(id).first() as any;
+  if (!issue) return c.json({ error: 'Issue report not found or already removed' }, 404);
+
+  // 1. Soft-delete the report from map and dashboards
+  const updateIssue = c.env.DB.prepare(
+    'UPDATE infrastructure_reports SET deleted_at = ?, updated_at = ? WHERE id = ?'
+  ).bind(now, now, id);
+
+  // 2. Insert audit activity entry
+  const activityId = crypto.randomUUID();
+  const insertActivity = c.env.DB.prepare(`
+    INSERT INTO report_activity 
+    (id, report_id, actor_id, actor_type, activity_type, title, description, created_at) 
+    VALUES (?, ?, ?, 'authority', 'ISSUE_TAKEN_DOWN', 'Issue Report Taken Down', 'The report was taken down by the authority. Location is incorrect with the actual location assigned.', ?)
+  `).bind(activityId, id, jwtUser.sub, now);
+
+  // 3. System auto-generates a message to the user's mailbox
+  const mailId = 'mail-' + now + '-' + Math.random().toString(36).substring(2, 7);
+  const issueTitle = issue.title ? `"${issue.title}"` : 'your reported infrastructure issue';
+  const mailContent = `Your issue report ${issueTitle} has been taken down by the local authority.\n\nReason: The current issue location is incorrect with the actual location assigned.\n\nPlease verify your GPS location or adjust the map marker accurately before submitting a new report.`;
+  
+  const insertMail = c.env.DB.prepare(
+    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)'
+  ).bind(mailId, 'Issue Report Location Notice', mailContent, 'Authority Office', 'user', issue.author_id, now);
+
+  await c.env.DB.batch([updateIssue, insertActivity, insertMail]);
+
+  return c.json({ 
+    success: true, 
+    message: 'Issue taken down successfully and notification sent to user mailbox.',
+    mailId 
+  });
+};
+
+authoritiesRouter.post('/issues/:id/take-down', handleTakeDownIssue);
+authoritiesRouter.delete('/issues/:id', handleTakeDownIssue);
+
+// Legacy 7. PATCH /reports/:id (Keeping for backwards compatibility with Phase 1 frontend if any)
 authoritiesRouter.patch('/reports/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json();
@@ -225,6 +492,63 @@ authoritiesRouter.patch('/reports/:id', async (c) => {
   values.push(id);
   
   await c.env.DB.prepare(`UPDATE infrastructure_reports SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
+  
+  return c.json({ success: true });
+});
+
+// 11. PATCH /profile
+authoritiesRouter.patch('/profile', async (c) => {
+  const jwtUser = c.get('user') as any;
+  const body = await c.req.json();
+  
+  const updates: string[] = [];
+  const values: any[] = [];
+  
+  if (body.username !== undefined) {
+    if (typeof body.username !== 'string' || body.username.trim() === '') return c.json({ error: 'Invalid username' }, 400);
+    updates.push('username = ?'); values.push(body.username.trim());
+  }
+  if (body.bio !== undefined) {
+    if (typeof body.bio !== 'string' || body.bio.length > 500) return c.json({ error: 'Invalid position' }, 400);
+    updates.push('bio = ?'); values.push(body.bio.trim());
+    updates.push('position = ?'); values.push(body.bio.trim());
+  }
+  if (body.position !== undefined && body.bio === undefined) {
+    if (typeof body.position !== 'string' || body.position.length > 500) return c.json({ error: 'Invalid position' }, 400);
+    updates.push('position = ?'); values.push(body.position.trim());
+    updates.push('bio = ?'); values.push(body.position.trim());
+  }
+  if (body.avatar !== undefined) {
+    if (typeof body.avatar !== 'string' || body.avatar.length > 2000) return c.json({ error: 'Invalid avatar url' }, 400);
+    updates.push('avatar = ?'); values.push(body.avatar.trim());
+  }
+  
+  if (updates.length === 0) return c.json({ error: 'No fields to update' }, 400);
+  
+  values.push(jwtUser.sub);
+  
+  await c.env.DB.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
+  
+  const updatedUser = await c.env.DB.prepare('SELECT email, username, bio, position, avatar, country, state, city, role FROM users WHERE id = ?').bind(jwtUser.sub).first();
+  return c.json({ success: true, user: updatedUser });
+});
+
+// 12. POST /contact-admin
+authoritiesRouter.post('/contact-admin', async (c) => {
+  const jwtUser = c.get('user') as any;
+  const body = await c.req.json();
+  const now = Date.now();
+  
+  if (!body.content || typeof body.content !== 'string' || body.content.trim() === '') {
+    return c.json({ error: 'Message content is required' }, 400);
+  }
+  
+  const mailId = crypto.randomUUID();
+  await c.env.DB.prepare(`
+    INSERT INTO mail 
+    (id, title, content, sender, recipient_type, expires_for_new_users, created_at) 
+    VALUES (?, ?, ?, ?, 'admin', 0, ?)
+  `).bind(mailId, 'Message from Authority', body.content.trim(), jwtUser.sub, now).run();
   
   return c.json({ success: true });
 });
