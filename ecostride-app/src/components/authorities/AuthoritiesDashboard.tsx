@@ -68,8 +68,8 @@ export function AuthoritiesDashboard() {
   const navItems = [
     { name: 'Home', path: '/authorities', icon: Home },
     { name: 'Map', path: '/authorities/map', icon: MapIcon },
-    { name: 'Reported Issues', path: '/authorities/issues', icon: AlertTriangle },
-    { name: 'Settings & Inbox', path: '/authorities/settings', icon: Settings, hasUnread, count: unreadCount },
+    { name: 'Issues', path: '/authorities/issues', icon: AlertTriangle },
+    { name: 'Settings', path: '/authorities/settings', icon: Settings, hasUnread, count: unreadCount },
   ];
 
   return (
@@ -104,7 +104,7 @@ export function AuthoritiesDashboard() {
       <div className="flex w-full h-full relative">
         
         {/* Sidebar */}
-        <div className="w-64 bg-white z-10 flex flex-col h-full rounded-r-3xl shadow-xl">
+        <div className="hidden md:flex w-64 bg-white z-10 flex-col h-full rounded-r-3xl shadow-xl">
           <div className="p-8 flex items-center gap-3">
             <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center text-white font-black">E</div>
             <h1 className="text-2xl font-black text-slate-800 tracking-tight">EcoStride</h1>
@@ -160,13 +160,45 @@ export function AuthoritiesDashboard() {
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 overflow-auto relative">
+        <div className="flex-1 overflow-auto relative pb-24 md:pb-0">
           <Routes>
             <Route path="/" element={<DashboardHome key={refreshKey} />} />
             <Route path="/map" element={<div className="w-full h-full relative"><MapView /></div>} />
             <Route path="/issues" element={<AuthorityIssuesView key={refreshKey} />} />
             <Route path="/settings" element={<AuthoritySettingsView key={refreshKey} />} />
           </Routes>
+        </div>
+
+        {/* Modern Floating Mobile Navigation (visible only on mobile) */}
+        <div className="md:hidden fixed bottom-6 left-4 right-4 z-50 flex justify-center pointer-events-none">
+          <div className="bg-slate-900/95 backdrop-blur-xl border border-white/10 shadow-2xl rounded-3xl p-2 flex items-center gap-1 w-full max-w-[360px] pointer-events-auto">
+            {navItems.map((item) => {
+              const isActive = location.pathname === item.path || (item.path === '/authorities' && location.pathname === '/authorities/');
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.name}
+                  to={item.path}
+                  className={`flex-1 flex flex-col items-center justify-center py-2.5 px-2 rounded-2xl relative transition-all duration-300 ${
+                    isActive ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Icon size={isActive ? 22 : 20} className={isActive ? 'stroke-[2.5px]' : 'stroke-2'} />
+                  {isActive && <span className="text-[9px] font-bold mt-1 tracking-wide uppercase">{item.name}</span>}
+                  
+                  {item.hasUnread && (
+                    <div className="absolute top-1 right-1/4 flex items-center justify-center shrink-0 min-w-[16px] h-[16px] bg-rose-500 rounded-full border border-slate-900 shadow-sm">
+                      {item.count ? (
+                        <span className="text-[8px] font-bold text-white leading-none pt-[1px] px-1">{item.count > 99 ? '99+' : item.count}</span>
+                      ) : (
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                      )}
+                    </div>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>

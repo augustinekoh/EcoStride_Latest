@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { apiClient } from '../../../lib/api';
 import { AlertTriangle, MapPin, Clock, Filter, User, ChevronLeft, ChevronRight, Map, Network } from 'lucide-react';
 import { AuthorityIssueDetailModal } from './AuthorityIssueDetailModal';
@@ -98,11 +99,13 @@ const AuthorityIssueCard: React.FC<{ issue: any, onClick: () => void }> = ({ iss
 
         {/* Status */}
         <div className={`mt-auto px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider self-start ${
+          issue.takedown_status === 'taken-down' ? 'bg-[#FFE4E6] text-[#E11D48]' :
+          issue.takedown_status === 'requested' ? 'bg-[#FFEDD5] text-[#C2410C]' :
           issue.status === 'resolved' ? 'bg-[#D1FAE5] text-[#059669]' :
           issue.status === 'in-progress' ? 'bg-blue-100 text-blue-700' :
           'bg-[#FEF3C7] text-[#D97706]'
         }`}>
-          {issue.status === 'pending' ? 'Pending' : issue.status}
+          {issue.takedown_status === 'taken-down' ? 'Taken Down' : issue.takedown_status === 'requested' ? 'Takedown Pending' : issue.status === 'pending' ? 'Pending' : issue.status}
         </div>
       </div>
     </div>
@@ -110,10 +113,18 @@ const AuthorityIssueCard: React.FC<{ issue: any, onClick: () => void }> = ({ iss
 };
 
 export const AuthorityIssuesView: React.FC = () => {
+  const location = useLocation();
   const [issues, setIssues] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedIssue, setSelectedIssue] = useState<any | null>(null);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'in-progress' | 'resolved'>('all');
+  const [selectedIssue, setSelectedIssue] = useState<any | null>(location.state?.openIssue || null);
+  const [filter, setFilter] = useState<'all' | 'pending' | 'in-progress' | 'resolved' | 'taken down'>('all');
+
+  useEffect(() => {
+    if (location.state?.openIssue) {
+      setSelectedIssue(location.state.openIssue);
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   const fetchIssues = async () => {
     try {
@@ -158,31 +169,35 @@ export const AuthorityIssuesView: React.FC = () => {
     }
   };
 
-  const filteredIssues = issues.filter(issue => filter === 'all' ? true : issue.status === filter);
+  const filteredIssues = issues.filter(issue => {
+    if (filter === 'all') return true;
+    if (filter === 'taken down') return issue.takedown_status === 'taken-down';
+    if (issue.takedown_status === 'taken-down') return false; // Hide taken down issues from other specific filters
+    return issue.status === filter;
+  });
 
   return (
     <div className="h-full w-full bg-[#224C31] p-4 md:p-8 overflow-y-auto font-sans relative">
       <Network size={800} className="absolute -top-40 -left-20 text-[#34D399] opacity-[0.15] pointer-events-none stroke-1 mix-blend-overlay fixed" />
       <Map size={800} className="absolute bottom-0 right-0 text-[#FBBF24] opacity-[0.12] pointer-events-none stroke-1 mix-blend-overlay translate-y-1/4 translate-x-1/4 fixed" />
-
-      <div className="max-w-[1600px] mx-auto relative z-10">
+      
+      <div className="max-w-[1600px] mx-auto relative z-10 pb-20 md:pb-0">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 relative z-10">
           <div>
             <h1 className="text-3xl font-black text-white tracking-tight">Reported Issues</h1>
-            <p className="text-emerald-100/70 font-bold mt-1">Manage and resolve citizen infrastructure reports.</p>
+            <p className="text-emerald-100/70 font-bold mt-1 text-sm md:text-base">Manage and resolve citizen infrastructure reports.</p>
           </div>
           
-          <div className="flex bg-[#EAF0EC] p-1 rounded-full shadow-xl self-start">
-             <Filter size={18} className="text-[#4A6B53] ml-3 mr-1 my-auto" />
-             {['all', 'pending', 'in-progress', 'resolved'].map(f => (
+          <div className="flex gap-2 max-w-full overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+             {['all', 'pending', 'in-progress', 'resolved', 'taken down'].map(f => (
                <button
                  key={f}
                  onClick={() => setFilter(f as any)}
-                 className={`px-4 py-2 mx-0.5 rounded-full text-sm font-black uppercase transition-all ${
-                   filter === f ? 'bg-white text-[#1E432B] shadow-sm' : 'text-[#9BB3A3] hover:text-[#4A6B53]'
+                 className={`px-4 md:px-5 py-2 rounded-full text-xs md:text-sm font-black uppercase transition-all shrink-0 ${
+                   filter === f ? 'bg-white text-[#1E432B] shadow-lg' : 'bg-[#EAF0EC]/50 text-[#9BB3A3] hover:bg-[#EAF0EC] hover:text-[#4A6B53]'
                  }`}
                >
-                 {f}
+                 {f === 'all' ? <span className="flex items-center gap-1.5"><Filter size={14} /> ALL</span> : f.replace('-', ' ')}
                </button>
              ))}
           </div>

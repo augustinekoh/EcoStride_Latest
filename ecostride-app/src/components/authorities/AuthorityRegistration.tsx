@@ -18,7 +18,8 @@ export const AuthorityRegistration: React.FC = () => {
 
   // Form State
   const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
+  const [usernameStatus, setUsernameStatus] = useState<'idle'|'checking'|'available'|'taken'>('idle');
   const [password, setPassword] = useState('');
   const [position, setPosition] = useState('');
   const [country, setCountry] = useState('');
@@ -27,6 +28,11 @@ export const AuthorityRegistration: React.FC = () => {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState('');
 
+  // Lock State (if Admin pre-filled these)
+  const [lockedCountry, setLockedCountry] = useState(false);
+  const [lockedState, setLockedState] = useState(false);
+  const [lockedCity, setLockedCity] = useState(false);
+
   // 1. Verify token on mount
   useEffect(() => {
     const verifyToken = async () => {
@@ -34,6 +40,9 @@ export const AuthorityRegistration: React.FC = () => {
         const res = await apiClient(`/authorities/verify-token/${token}`, { method: 'GET' });
         if (res.email) {
           setEmail(res.email);
+          if (res.country) { setCountry(res.country); setLockedCountry(true); }
+          if (res.state) { setState(res.state); setLockedState(true); }
+          if (res.city) { setCity(res.city); setLockedCity(true); }
         } else {
           setError('Invalid or expired invitation link.');
         }
@@ -51,6 +60,27 @@ export const AuthorityRegistration: React.FC = () => {
       setLoading(false);
     }
   }, [token]);
+
+  // Username validation
+  useEffect(() => {
+    if (username.length > 2) {
+      setUsernameStatus('checking');
+      const timer = setTimeout(async () => {
+        try {
+          // Note: using direct API url for unauthenticated check
+          const res = await fetch(`https://ecostride-backend.ecostride0.workers.dev/api/check-username?username=${encodeURIComponent(username)}`);
+          const data = await res.json();
+          setUsernameStatus(data.available ? 'available' : 'taken');
+        } catch (e) {
+          setUsernameStatus('idle');
+        }
+      }, 500);
+      return () => clearTimeout(timer);
+    } else {
+      setUsernameStatus('idle');
+    }
+  }, [username]);
+
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -78,8 +108,12 @@ export const AuthorityRegistration: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !password || !position.trim()) {
+    if (!username.trim() || !password || !position.trim()) {
       setError('Please fill in all required fields.');
+      return;
+    }
+    if (usernameStatus === 'taken') {
+      setError('Username is already taken. Please choose another one.');
       return;
     }
     if (!country || !state || !city || !isValidLocation(country, state, city)) {
@@ -98,14 +132,13 @@ export const AuthorityRegistration: React.FC = () => {
         user = userCredential.user;
       } catch (authErr: any) {
         if (authErr.code === 'auth/email-already-in-use') {
-          const userCredential = await signInWithEmailAndPassword(auth, email, password);
-          user = userCredential.user;
+          throw new Error('This email is already in use by a regular citizen or merchant. You must use a brand new official email to register as an Authority.');
         } else {
           throw authErr;
         }
       }
       
-      await updateProfile(user, { displayName: name });
+      await updateProfile(user, { displayName: username });
       
       // Wait a moment for auth state to propagate (Firebase token logic)
       const idToken = await user.getIdToken(true);
@@ -122,7 +155,7 @@ export const AuthorityRegistration: React.FC = () => {
         headers: { 'Authorization': `Bearer ${idToken}` },
         body: JSON.stringify({
           token,
-          name,
+          name: username,
           position,
           country,
           state,
@@ -134,7 +167,7 @@ export const AuthorityRegistration: React.FC = () => {
       // Update both user store and auth store so all authority profile fields
       // and permissions are immediately active in the session
       useUserStore.getState().setLocalData({
-        username: name,
+        username: username,
         email: user.email || '',
         bio: position,
         country,
@@ -237,18 +270,29 @@ export const AuthorityRegistration: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1">Full Name</label>
+            <label className="block text-sm font-medium text-slate-400 mb-1">Username</label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
               <input
                 type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Jane Doe"
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors outline-none"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="e.g. CityPlanner2026"
+                className={`w-full bg-slate-900 border ${usernameStatus === 'taken' ? 'border-red-500' : usernameStatus === 'available' ? 'border-emerald-500' : 'border-slate-700'} rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors outline-none`}
                 required
               />
+              {usernameStatus === 'checking' && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
+                </div>
+              )}
             </div>
+            {usernameStatus === 'taken' && (
+              <p className="text-red-400 text-xs mt-1 font-medium">This username is already taken.</p>
+            )}
+            {usernameStatus === 'available' && (
+              <p className="text-emerald-400 text-xs mt-1 font-medium">Username is available!</p>
+            )}
           </div>
 
           <div>
@@ -277,13 +321,14 @@ export const AuthorityRegistration: React.FC = () => {
               <label className="block text-xs font-medium text-slate-400 mb-1">Country</label>
               <select 
                 value={country}
+                disabled={lockedCountry}
                 onChange={(e) => {
                   setCountry(e.target.value);
                   setState('');
                   setCity('');
                 }}
                 required
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors outline-none"
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors outline-none disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <option value="">Select Country</option>
                 {getCountries().map((c) => (
@@ -297,13 +342,13 @@ export const AuthorityRegistration: React.FC = () => {
                 <label className="block text-xs font-medium text-slate-400 mb-1">State / Province</label>
                 <select 
                   value={state}
-                  disabled={!country}
+                  disabled={!country || lockedState}
                   onChange={(e) => {
                     setState(e.target.value);
                     setCity('');
                   }}
                   required
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors outline-none disabled:opacity-50"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <option value="">{country ? 'Select State' : 'Select Country first'}</option>
                   {getStatesForCountry(country).map((s) => (
@@ -316,10 +361,10 @@ export const AuthorityRegistration: React.FC = () => {
                 <label className="block text-xs font-medium text-slate-400 mb-1">City / District</label>
                 <select 
                   value={city}
-                  disabled={!state}
+                  disabled={!state || lockedCity}
                   onChange={(e) => setCity(e.target.value)}
                   required
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors outline-none disabled:opacity-50"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <option value="">{state ? 'Select City' : 'Select State first'}</option>
                   {getCitiesForState(country, state).map((cty) => (
@@ -348,7 +393,7 @@ export const AuthorityRegistration: React.FC = () => {
 
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || usernameStatus === 'taken' || usernameStatus === 'checking'}
             className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white py-3.5 rounded-xl font-semibold transition-colors flex items-center justify-center mt-4"
           >
             {submitting ? (

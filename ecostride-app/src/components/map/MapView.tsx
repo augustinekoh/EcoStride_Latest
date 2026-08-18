@@ -22,6 +22,7 @@ import { CreateIssueModal } from './CreateIssueModal';
 import { ShareIssueModal } from './ShareIssueModal';
 import { PointsStoreModal } from '../modals/PointsStoreModal';
 import { SignpostStoryViewer } from './SignpostStoryViewer';
+import { IssueStoryViewer } from './IssueStoryViewer';
 import { UserProfileModal } from '../modals/UserProfileModal';
 import { useMapGeolocation } from './useMapGeolocation';
 
@@ -745,12 +746,18 @@ export const MapView: React.FC = () => {
           <Popup
             longitude={activeIssue.lng}
             latitude={activeIssue.lat}
-            anchor="top"
+            anchor="bottom"
             closeButton={false}
-            closeOnClick={true}
+            closeOnClick={false}
             onClose={() => setActiveIssue(null)}
-            offset={[0, 10]}
-            className="signpost-story-popup z-50"
+            offset={[0, -30]}
+            className={`z-50 hidden sm:block ${(() => {
+              try {
+                const imgs = typeof activeIssue.photos === 'string' ? JSON.parse(activeIssue.photos) : (activeIssue.photos || []);
+                if (imgs.length > 0) return 'signpost-story-popup';
+              } catch(e) {}
+              return '';
+            })()}`}
           >
             {(() => {
               let imgs: string[] = [];
@@ -758,46 +765,22 @@ export const MapView: React.FC = () => {
                 imgs = typeof activeIssue.photos === 'string' ? JSON.parse(activeIssue.photos) : (activeIssue.photos || []);
               } catch(e) {}
               const hasImage = imgs.length > 0;
-              const isOwner = user?.uid === activeIssue.author_id;
 
-              const nextImage = (e: React.MouseEvent) => {
-                e.stopPropagation();
-                setActiveIssueImageIndex((prev) => (prev + 1) % imgs.length);
-              };
-              
-              const prevImage = (e: React.MouseEvent) => {
-                e.stopPropagation();
-                setActiveIssueImageIndex((prev) => (prev - 1 + imgs.length) % imgs.length);
-              };
+              if (hasImage) {
+                return (
+                  <IssueStoryViewer 
+                    issue={activeIssue}
+                    images={imgs}
+                    onClose={() => setActiveIssue(null)}
+                    onFullScreen={(img) => setFullScreenImage(img)}
+                    onShare={!isAuthority ? () => setShowShareIssueModal(true) : undefined}
+                    isPausedExternal={showShareIssueModal}
+                  />
+                );
+              }
 
               return (
                 <div className="glass-card p-4 rounded-[28px] flex flex-col gap-3 w-[360px] relative mt-2">
-                  {/* Top: Image */}
-                  <div className="w-full relative group">
-                    {hasImage ? (
-                      <>
-                        <img src={imgs[activeIssueImageIndex]} alt="Issue preview" className="w-full h-64 object-cover rounded-[20px] shadow-sm" />
-                        {imgs.length > 1 && (
-                          <>
-                            <button onClick={prevImage} className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-transparent rounded-full flex items-center justify-center text-white hover:bg-black/20 transition-colors drop-shadow-md">
-                              <ChevronLeft size={24} className="-ml-0.5 drop-shadow" />
-                            </button>
-                            <button onClick={nextImage} className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-transparent rounded-full flex items-center justify-center text-white hover:bg-black/20 transition-colors drop-shadow-md">
-                              <ChevronRight size={24} className="-mr-0.5 drop-shadow" />
-                            </button>
-                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-full font-medium pointer-events-none">
-                              {activeIssueImageIndex + 1} / {imgs.length}
-                            </div>
-                          </>
-                        )}
-                      </>
-                    ) : (
-                      <div className="w-full h-64 bg-slate-100/50 rounded-[20px] flex items-center justify-center text-slate-500 shadow-inner border border-white/40">
-                        No Image
-                      </div>
-                    )}
-                  </div>
-                  
                   {/* Title */}
                   <h3 className="font-bold text-slate-900 text-[22px] leading-tight px-1 mt-1">{activeIssue.title}</h3>
                   
@@ -1462,6 +1445,33 @@ export const MapView: React.FC = () => {
                     onDelete={handleDeleteSignpost}
                     onShare={() => setShowShareModal(true)}
                     isPausedExternal={showShareModal}
+                  />
+                </div>
+              );
+            }
+            return null;
+          })()}
+        </div>
+      )}
+
+      {/* Mobile Full Screen Story Viewer for Issues */}
+      {activeIssue && (
+        <div className="sm:hidden">
+          {(() => {
+            let imgs: string[] = [];
+            try {
+              imgs = typeof activeIssue.photos === 'string' ? JSON.parse(activeIssue.photos) : (activeIssue.photos || []);
+            } catch(e) {}
+            if (imgs.length > 0) {
+              return (
+                <div className="fixed inset-0 z-[400] bg-black">
+                  <IssueStoryViewer 
+                    issue={activeIssue}
+                    images={imgs}
+                    onClose={() => setActiveIssue(null)}
+                    onFullScreen={(img) => setFullScreenImage(img)}
+                    onShare={!isAuthority ? () => setShowShareIssueModal(true) : undefined}
+                    isPausedExternal={showShareIssueModal}
                   />
                 </div>
               );

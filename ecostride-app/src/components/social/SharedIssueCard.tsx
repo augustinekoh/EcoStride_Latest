@@ -32,7 +32,7 @@ export const SharedIssueCard: React.FC<{ issueId: string }> = ({ issueId }) => {
 
   if (loading) {
     return (
-      <div className="w-64 h-24 bg-slate-100 dark:bg-slate-800/50 rounded-xl animate-pulse border-2 border-slate-200 dark:border-slate-700/50 flex items-center justify-center text-xs text-slate-400">
+      <div className="w-full max-w-[250px] h-24 bg-slate-100 dark:bg-slate-800/50 rounded-xl animate-pulse border-2 border-slate-200 dark:border-slate-700/50 flex items-center justify-center text-xs text-slate-400">
         Loading issue details...
       </div>
     );
@@ -40,7 +40,7 @@ export const SharedIssueCard: React.FC<{ issueId: string }> = ({ issueId }) => {
 
   if (!issue) {
     return (
-      <div className="w-64 p-3 bg-red-50 dark:bg-red-950/30 rounded-xl border border-red-200 dark:border-red-900/50 text-red-500 text-xs font-bold flex items-center gap-2">
+      <div className="w-full max-w-[250px] p-3 bg-red-50 dark:bg-red-950/30 rounded-xl border border-red-200 dark:border-red-900/50 text-red-500 text-xs font-bold flex items-center gap-2">
         <AlertTriangle size={14} className="flex-shrink-0" />
         <span>Issue not found or deleted</span>
       </div>
@@ -97,10 +97,10 @@ export const SharedIssueCard: React.FC<{ issueId: string }> = ({ issueId }) => {
   return (
     <div 
       onClick={handleNavigateToMap}
-      className="w-64 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden mt-1 cursor-pointer hover:border-[#1B4A2E] dark:hover:border-emerald-500 hover:shadow-md transition-all active:scale-[0.98] group"
+      className="w-full max-w-[250px] bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden mt-1 cursor-pointer hover:border-[#1B4A2E] dark:hover:border-emerald-500 hover:shadow-md transition-all active:scale-[0.98] group"
     >
       {photos.length > 0 ? (
-        <div className="w-full h-28 relative overflow-hidden bg-slate-100 dark:bg-slate-900">
+        <div className="w-full h-28 relative overflow-hidden bg-slate-100 dark:bg-slate-900 rounded-t-xl">
           <img src={photos[0]} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
           <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">

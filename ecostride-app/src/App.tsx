@@ -213,12 +213,12 @@ function App() {
             if (data.user && data.user.guild_id) {
               try {
                 const unreadData = await apiClient('/chat/unread/' + data.user.guild_id);
-                useUserStore.getState().setUserData({ communityUnreadCount: unreadData.unread_count || 0 });
+                useUserStore.getState().setLocalData({ communityUnreadCount: unreadData.unread_count || 0 });
               } catch (err) {
                 console.error("Failed to fetch community unread count", err);
               }
             } else {
-              useUserStore.getState().setUserData({ communityUnreadCount: 0 });
+              useUserStore.getState().setLocalData({ communityUnreadCount: 0 });
             }
 
             // Friends Chat Unread polling
@@ -226,10 +226,21 @@ function App() {
               const friendsData = await apiClient('/friends/' + user.uid);
               if (friendsData.friends) {
                 const totalFriendsUnread = friendsData.friends.reduce((sum: number, f: any) => sum + (f.unread_count || 0), 0);
-                useUserStore.getState().setUserData({ friendsUnreadCount: totalFriendsUnread });
+                useUserStore.getState().setLocalData({ friendsUnreadCount: totalFriendsUnread });
               }
             } catch (err) {
               console.error("Failed to fetch friends unread count", err);
+            }
+
+            // Issues Chat Unread polling
+            try {
+              const issuesData = await apiClient('/users/' + user.uid + '/issues');
+              if (issuesData.issues) {
+                const totalIssuesUnread = issuesData.issues.reduce((sum: number, i: any) => sum + (i.unread_count || 0), 0);
+                useUserStore.getState().setLocalData({ issuesUnreadCount: totalIssuesUnread });
+              }
+            } catch (err) {
+              console.error("Failed to fetch issues unread count", err);
             }
 
             // Mailbox listener via API

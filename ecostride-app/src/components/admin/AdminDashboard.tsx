@@ -7,7 +7,7 @@ import { LayoutDashboard, Mail, Store, Users, FileCheck, Globe, LogOut, RefreshC
 import { apiClient } from '../../lib/api';
 import { AdminMessagesModal } from './AdminMessagesModal';
 import { MessageAuthorityModal } from './MessageAuthorityModal';
-import { formatLocation } from '../../lib/locationData';
+import { formatLocation, getCountries, getStatesForCountry, getCitiesForState } from '../../lib/locationData';
 
 export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -18,13 +18,7 @@ export const AdminDashboard: React.FC = () => {
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [adminMessages, setAdminMessages] = useState<any[]>([]);
-  const [readAdminMessageIds, setReadAdminMessageIds] = useState<string[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('read_admin_message_ids') || '[]');
-    } catch {
-      return [];
-    }
-  });
+  const [readAdminMessageIds, setReadAdminMessageIds] = useState<string[]>([]);
   const [trees, setTrees] = useState<any[]>([]);
   const [signposts, setSignposts] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -68,7 +62,11 @@ export const AdminDashboard: React.FC = () => {
 
   // Authority Invitation State
   const [authorityInviteEmail, setAuthorityInviteEmail] = useState('');
+  const [authorityInviteCountry, setAuthorityInviteCountry] = useState('');
+  const [authorityInviteState, setAuthorityInviteState] = useState('');
+  const [authorityInviteCity, setAuthorityInviteCity] = useState('');
   const [authorityInviteLink, setAuthorityInviteLink] = useState('');
+  const [inviteEmailSent, setInviteEmailSent] = useState(false);
   const [isInvitingAuthority, setIsInvitingAuthority] = useState(false);
   const [inviteCopied, setInviteCopied] = useState(false);
 
@@ -151,15 +149,6 @@ export const AdminDashboard: React.FC = () => {
 
   const handleOpenAdminMessages = () => {
     setIsAdminMessagesOpen(true);
-    const allIds = adminMessages.map(m => m.id);
-    if (allIds.length > 0) {
-      setReadAdminMessageIds(prev => {
-        const combined = Array.from(new Set([...prev, ...allIds]));
-        localStorage.setItem('read_admin_message_ids', JSON.stringify(combined));
-        return combined;
-      });
-      apiClient('/mail/user/batch-read', { method: 'POST', body: JSON.stringify({ ids: allIds }) }).catch(() => {});
-    }
   };
 
   const unreadAdminCount = adminMessages.filter(m => !readAdminMessageIds.includes(m.id)).length;
@@ -284,6 +273,19 @@ export const AdminDashboard: React.FC = () => {
     } catch (e) { console.error(e); }
   };
 
+  const handleDeleteAuthority = async (userId: string) => {
+    if (confirm("Are you SURE you want to delete this Authority user? Their Firebase login will be permanently destroyed and their reports will be reassigned to 'Unknown Player'. This action cannot be undone.")) {
+      try {
+        await apiClient(`/users/${userId}`, { method: 'DELETE' });
+        alert('Authority deleted successfully. The email is now free to register again.');
+        fetchDashboardData();
+      } catch (err: any) {
+        console.error(err);
+        alert(err.message || 'Failed to delete authority.');
+      }
+    }
+  };
+
   const handleInviteAuthority = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!authorityInviteEmail) return;
@@ -291,14 +293,23 @@ export const AdminDashboard: React.FC = () => {
     setIsInvitingAuthority(true);
     setAuthorityInviteLink('');
     setInviteCopied(false);
+    setInviteEmailSent(false);
     
     try {
       const res = await apiClient('/admin/invite-authority', { 
         method: 'POST', 
-        body: JSON.stringify({ email: authorityInviteEmail }) 
+        body: JSON.stringify({ 
+          email: authorityInviteEmail, 
+          country: authorityInviteCountry || undefined, 
+          state: authorityInviteState || undefined, 
+          city: authorityInviteCity || undefined 
+        }) 
       });
       if (res.registrationUrl) {
         setAuthorityInviteLink(res.registrationUrl);
+      }
+      if (res.emailSent) {
+        setInviteEmailSent(true);
       }
     } catch (err: any) {
       alert(`Failed to generate invite: ${err.message}`);
@@ -520,7 +531,7 @@ export const AdminDashboard: React.FC = () => {
     { id: 'merchants', label: 'Active Merchants', icon: <Store size={20} /> },
     { id: 'store', label: 'Store Manager', icon: <Store size={20} /> },
     { id: 'users', label: 'Users & Economy', icon: <Users size={20} /> },
-    { id: 'authorities', label: 'Authorities', icon: <Shield size={20} /> },
+    { id: 'authorities', label: 'Authorities', icon: <Shield size={20} />, badge: unreadAdminCount },
     { id: 'broadcasts', label: 'Broadcasts', icon: <Mail size={20} /> },
     { id: 'world', label: 'World Control', icon: <Globe size={20} /> },
   ];
@@ -1236,18 +1247,70 @@ export const AdminDashboard: React.FC = () => {
                       />
                     </div>
                     
+                    <div>
+                      <label className="block text-xs font-bold text-teal-700/70 uppercase tracking-wider mb-2">Assigned Country (Optional)</label>
+                      <select 
+                        value={authorityInviteCountry}
+                        onChange={(e) => {
+                          setAuthorityInviteCountry(e.target.value);
+                          setAuthorityInviteState('');
+                          setAuthorityInviteCity('');
+                        }}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-teal-950 outline-none focus:border-teal-500 appearance-none cursor-pointer"
+                      >
+                        <option value="">Select a Country...</option>
+                        {getCountries().map(c => <option key={c.isoCode} value={c.name}>{c.name}</option>)}
+                      </select>
+                    </div>
+
+                    {authorityInviteCountry && (
+                      <div>
+                        <label className="block text-xs font-bold text-teal-700/70 uppercase tracking-wider mb-2">Assigned State (Optional)</label>
+                        <select 
+                          value={authorityInviteState}
+                          onChange={(e) => {
+                            setAuthorityInviteState(e.target.value);
+                            setAuthorityInviteCity('');
+                          }}
+                          className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-teal-950 outline-none focus:border-teal-500 appearance-none cursor-pointer"
+                        >
+                          <option value="">Select a State...</option>
+                          {getStatesForCountry(authorityInviteCountry).map(s => <option key={s.isoCode} value={s.name}>{s.name}</option>)}
+                        </select>
+                      </div>
+                    )}
+
+                    {authorityInviteCountry && authorityInviteState && (
+                      <div>
+                        <label className="block text-xs font-bold text-teal-700/70 uppercase tracking-wider mb-2">Assigned City (Optional)</label>
+                        <select 
+                          value={authorityInviteCity}
+                          onChange={(e) => setAuthorityInviteCity(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-teal-950 outline-none focus:border-teal-500 appearance-none cursor-pointer"
+                        >
+                          <option value="">Select a City...</option>
+                          {getCitiesForState(authorityInviteCountry, authorityInviteState).map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    
                     <button 
                       type="submit"
                       disabled={isInvitingAuthority || !authorityInviteEmail}
                       className="bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-teal-500/20 border-none text-white font-black px-6 py-3.5 rounded-xl transition-colors mt-2 flex justify-center items-center gap-2"
                     >
-                      {isInvitingAuthority ? 'Generating...' : 'Generate Invite Link'}
+                      {isInvitingAuthority ? 'Sending...' : 'Send Email & Generate Link'}
                       <Link size={18} />
                     </button>
                   </form>
 
                   {authorityInviteLink && (
                     <div className="mt-6 p-4 bg-teal-50 border border-teal-200 rounded-xl animate-in zoom-in duration-300">
+                      {inviteEmailSent && (
+                        <div className="mb-3 p-3 bg-green-100 text-green-800 rounded-lg text-sm font-bold flex items-center gap-2">
+                          <Check size={16} /> Official invitation email sent to {authorityInviteEmail}!
+                        </div>
+                      )}
                       <p className="text-xs font-bold text-teal-800 uppercase tracking-wider mb-2">Registration Link</p>
                       <div className="flex gap-2 items-center">
                         <input 
@@ -1265,7 +1328,9 @@ export const AdminDashboard: React.FC = () => {
                         </button>
                       </div>
                       <p className="text-[10px] text-teal-600 mt-2 font-medium">
-                        Send this link securely to the authority. They must use the EXACT same email to register.
+                        {inviteEmailSent 
+                          ? "The system has sent an email automatically. You can also manually copy and send this backup link securely to the authority. They must use the EXACT same email to register."
+                          : "Send this link securely to the authority. They must use the EXACT same email to register."}
                       </p>
                     </div>
                   )}
@@ -1335,6 +1400,13 @@ export const AdminDashboard: React.FC = () => {
                                 <option value="365">1 Year</option>
                                 <option value="forever">Permanent</option>
                               </select>
+                              <button
+                                onClick={() => handleDeleteAuthority(u.id)}
+                                className="text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors border border-transparent hover:border-red-200 text-xs font-bold w-20 text-center uppercase flex items-center justify-center"
+                                title="Permanently Delete Authority"
+                              >
+                                Delete
+                              </button>
                           </div>
                         </div>
                       ))
@@ -1750,12 +1822,14 @@ export const AdminDashboard: React.FC = () => {
       <AdminMessagesModal 
         isOpen={isAdminMessagesOpen} 
         onClose={() => setIsAdminMessagesOpen(false)} 
-        onMessagesRead={(ids) => {
+        readMessageIds={readAdminMessageIds}
+        onInitReadIds={(ids) => setReadAdminMessageIds(ids)}
+        onMessageRead={(id) => {
           setReadAdminMessageIds(prev => {
-            const combined = Array.from(new Set([...prev, ...ids]));
-            localStorage.setItem('read_admin_message_ids', JSON.stringify(combined));
-            return combined;
+            if (prev.includes(id)) return prev;
+            return [...prev, id];
           });
+          apiClient(`/mail/user/${id}/read`, { method: 'POST' }).catch(() => {});
         }}
       />
       <MessageAuthorityModal 

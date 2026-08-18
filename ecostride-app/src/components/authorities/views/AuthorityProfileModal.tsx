@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Save, Lock, Loader2, Upload, MapPin } from 'lucide-react';
 import { useAuthStore } from '../../../stores/useAuthStore';
 import { useUserStore } from '../../../stores/useUserStore';
@@ -127,8 +128,8 @@ export function AuthorityProfileModal({ isOpen, onClose }: AuthorityProfileModal
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+  const modalContent = (
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden relative">
         <div className="flex items-center justify-between p-4 border-b border-gray-100">
           <h2 className="text-lg font-bold text-gray-800">Settings</h2>
@@ -195,13 +196,12 @@ export function AuthorityProfileModal({ isOpen, onClose }: AuthorityProfileModal
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Name</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Name (Read-only)</label>
                 <input 
                   type="text" 
                   value={username} 
-                  onChange={e => setUsername(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#34D399] outline-none transition-all text-sm" 
-                  required
+                  disabled
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-500 text-sm" 
                 />
               </div>
               <div>
@@ -278,4 +278,6 @@ export function AuthorityProfileModal({ isOpen, onClose }: AuthorityProfileModal
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

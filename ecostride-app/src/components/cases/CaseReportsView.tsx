@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useDemoStore } from '../../stores/useDemoStore';
 import { apiClient } from '../../lib/api';
-import { ArrowLeft, ClipboardList, AlertCircle, Clock, CheckCircle, ChevronRight, ImageOff } from 'lucide-react';
+import { ArrowLeft, ClipboardList, AlertCircle, Clock, CheckCircle, ChevronRight, ImageOff, X } from 'lucide-react';
 import { CaseDetailModal } from './CaseDetailModal';
 
 export const CaseReportsView: React.FC = () => {
@@ -31,8 +31,8 @@ export const CaseReportsView: React.FC = () => {
     fetchMyIssues();
   }, [user]);
 
-  const activeIssues = issues.filter(i => i.status !== 'resolved');
-  const resolvedIssues = issues.filter(i => i.status === 'resolved');
+  const activeIssues = issues.filter(i => i.status !== 'resolved' && i.takedown_status !== 'taken-down');
+  const resolvedIssues = issues.filter(i => i.status === 'resolved' || i.takedown_status === 'taken-down');
 
   const renderIssueCard = (issue: any) => {
     let firstImage = null;
@@ -45,10 +45,15 @@ export const CaseReportsView: React.FC = () => {
 
     return (
       <div 
-        key={issue.id}
+        key={issue.id} 
         onClick={() => setSelectedIssue(issue)}
-        className="bg-white/60 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 backdrop-blur-xl rounded-2xl p-5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] hover:bg-emerald-50/40 dark:hover:bg-slate-750 hover:border-emerald-200/60 hover:shadow-[0_0_25px_rgba(16,185,129,0.15)] transition-all cursor-pointer flex gap-4 sm:gap-5 group relative overflow-hidden"
+        className="bg-white/60 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 backdrop-blur-xl rounded-2xl p-5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] hover:bg-emerald-50/40 dark:hover:bg-slate-750 hover:border-emerald-200/60 hover:shadow-[0_0_25px_rgba(16,185,129,0.15)] transition-all cursor-pointer flex gap-4 sm:gap-5 group relative overflow-visible"
       >
+        {(issue.unread_count || 0) > 0 && (
+          <div className="absolute -top-2 -right-2 shrink-0 min-w-[20px] h-[20px] bg-rose-500 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-800 shadow-sm z-20">
+            <span className="text-[10px] font-bold text-white leading-none pt-[1px] px-1">{issue.unread_count > 99 ? '99+' : issue.unread_count}</span>
+          </div>
+        )}
         <div className="w-20 h-20 sm:w-24 sm:h-24 shrink-0 rounded-xl bg-white/50 dark:bg-slate-900/50 overflow-hidden relative flex items-center justify-center border border-slate-200/60 dark:border-slate-700 shadow-sm">
           {firstImage ? (
             <img 
@@ -72,19 +77,23 @@ export const CaseReportsView: React.FC = () => {
         <div className="flex-1 flex flex-col justify-between min-h-[5rem] sm:min-h-[6rem]">
           <div className="flex flex-col">
             <div className="flex justify-between items-center mb-1.5 gap-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">#{issue.id.substring(0,8)}</span>
-              <div className={`px-2 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider flex items-center gap-1 leading-none shadow-sm ${
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">#{issue.id.toUpperCase()}</span>
+              <div className={`px-2 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider flex items-center gap-1 leading-none shadow-sm whitespace-nowrap ${
+                issue.takedown_status === 'taken-down' ? 'bg-red-100/80 text-red-700 border-red-200/60 dark:bg-red-950/60 dark:text-red-300' :
+                issue.takedown_status === 'requested' ? 'bg-orange-100/80 text-orange-700 border-orange-200/60 dark:bg-orange-950/60 dark:text-orange-300' :
                 issue.status === 'resolved' ? 'bg-emerald-100/80 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/60 dark:text-emerald-300' :
                 issue.status === 'in-progress' ? 'bg-blue-100/80 text-blue-700 border-blue-200/60 dark:bg-blue-950/60 dark:text-blue-300' :
-                'bg-orange-100/80 text-orange-700 border-orange-200/60 dark:bg-amber-950/60 dark:text-amber-300'
+                'bg-amber-100/80 text-amber-700 border-amber-200/60 dark:bg-amber-950/60 dark:text-amber-300'
               }`}>
-                {issue.status === 'resolved' ? <CheckCircle size={10}/> : <Clock size={10}/>}
-                <span className="pt-px">{issue.status}</span>
+                {issue.takedown_status === 'taken-down' ? <X size={10}/> : issue.status === 'resolved' ? <CheckCircle size={10}/> : <Clock size={10}/>}
+                <span className="pt-px">{issue.takedown_status === 'taken-down' ? 'Taken Down' : issue.takedown_status === 'requested' ? 'Takedown Pending' : issue.status}</span>
               </div>
             </div>
-            <h3 className="font-bold text-slate-800 dark:text-white text-sm sm:text-[15px] leading-snug line-clamp-2 group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors pr-2">
-              {issue.title}
-            </h3>
+            <div className="flex items-start justify-between gap-2 pr-2">
+              <h3 className="font-bold text-slate-800 dark:text-white text-sm sm:text-[15px] leading-snug line-clamp-2 group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors">
+                {issue.title}
+              </h3>
+            </div>
           </div>
           
           <div className="flex justify-between items-end mt-auto pt-2">

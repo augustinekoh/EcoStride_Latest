@@ -141,12 +141,31 @@ authoritiesRouter.get('/dashboard/stats', async (c) => {
 authoritiesRouter.get('/dashboard/workload', async (c) => {
   const jwtUser = c.get('user') as any;
   const issues = await c.env.DB.prepare(`
-    SELECT r.id, r.title, r.status, r.severity, r.created_at, r.updated_at
+    SELECT r.*,
+           u.username as author_username,
+           u.avatar as author_avatar,
+           auth.username as authority_username
     FROM infrastructure_reports r
+    LEFT JOIN users u ON r.author_id = u.id
+    LEFT JOIN users auth ON r.authority_id = auth.id
     WHERE r.authority_id = ? AND r.status != 'resolved' AND r.deleted_at IS NULL
     ORDER BY r.created_at ASC
   `).bind(jwtUser.sub).all();
-  return c.json({ workload: issues.results });
+  
+  const issuesWithUnread = await Promise.all(issues.results.map(async (issue: any) => {
+    const guildId = `issue_${issue.id}`;
+    const lastReadRecord = await c.env.DB.prepare('SELECT last_read_at FROM user_chat_reads WHERE user_id = ? AND guild_id = ?').bind(jwtUser.sub, guildId).first() as any;
+    const lastReadAt = lastReadRecord ? lastReadRecord.last_read_at : 0;
+    
+    const unreadRecord = await c.env.DB.prepare('SELECT COUNT(*) as unread_count FROM issue_messages WHERE issue_id = ? AND created_at > ? AND sender_id != ?').bind(issue.id, lastReadAt, jwtUser.sub).first() as any;
+    
+    return {
+      ...issue,
+      unread_count: unreadRecord ? unreadRecord.unread_count : 0
+    };
+  }));
+
+  return c.json({ workload: issuesWithUnread });
 });
 
 // 2c. GET /dashboard/critical
@@ -361,13 +380,47 @@ authoritiesRouter.patch('/issues/:id/claim', async (c) => {
   return c.json({ success: true });
 });
 
+// 8.5 PATCH /issues/:id/unclaim
+authoritiesRouter.patch('/issues/:id/unclaim', async (c) => {
+  const id = c.req.param('id');
+  const jwtUser = c.get('user') as any;
+  const now = Date.now();
+  
+  const issue = await c.env.DB.prepare('SELECT status, authority_id FROM infrastructure_reports WHERE id = ?').bind(id).first() as any;
+  if (!issue) return c.json({ error: 'Issue not found' }, 404);
+
+  // Allow unclaiming if the user is the assigned authority
+  if (issue.authority_id !== jwtUser.sub) {
+    return c.json({ error: 'Forbidden: You are not assigned to this report' }, 403);
+  }
+
+  // Can only unclaim if it's currently in progress
+  if (issue.status !== 'in-progress') {
+    return c.json({ error: 'Only in-progress issues can be unclaimed' }, 400);
+  }
+
+  const updateIssue = c.env.DB.prepare('UPDATE infrastructure_reports SET status = ?, authority_id = NULL, updated_at = ? WHERE id = ?')
+    .bind('pending', now, id);
+
+  const activityId = crypto.randomUUID();
+  const insertActivity = c.env.DB.prepare(`
+    INSERT INTO report_activity 
+    (id, report_id, actor_id, actor_type, activity_type, title, description, created_at) 
+    VALUES (?, ?, ?, 'authority', 'REPORT_UNCLAIMED', 'Report Unclaimed', 'The assigned authority has released this report back to the pending queue.', ?)
+  `).bind(activityId, id, jwtUser.sub, now);
+    
+  await c.env.DB.batch([updateIssue, insertActivity]);
+    
+  return c.json({ success: true });
+});
+
 // 9. PATCH /issues/:id/resolve
 authoritiesRouter.patch('/issues/:id/resolve', async (c) => {
   const id = c.req.param('id');
   const jwtUser = c.get('user') as any;
   const now = Date.now();
   
-  const issue = await c.env.DB.prepare('SELECT status, authority_id FROM infrastructure_reports WHERE id = ?').bind(id).first() as any;
+  const issue = await c.env.DB.prepare('SELECT status, authority_id, author_id, title FROM infrastructure_reports WHERE id = ?').bind(id).first() as any;
   if (!issue) return c.json({ error: 'Issue not found' }, 404);
   if (issue.authority_id !== jwtUser.sub) return c.json({ error: 'You can only resolve issues you have claimed' }, 403);
   if (issue.status !== 'in-progress') return c.json({ error: 'Only in-progress issues can be resolved' }, 400);
@@ -382,7 +435,15 @@ authoritiesRouter.patch('/issues/:id/resolve', async (c) => {
     VALUES (?, ?, ?, 'authority', 'REPORT_RESOLVED', 'Report Resolved', 'The authority marked the report as resolved.', ?)
   `).bind(activityId, id, jwtUser.sub, now);
 
-  await c.env.DB.batch([updateIssue, insertActivity]);
+  const mailId = 'mail-' + now + '-' + Math.random().toString(36).substring(2, 7);
+  const issueTitle = issue.title ? `"${issue.title}"` : 'your reported infrastructure issue';
+  const mailContent = `Great news! Your issue report ${issueTitle} has been successfully resolved by the local authority.\n\nThank you for contributing to the community!`;
+  
+  const insertMail = c.env.DB.prepare(
+    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)'
+  ).bind(mailId, 'Issue Resolved', mailContent, 'Authority Office', 'user', issue.author_id, now);
+
+  await c.env.DB.batch([updateIssue, insertActivity, insertMail]);
     
   return c.json({ success: true });
 });
@@ -418,6 +479,11 @@ const handleTakeDownIssue = async (c: any) => {
   const id = c.req.param('id');
   const jwtUser = c.get('user') as any;
   const now = Date.now();
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch(e) {}
+  const reason = body.reason?.trim() || "The current issue location is incorrect with the actual location assigned.";
 
   // Validate that caller is an authority or admin
   let dbUser = await c.env.DB.prepare('SELECT id, role, username FROM users WHERE id = ?').bind(jwtUser.sub).first() as any;
@@ -431,27 +497,27 @@ const handleTakeDownIssue = async (c: any) => {
   const issue = await c.env.DB.prepare('SELECT id, title, author_id, lng, lat FROM infrastructure_reports WHERE id = ? AND deleted_at IS NULL').bind(id).first() as any;
   if (!issue) return c.json({ error: 'Issue report not found or already removed' }, 404);
 
-  // 1. Soft-delete the report from map and dashboards
+  // 1. Mark as taken down
   const updateIssue = c.env.DB.prepare(
-    'UPDATE infrastructure_reports SET deleted_at = ?, updated_at = ? WHERE id = ?'
-  ).bind(now, now, id);
+    'UPDATE infrastructure_reports SET takedown_status = ?, takedown_reason = ?, updated_at = ? WHERE id = ?'
+  ).bind('taken-down', reason, now, id);
 
   // 2. Insert audit activity entry
   const activityId = crypto.randomUUID();
   const insertActivity = c.env.DB.prepare(`
     INSERT INTO report_activity 
     (id, report_id, actor_id, actor_type, activity_type, title, description, created_at) 
-    VALUES (?, ?, ?, 'authority', 'ISSUE_TAKEN_DOWN', 'Issue Report Taken Down', 'The report was taken down by the authority. Location is incorrect with the actual location assigned.', ?)
-  `).bind(activityId, id, jwtUser.sub, now);
+    VALUES (?, ?, ?, 'authority', 'ISSUE_TAKEN_DOWN', 'Issue Report Taken Down', ?, ?)
+  `).bind(activityId, id, jwtUser.sub, `The report was taken down by the authority. Reason: ${reason}`, now);
 
   // 3. System auto-generates a message to the user's mailbox
   const mailId = 'mail-' + now + '-' + Math.random().toString(36).substring(2, 7);
   const issueTitle = issue.title ? `"${issue.title}"` : 'your reported infrastructure issue';
-  const mailContent = `Your issue report ${issueTitle} has been taken down by the local authority.\n\nReason: The current issue location is incorrect with the actual location assigned.\n\nPlease verify your GPS location or adjust the map marker accurately before submitting a new report.`;
+  const mailContent = `Your issue report ${issueTitle} has been taken down by the local authority.\n\nReason: ${reason}\n\nPlease verify your GPS location or adjust the map marker accurately before submitting a new report.`;
   
   const insertMail = c.env.DB.prepare(
     'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)'
-  ).bind(mailId, 'Issue Report Location Notice', mailContent, 'Authority Office', 'user', issue.author_id, now);
+  ).bind(mailId, 'Issue Report Notice', mailContent, 'Authority Office', 'user', issue.author_id, now);
 
   await c.env.DB.batch([updateIssue, insertActivity, insertMail]);
 
@@ -464,6 +530,59 @@ const handleTakeDownIssue = async (c: any) => {
 
 authoritiesRouter.post('/issues/:id/take-down', handleTakeDownIssue);
 authoritiesRouter.delete('/issues/:id', handleTakeDownIssue);
+
+authoritiesRouter.post('/issues/:id/approve-takedown', async (c: any) => {
+  const id = c.req.param('id');
+  const jwtUser = c.get('user') as any;
+  const now = Date.now();
+  
+  const issue = await c.env.DB.prepare('SELECT id, title, author_id, takedown_status FROM infrastructure_reports WHERE id = ? AND deleted_at IS NULL').bind(id).first() as any;
+  if (!issue) return c.json({ error: 'Issue not found' }, 404);
+  if (issue.takedown_status !== 'requested') return c.json({ error: 'No takedown requested' }, 400);
+
+  const updateIssue = c.env.DB.prepare('UPDATE infrastructure_reports SET takedown_status = ?, updated_at = ? WHERE id = ?').bind('taken-down', now, id);
+  const activityId = crypto.randomUUID();
+  const insertActivity = c.env.DB.prepare(`
+    INSERT INTO report_activity (id, report_id, actor_id, actor_type, activity_type, title, description, created_at) 
+    VALUES (?, ?, ?, 'authority', 'ISSUE_TAKEN_DOWN', 'Takedown Approved', 'Authority approved the user takedown request.', ?)
+  `).bind(activityId, id, jwtUser.sub, now);
+  
+  const mailId = 'mail-' + now + '-' + Math.random().toString(36).substring(2, 7);
+  const insertMail = c.env.DB.prepare(
+    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)'
+  ).bind(mailId, 'Takedown Approved', `Your request to take down issue "${issue.title}" has been approved.`, 'Authority Office', 'user', issue.author_id, now);
+
+  await c.env.DB.batch([updateIssue, insertActivity, insertMail]);
+  return c.json({ success: true, message: 'Takedown approved' });
+});
+
+authoritiesRouter.post('/issues/:id/reject-takedown', async (c: any) => {
+  const id = c.req.param('id');
+  const jwtUser = c.get('user') as any;
+  const now = Date.now();
+  let body: any = {};
+  try { body = await c.req.json(); } catch(e) {}
+  const reason = body.reason?.trim() || 'No reason provided.';
+
+  const issue = await c.env.DB.prepare('SELECT id, title, author_id, takedown_status FROM infrastructure_reports WHERE id = ? AND deleted_at IS NULL').bind(id).first() as any;
+  if (!issue) return c.json({ error: 'Issue not found' }, 404);
+  if (issue.takedown_status !== 'requested') return c.json({ error: 'No takedown requested' }, 400);
+
+  const updateIssue = c.env.DB.prepare('UPDATE infrastructure_reports SET takedown_status = NULL, takedown_reason = NULL, updated_at = ? WHERE id = ?').bind(now, id);
+  const activityId = crypto.randomUUID();
+  const insertActivity = c.env.DB.prepare(`
+    INSERT INTO report_activity (id, report_id, actor_id, actor_type, activity_type, title, description, created_at) 
+    VALUES (?, ?, ?, 'authority', 'TAKEDOWN_REJECTED', 'Takedown Rejected', ?, ?)
+  `).bind(activityId, id, jwtUser.sub, `Authority rejected the takedown request. Reason: ${reason}`, now);
+
+  const mailId = 'mail-' + now + '-' + Math.random().toString(36).substring(2, 7);
+  const insertMail = c.env.DB.prepare(
+    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)'
+  ).bind(mailId, 'Takedown Rejected', `Your request to take down issue "${issue.title}" has been rejected.\n\nReason: ${reason}`, 'Authority Office', 'user', issue.author_id, now);
+
+  await c.env.DB.batch([updateIssue, insertActivity, insertMail]);
+  return c.json({ success: true, message: 'Takedown rejected' });
+});
 
 // Legacy 7. PATCH /reports/:id (Keeping for backwards compatibility with Phase 1 frontend if any)
 authoritiesRouter.patch('/reports/:id', async (c) => {
@@ -533,22 +652,48 @@ authoritiesRouter.patch('/profile', async (c) => {
   return c.json({ success: true, user: updatedUser });
 });
 
-// 12. POST /contact-admin
-authoritiesRouter.post('/contact-admin', async (c) => {
+// 12. POST /admin-message
+authoritiesRouter.post('/admin-message', async (c) => {
   const jwtUser = c.get('user') as any;
   const body = await c.req.json();
   const now = Date.now();
   
-  if (!body.content || typeof body.content !== 'string' || body.content.trim() === '') {
-    return c.json({ error: 'Message content is required' }, 400);
+  if (!body.title || !body.content || typeof body.content !== 'string' || body.content.trim() === '') {
+    return c.json({ error: 'Message title and content are required' }, 400);
   }
   
   const mailId = crypto.randomUUID();
+  try { await c.env.DB.prepare('ALTER TABLE mail ADD COLUMN sender_id TEXT').run(); } catch(e) {}
+
+  const authUser = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(jwtUser.sub).first() as any;
+  const senderName = authUser?.username || 'Authority';
+
   await c.env.DB.prepare(`
     INSERT INTO mail 
-    (id, title, content, sender, recipient_type, expires_for_new_users, created_at) 
-    VALUES (?, ?, ?, ?, 'admin', 0, ?)
-  `).bind(mailId, 'Message from Authority', body.content.trim(), jwtUser.sub, now).run();
+    (id, title, content, sender, sender_id, recipient_type, expires_for_new_users, created_at) 
+    VALUES (?, ?, ?, ?, ?, 'admin', 0, ?)
+  `).bind(mailId, body.title.trim(), body.content.trim(), senderName, jwtUser.sub, now).run();
   
-  return c.json({ success: true });
+  return c.json({ success: true, mailId });
+});
+
+// 13. GET /admin-messages
+authoritiesRouter.get('/admin-messages', async (c) => {
+  const jwtUser = c.get('user') as any;
+  
+  try { await c.env.DB.prepare('ALTER TABLE mail ADD COLUMN sender_id TEXT').run(); } catch(e) {}
+
+  const messages = await c.env.DB.prepare(`
+    SELECT m.*, u.username as sender_name, u.avatar as sender_avatar 
+    FROM mail m 
+    LEFT JOIN users u ON m.sender_id = u.id 
+    WHERE (m.recipient_id = ? AND m.recipient_type = 'authority') 
+       OR (m.sender_id = ? AND m.recipient_type = 'admin')
+    ORDER BY m.created_at DESC
+  `).bind(jwtUser.sub, jwtUser.sub).all();
+  
+  const inbox = messages.results.filter((m: any) => m.recipient_type === 'authority');
+  const sent = messages.results.filter((m: any) => m.recipient_type === 'admin');
+  
+  return c.json({ success: true, inbox, sent });
 });

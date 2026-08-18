@@ -14,7 +14,7 @@ interface Props {
   onUpdate?: (updatedIssue: any) => void;
 }
 
-export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue }) => {
+export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue, onUpdate }) => {
   const { user } = useAuthStore();
   const { setFlyToLocation } = useMapStore();
   const { setActiveView } = useDemoStore();
@@ -33,6 +33,7 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue }) => 
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isLoadingTimeline, setIsLoadingTimeline] = useState(true);
+  const [isTakingDown, setIsTakingDown] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -43,7 +44,7 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue }) => 
     if (issue.photos) photos = typeof issue.photos === 'string' ? JSON.parse(issue.photos) : issue.photos;
   } catch(e) {}
 
-  const isResolved = issue.status === 'resolved';
+  const isReadOnly = issue.status === 'resolved' || issue.takedown_status === 'taken-down';
 
   // Fetch Timeline
   useEffect(() => {
@@ -85,6 +86,9 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue }) => 
           setMessages(res.messages);
           setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
         }
+        
+        // Mark as read in the background
+        apiClient(`/issues/${issue.id}/read`, { method: 'POST' }).catch(() => {});
       } catch (err) {
         console.error("Failed to fetch issue messages", err);
       } finally {
@@ -195,6 +199,31 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue }) => 
     }
   };
 
+  const handleTakedown = async () => {
+    const reason = window.prompt("Please provide a reason for taking down this issue report:");
+    if (!reason || !reason.trim()) return;
+
+    setIsTakingDown(true);
+    try {
+      const res = await apiClient(`/issues/${issue.id}/take-down`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason.trim() })
+      });
+      if (res.success) {
+        if (onUpdate) {
+          onUpdate({ ...issue, takedown_status: res.takedown_status, takedown_reason: reason.trim() });
+        }
+        alert(res.message);
+      } else {
+        alert(res.error || 'Failed to take down issue');
+      }
+    } catch (err: any) {
+      alert(`Error: ${err.message || 'Failed to take down issue'}`);
+    } finally {
+      setIsTakingDown(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -217,7 +246,7 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue }) => 
             <div className="flex items-center justify-between px-5 sm:px-6 py-3.5 border-b border-slate-200/80 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl shrink-0 z-10">
               <div>
                 <span className="text-[10px] font-black text-emerald-800 dark:text-emerald-400 tracking-wider uppercase">
-                  Case #{issue.id.substring(0, 8)}
+                  Case #{issue.id.toUpperCase()}
                 </span>
                 <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white truncate max-w-[240px] sm:max-w-sm">
                   {issue.title}
@@ -238,13 +267,18 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue }) => 
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white/80 dark:bg-slate-800/80 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Status</span>
-                  <div className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
-                    issue.status === 'resolved' ? 'bg-green-100 text-green-700 border border-green-200' :
-                    issue.status === 'in-progress' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                    'bg-amber-100 text-amber-700 border border-amber-200'
-                  }`}>
-                    {issue.status === 'resolved' ? <CheckCircle size={12}/> : <Clock size={12}/>}
-                    <span>{issue.status}</span>
+                  <div 
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
+                      issue.takedown_status === 'taken-down' ? 'bg-red-100 text-red-700 border border-red-200' :
+                      issue.takedown_status === 'requested' ? 'bg-orange-100 text-orange-700 border border-orange-200' :
+                      issue.status === 'resolved' ? 'bg-green-100 text-green-700 border border-green-200' :
+                      issue.status === 'in-progress' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                      'bg-amber-100 text-amber-700 border border-amber-200'
+                    }`}
+                    title={issue.takedown_reason ? `Reason: ${issue.takedown_reason}` : ''}
+                  >
+                    {issue.takedown_status === 'taken-down' ? <X size={12}/> : issue.status === 'resolved' ? <CheckCircle size={12}/> : <Clock size={12}/>}
+                    <span>{issue.takedown_status === 'taken-down' ? 'Taken Down' : issue.takedown_status === 'requested' ? 'Takedown Pending' : issue.status}</span>
                   </div>
                 </div>
 
@@ -299,7 +333,7 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue }) => 
               </div>
 
               {/* Location Card */}
-              {!isResolved && (
+              {!isReadOnly && (
                 <div 
                   className="bg-white/80 dark:bg-slate-800/80 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-700/80 shadow-sm flex items-start gap-3 cursor-pointer hover:border-emerald-500/50 transition-colors group"
                   onClick={() => {
@@ -363,14 +397,30 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue }) => 
             </div>
 
             {/* Bottom Action Footer */}
-            <div className="p-4 bg-white/90 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            <div className="p-4 bg-white/90 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-2">
               <button 
                 onClick={() => setShowChat(true)}
-                className="w-full py-3.5 bg-gradient-to-r from-emerald-700 to-teal-700 hover:from-emerald-600 hover:to-teal-600 text-white rounded-2xl font-black text-xs sm:text-sm uppercase tracking-wider shadow-md hover:shadow-lg active:scale-98 transition-all flex items-center justify-center gap-2"
+                className="w-full py-3.5 bg-gradient-to-r from-emerald-700 to-teal-700 hover:from-emerald-600 hover:to-teal-600 text-white rounded-2xl font-black text-xs sm:text-sm uppercase tracking-wider shadow-md hover:shadow-lg active:scale-98 transition-all flex items-center justify-center gap-2 relative"
               >
                 <MessageSquare size={16} />
-                <span>{isResolved ? 'View Conversation' : 'Open Conversation'}</span>
+                <span>{isReadOnly ? 'View Conversation' : 'Open Conversation'}</span>
+                {(issue.unread_count || 0) > 0 && (
+                  <div className="absolute -top-2 -right-2 shrink-0 min-w-[20px] h-[20px] bg-rose-500 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-800 shadow-sm z-10">
+                    <span className="text-[10px] font-bold text-white leading-none pt-[1px] px-1">{issue.unread_count > 99 ? '99+' : issue.unread_count}</span>
+                  </div>
+                )}
               </button>
+              
+              {!issue.takedown_status && (
+                <button
+                  onClick={handleTakedown}
+                  disabled={isTakingDown}
+                  className="w-full py-2.5 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 rounded-2xl font-bold text-xs uppercase tracking-wider transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isTakingDown ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+                  Take Down Issue
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -379,29 +429,33 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue }) => 
             
             {/* Chat Sticky Header */}
             <div className="flex items-center justify-between px-3.5 sm:px-5 py-3 border-b border-slate-200/80 dark:border-slate-800 bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl shrink-0 z-20">
-              <button 
-                onClick={() => setShowChat(false)} 
-                className="flex items-center gap-1 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-slate-800 px-2.5 py-1.5 rounded-xl text-xs font-black transition-colors"
-              >
-                <ChevronLeft size={18} />
-                <span>Details</span>
-              </button>
+              <div className="flex-1 flex justify-start">
+                <button 
+                  onClick={() => setShowChat(false)} 
+                  className="flex items-center gap-1 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-slate-800 px-2.5 py-1.5 rounded-xl text-xs font-black transition-colors"
+                >
+                  <ChevronLeft size={18} />
+                  <span>Details</span>
+                </button>
+              </div>
 
-              <div className="text-center">
+              <div className="text-center shrink-0">
                 <h3 className="font-black text-slate-900 dark:text-white text-xs sm:text-sm uppercase tracking-tight">
-                  Case #{issue.id.substring(0, 8)}
+                  Case #{issue.id.toUpperCase()}
                 </h3>
                 <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 block -mt-0.5">
                   {issue.authority_username ? `Authority: ${issue.authority_username}` : 'City Authority'}
                 </span>
               </div>
 
-              <button 
-                onClick={onClose} 
-                className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
-              >
-                <X size={16} />
-              </button>
+              <div className="flex-1 flex justify-end">
+                <button 
+                  onClick={onClose} 
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </div>
 
             {/* Chat Scrollable Message Body */}
@@ -457,31 +511,33 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue }) => 
             </div>
 
             {/* Chat Sticky Bottom Input Bar */}
-            <div className="p-2.5 sm:p-3.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-slate-200/80 dark:border-slate-800 shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-              <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-                <label className={`shrink-0 flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 bg-slate-100 dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 rounded-2xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-200 transition-colors shadow-sm ${isUploading ? 'opacity-50 pointer-events-none' : 'active:scale-95'}`}>
-                  {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
-                  <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={isUploading} />
-                </label>
-                
-                <input 
-                  type="text" 
-                  placeholder="Type a message..." 
-                  value={inputText} 
-                  onChange={(e) => setInputText(e.target.value)} 
-                  className="flex-1 bg-slate-100/90 dark:bg-slate-800/90 rounded-2xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-xs sm:text-sm font-medium text-slate-900 dark:text-white outline-none focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-emerald-500/20 transition-all placeholder:text-slate-400" 
-                  disabled={isUploading} 
-                />
-                
-                <button 
-                  type="submit" 
-                  disabled={(!inputText.trim() && !isUploading) || isUploading} 
-                  className="shrink-0 flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 bg-emerald-700 hover:bg-emerald-600 active:scale-95 text-white rounded-2xl shadow-md transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Send size={16} className="ml-0.5" />
-                </button>
-              </form>
-            </div>
+            {!isReadOnly && (
+              <div className="p-2.5 sm:p-3.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-slate-200/80 dark:border-slate-800 shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                  <label className={`shrink-0 flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 bg-slate-100 dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 rounded-2xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-200 transition-colors shadow-sm ${isUploading ? 'opacity-50 pointer-events-none' : 'active:scale-95'}`}>
+                    {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
+                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={isUploading} />
+                  </label>
+                  
+                  <input 
+                    type="text" 
+                    placeholder="Type a message..." 
+                    value={inputText} 
+                    onChange={(e) => setInputText(e.target.value)} 
+                    className="flex-1 bg-slate-100/90 dark:bg-slate-800/90 rounded-2xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-xs sm:text-sm font-medium text-slate-900 dark:text-white outline-none focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-emerald-500/20 transition-all placeholder:text-slate-400" 
+                    disabled={isUploading} 
+                  />
+                  
+                  <button 
+                    type="submit" 
+                    disabled={(!inputText.trim() && !isUploading) || isUploading} 
+                    className="shrink-0 flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 bg-emerald-700 hover:bg-emerald-600 active:scale-95 text-white rounded-2xl shadow-md transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Send size={16} className="ml-0.5" />
+                  </button>
+                </form>
+              </div>
+            )}
           </div>
         )}
       </div>

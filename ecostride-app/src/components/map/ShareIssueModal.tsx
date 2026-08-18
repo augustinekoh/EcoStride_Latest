@@ -37,13 +37,17 @@ export const ShareIssueModal: React.FC<Props> = ({ issueId, isOpen, onClose, onS
 
   if (!isOpen) return null;
 
-  const handleShare = async (targetId: string) => {
+  const handleShare = async (targetId: string, isFriend = false) => {
     setSharing(true);
     setError('');
     try {
+      let finalTargetId = targetId;
+      if (isFriend && auth.currentUser) {
+        finalTargetId = `1to1_${[auth.currentUser.uid, targetId].sort().join('_')}`;
+      }
       await apiClient(`/issues/${issueId}/share`, {
         method: 'POST',
-        body: JSON.stringify({ targetId })
+        body: JSON.stringify({ targetId: finalTargetId })
       });
       if (onShared) onShared();
       onClose();
@@ -109,7 +113,7 @@ export const ShareIssueModal: React.FC<Props> = ({ issueId, isOpen, onClose, onS
                   <button
                     key={friend.id}
                     disabled={sharing}
-                    onClick={() => handleShare(friend.id)}
+                    onClick={() => handleShare(friend.id, true)}
                     className="w-full flex items-center gap-3 p-2 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left disabled:opacity-50 border border-transparent hover:border-slate-100 dark:hover:border-slate-700"
                   >
                     <img 

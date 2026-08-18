@@ -23,6 +23,27 @@ export const CreateIssueModal: React.FC<Props> = ({ isOpen, onClose, currentLoca
   const [images, setImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [dragY, setDragY] = useState(0);
+  const [startY, setStartY] = useState(0);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setStartY(e.touches[0].clientY);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const currentY = e.touches[0].clientY;
+    if (currentY > startY) {
+      setDragY(currentY - startY);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (dragY > 100) {
+      onClose();
+    }
+    setDragY(0);
+    setStartY(0);
+  };
 
   // Sync with user store when opened
   useEffect(() => {
@@ -113,10 +134,23 @@ export const CreateIssueModal: React.FC<Props> = ({ isOpen, onClose, currentLoca
       <div className="absolute inset-0 -z-10" onClick={onClose} />
 
       {/* Main Glassmorphic Modal Card */}
-      <div className="relative w-full sm:max-w-lg bg-white/85 dark:bg-slate-900/85 backdrop-blur-2xl backdrop-saturate-150 border-t sm:border border-white/60 dark:border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.3)] rounded-t-[32px] sm:rounded-[32px] max-h-[92vh] sm:max-h-[85vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-8 sm:zoom-in-95 duration-200">
+      <div 
+        className="relative w-full sm:max-w-lg bg-white/85 dark:bg-slate-900/85 backdrop-blur-2xl backdrop-saturate-150 border-t sm:border border-white/60 dark:border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.3)] rounded-t-[32px] sm:rounded-[32px] max-h-[92vh] sm:max-h-[85vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-8 sm:zoom-in-95 duration-200"
+        style={{ 
+          transform: `translateY(${dragY}px)`, 
+          transition: dragY === 0 ? 'transform 0.2s' : 'none' 
+        }}
+      >
         
-        {/* Mobile Drag Indicator */}
-        <div className="w-12 h-1.5 bg-slate-300/80 dark:bg-slate-700/80 rounded-full mx-auto my-2.5 sm:hidden shrink-0" />
+        {/* Mobile Drag Indicator & Header Touch Area */}
+        <div 
+          className="w-full pt-3 pb-1 flex justify-center sm:hidden shrink-0 cursor-grab active:cursor-grabbing touch-none"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div className="w-12 h-1.5 bg-slate-300/80 dark:bg-slate-700/80 rounded-full pointer-events-none" />
+        </div>
 
         {/* Sticky Header with Frosted Glass */}
         <div className="sticky top-0 z-20 backdrop-blur-xl bg-white/70 dark:bg-slate-900/70 border-b border-slate-200/60 dark:border-slate-800/80 px-5 py-3.5 flex items-center justify-between">
@@ -145,7 +179,7 @@ export const CreateIssueModal: React.FC<Props> = ({ isOpen, onClose, currentLoca
         </div>
 
         {/* Scrollable Form Body */}
-        <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 p-5 space-y-4 text-slate-900 dark:text-slate-100">
+        <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 p-4 sm:p-5 space-y-3 sm:space-y-4 text-slate-900 dark:text-slate-100">
           
           {/* Live GPS Coordinates Banner */}
           {currentLocation && (
@@ -170,7 +204,7 @@ export const CreateIssueModal: React.FC<Props> = ({ isOpen, onClose, currentLoca
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               required
-              className="w-full bg-white/70 dark:bg-slate-800/70 backdrop-blur-md border border-slate-200 dark:border-slate-700/80 focus:border-emerald-500 dark:focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 rounded-2xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white placeholder:text-slate-400 outline-none transition-all shadow-sm"
+              className="w-full bg-white/70 dark:bg-slate-800/70 backdrop-blur-md border border-slate-200 dark:border-slate-700/80 focus:border-emerald-500 dark:focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-900 dark:text-white placeholder:text-slate-400 outline-none transition-all shadow-sm"
             />
           </div>
 
@@ -184,12 +218,12 @@ export const CreateIssueModal: React.FC<Props> = ({ isOpen, onClose, currentLoca
               placeholder="Provide more details regarding the damage or safety concern..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full bg-white/70 dark:bg-slate-800/70 backdrop-blur-md border border-slate-200 dark:border-slate-700/80 focus:border-emerald-500 dark:focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 rounded-2xl px-4 py-3 text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-400 outline-none transition-all min-h-[90px] resize-none shadow-sm"
+              className="w-full bg-white/70 dark:bg-slate-800/70 backdrop-blur-md border border-slate-200 dark:border-slate-700/80 focus:border-emerald-500 dark:focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-400 outline-none transition-all min-h-[70px] sm:min-h-[90px] resize-none shadow-sm"
             />
           </div>
 
           {/* Frosted Jurisdiction Glass Card */}
-          <div className="bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-white/40 dark:from-emerald-950/30 dark:via-slate-800/60 dark:to-slate-800/40 backdrop-blur-md p-4 rounded-2xl border border-emerald-500/25 dark:border-emerald-500/20 shadow-sm flex flex-col gap-3">
+          <div className="bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-white/40 dark:from-emerald-950/30 dark:via-slate-800/60 dark:to-slate-800/40 backdrop-blur-md p-3 sm:p-4 rounded-xl border border-emerald-500/25 dark:border-emerald-500/20 shadow-sm flex flex-col gap-2.5">
             <div className="flex items-center gap-2 text-xs font-black text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">
               <MapPin size={15} className="text-emerald-600 dark:text-emerald-400" />
               <span>Assigned Jurisdiction <span className="text-rose-500">*</span></span>
@@ -263,7 +297,7 @@ export const CreateIssueModal: React.FC<Props> = ({ isOpen, onClose, currentLoca
               placeholder="e.g., Near main gate, 3rd lamp post opposite bus stop"
               value={specificLocation}
               onChange={(e) => setSpecificLocation(e.target.value)}
-              className="w-full bg-white/70 dark:bg-slate-800/70 backdrop-blur-md border border-slate-200 dark:border-slate-700/80 focus:border-emerald-500 dark:focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 rounded-2xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white placeholder:text-slate-400 outline-none transition-all shadow-sm"
+              className="w-full bg-white/70 dark:bg-slate-800/70 backdrop-blur-md border border-slate-200 dark:border-slate-700/80 focus:border-emerald-500 dark:focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-900 dark:text-white placeholder:text-slate-400 outline-none transition-all shadow-sm"
             />
           </div>
 
@@ -303,7 +337,7 @@ export const CreateIssueModal: React.FC<Props> = ({ isOpen, onClose, currentLoca
             {imagePreviews.length > 0 ? (
               <div className="flex gap-2.5 overflow-x-auto pb-1.5 pt-0.5">
                 {imagePreviews.map((preview, idx) => (
-                  <div key={idx} className="relative w-24 h-24 shrink-0 rounded-2xl overflow-hidden border border-white/60 dark:border-white/20 shadow-md group">
+                  <div key={idx} className="relative w-20 h-20 sm:w-24 sm:h-24 shrink-0 rounded-xl overflow-hidden border border-white/60 dark:border-white/20 shadow-md group">
                     <img src={preview} alt="Preview" className="w-full h-full object-cover" />
                     <button 
                       type="button"
@@ -319,7 +353,7 @@ export const CreateIssueModal: React.FC<Props> = ({ isOpen, onClose, currentLoca
                 ))}
               </div>
             ) : (
-              <div className="border border-dashed border-slate-300 dark:border-slate-700 bg-white/40 dark:bg-slate-800/40 rounded-2xl p-4 flex flex-col items-center justify-center text-center backdrop-blur-sm">
+              <div className="border border-dashed border-slate-300 dark:border-slate-700 bg-white/40 dark:bg-slate-800/40 rounded-xl p-3 sm:p-4 flex flex-col items-center justify-center text-center backdrop-blur-sm">
                 <ImagePlus size={24} className="text-slate-400 mb-1" />
                 <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                   Upload up to 3 photos of the infrastructure issue
@@ -333,7 +367,7 @@ export const CreateIssueModal: React.FC<Props> = ({ isOpen, onClose, currentLoca
             <button 
               type="submit" 
               disabled={isSubmitting}
-              className="w-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 active:scale-[0.99] text-white rounded-2xl py-3.5 font-black uppercase tracking-wider shadow-[0_8px_20px_rgba(225,29,72,0.35)] border border-white/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 active:scale-[0.99] text-white rounded-xl py-3 font-black uppercase tracking-wider shadow-[0_8px_20px_rgba(225,29,72,0.35)] border border-white/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
                 <>

@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS mail (
   title TEXT NOT NULL,
   content TEXT NOT NULL,
   sender TEXT NOT NULL,
+  sender_id TEXT,
   recipient_name TEXT,
   recipient_type TEXT NOT NULL,
   recipient_id TEXT,
@@ -216,6 +217,8 @@ CREATE TABLE IF NOT EXISTS infrastructure_reports (
   country             TEXT,
   state               TEXT,
   city                TEXT,
+  takedown_status     TEXT,
+  takedown_reason     TEXT,
   created_at          INTEGER NOT NULL,
   updated_at          INTEGER NOT NULL,
   resolved_at         INTEGER,
@@ -278,6 +281,9 @@ CREATE TABLE IF NOT EXISTS authority_invitations (
   used INTEGER DEFAULT 0 CHECK (used IN (0, 1)),
   created_at INTEGER NOT NULL,
   created_by TEXT NOT NULL,
+  country TEXT,
+  state TEXT,
+  city TEXT,
   FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_authority_invitations_token ON authority_invitations(token_hash);

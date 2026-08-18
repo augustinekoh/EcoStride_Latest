@@ -25,6 +25,8 @@ interface UserState {
   bannedUntil?: number
   communityUnreadCount: number
   friendsUnreadCount: number
+  issuesUnreadCount: number
+  authorityUnreadCount: number
   setCoins: (coins: number | ((prev: number) => number)) => void
   setGuildId: (id: string | null) => void
   totalTreesPlanted: number
@@ -169,7 +171,11 @@ export const useUserStore = create<UserState>()(
           userCoins: 0, totalCarbonSaved: 0, totalDistanceKm: 0, streaks: 0, vouchersCollected: 0,
           challengesCompleted: 0, username: '', firstName: '', lastName: '', email: '',
           player_id: undefined, bio: '', country: '', state: '', city: '', avatar: null, guildId: null, guildName: null,
-          bannedUntil: undefined, communityUnreadCount: 0, friendsUnreadCount: 0,
+          bannedUntil: undefined,
+          communityUnreadCount: 0,
+          friendsUnreadCount: 0,
+          issuesUnreadCount: 0,
+          authorityUnreadCount: 0,
           totalTreesPlanted: 0, newsEnabled: false, dailyReminderEnabled: true,
           newFollowerEnabled: true, shareActivity: true, doNotDisturb: false, isDarkMode: false,
           shareActivityStatus: true, isPublicProfile: true, allowFriendRequests: true,

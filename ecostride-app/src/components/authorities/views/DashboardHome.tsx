@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../../../lib/api';
 import { useAuthStore } from '../../../stores/useAuthStore';
+import { useUserStore } from '../../../stores/useUserStore';
 import { Calendar as CalendarIcon, CheckCircle, Clock, AlertCircle, X, ChevronLeft, ChevronRight, Edit2, TrendingUp, BarChart2, Briefcase, Plus, CalendarDays, Activity, ClipboardList, Radio, Map, Network, Layers } from 'lucide-react';
 
 interface Stats {
@@ -45,6 +47,7 @@ function ErrorFallback({ error, reset }: { error: Error, reset: () => void }) {
 }
 
 export function DashboardHome() {
+  const navigate = useNavigate();
   const { user } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -71,7 +74,11 @@ export function DashboardHome() {
       setCriticalReports(criticalRes.critical || []);
       
       const workloadRes = await apiClient(`/authorities/dashboard/workload`);
-      setWorkload(workloadRes.workload || []);
+      const fetchedWorkload = (workloadRes.workload || []).filter((w: any) => w.takedown_status !== 'taken-down');
+      setWorkload(fetchedWorkload);
+      
+      const unreadTotal = fetchedWorkload.reduce((sum: number, w: any) => sum + (w.unread_count || 0), 0);
+      useUserStore.getState().setLocalData({ authorityUnreadCount: unreadTotal });
       
       setError(null);
     } catch (err: any) {
@@ -140,17 +147,17 @@ export function DashboardHome() {
   if (error) return <ErrorFallback error={error} reset={() => { setLoading(true); setError(null); fetchData(); }} />;
 
   return (
-    <div className="h-full bg-[#224C31] overflow-y-auto relative">
+    <div className="h-full bg-[#224C31] overflow-y-auto relative overflow-x-hidden">
       {/* Subtle organic background artwork */}
       <Network size={800} className="absolute -top-40 -left-20 text-[#34D399] opacity-[0.15] pointer-events-none stroke-1 mix-blend-overlay" />
       <Map size={800} className="absolute bottom-0 right-0 text-[#FBBF24] opacity-[0.12] pointer-events-none stroke-1 mix-blend-overlay translate-y-1/4 translate-x-1/4" />
       
-      <div className="w-full max-w-[1600px] mx-auto p-8 animate-in fade-in duration-500 relative z-10">
+      <div className="w-full max-w-[1600px] mx-auto p-4 md:p-8 animate-in fade-in duration-500 relative z-10">
         
         {/* Header */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-8">
           <div>
-            <h1 className="text-4xl font-black text-white tracking-tight">
+            <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight">
               {getGreeting()}, {user?.username || 'Authority'}
             </h1>
             <p className="text-emerald-100/70 mt-2 font-bold flex items-center gap-2">
@@ -158,7 +165,7 @@ export function DashboardHome() {
               {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </p>
           </div>
-          <div className="bg-gradient-to-r from-[#42694D] to-[#D5A754] text-white px-6 py-3 rounded-[24px] font-bold flex items-center gap-3 shadow-lg border-none">
+          <div className="bg-gradient-to-r from-[#42694D] to-[#D5A754] text-white px-5 md:px-6 py-2.5 md:py-3 rounded-[24px] font-bold flex items-center gap-2 md:gap-3 shadow-lg border-none text-sm md:text-base">
             <span className="relative flex h-3 w-3">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-400"></span>
@@ -309,18 +316,18 @@ export function DashboardHome() {
                   <span>💼</span> My Workload
                 </h3>
                 
-                <div className="flex bg-[#EAF0EC] p-1 rounded-full relative z-10">
+                <div className="flex bg-[#EAF0EC] p-1 rounded-full relative z-10 w-full sm:w-auto overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                   <button 
                     onClick={() => setWorkloadTab('cases')}
-                    className={`px-4 py-2 rounded-full text-sm font-black transition-all ${workloadTab === 'cases' ? 'bg-white text-[#1E432B] shadow-sm' : 'text-[#9BB3A3] hover:text-[#4A6B53]'}`}
+                    className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-black transition-all whitespace-nowrap shrink-0 ${workloadTab === 'cases' ? 'bg-white text-[#1E432B] shadow-sm' : 'text-[#9BB3A3] hover:text-[#4A6B53]'}`}
                   >
-                    Active Cases <span className="ml-2 bg-slate-200 text-[#4A6B53] px-2 py-0.5 rounded-full text-xs">{workload.length}</span>
+                    Active Cases <span className="bg-slate-200 text-[#4A6B53] px-1.5 md:px-2 py-0.5 rounded-full text-[10px] md:text-xs">{workload.length}</span>
                   </button>
                   <button 
                     onClick={() => setWorkloadTab('tasks')}
-                    className={`px-4 py-2 rounded-full text-sm font-black transition-all ${workloadTab === 'tasks' ? 'bg-white text-[#1E432B] shadow-sm' : 'text-[#9BB3A3] hover:text-[#4A6B53]'}`}
+                    className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-black transition-all whitespace-nowrap shrink-0 ${workloadTab === 'tasks' ? 'bg-white text-[#1E432B] shadow-sm' : 'text-[#9BB3A3] hover:text-[#4A6B53]'}`}
                   >
-                    Calendar Tasks <span className="ml-2 bg-slate-200 text-[#4A6B53] px-2 py-0.5 rounded-full text-xs">{tasks.length}</span>
+                    Calendar Tasks <span className="bg-slate-200 text-[#4A6B53] px-1.5 md:px-2 py-0.5 rounded-full text-[10px] md:text-xs">{tasks.length}</span>
                   </button>
                 </div>
               </div>
@@ -337,13 +344,39 @@ export function DashboardHome() {
                   ) : (
                     workload.map(issue => {
                       const daysOpen = Math.floor((Date.now() - issue.created_at) / (1000 * 60 * 60 * 24));
+                      let photos: string[] = [];
+                      try {
+                        if (issue.photos && typeof issue.photos === 'string') {
+                          photos = JSON.parse(issue.photos);
+                        } else if (Array.isArray(issue.photos)) {
+                          photos = issue.photos;
+                        }
+                      } catch (e) {}
+                      const coverPhoto = photos.length > 0 ? photos[0] : null;
+
                       return (
-                        <div key={issue.id} className="p-6 rounded-[24px] bg-white border border-[#EAF0EC] shadow-[0_2px_10px_-4px_rgba(34,76,49,0.1)] hover:-translate-y-1 hover:shadow-[0_8px_20px_-6px_rgba(34,76,49,0.15)] transition-all duration-300 cursor-pointer group flex flex-col h-full relative overflow-hidden">
+                        <div 
+                          key={issue.id} 
+                          onClick={() => navigate('/authorities/issues', { state: { openIssue: issue } })}
+                          className="p-6 rounded-[24px] bg-white border border-[#EAF0EC] shadow-[0_2px_10px_-4px_rgba(34,76,49,0.1)] hover:-translate-y-1 hover:shadow-[0_8px_20px_-6px_rgba(34,76,49,0.15)] transition-all duration-300 cursor-pointer group flex flex-col h-full relative overflow-visible"
+                        >
+                          {(issue.unread_count || 0) > 0 && (
+                            <div className="absolute -top-2 -right-2 shrink-0 min-w-[20px] h-[20px] bg-rose-500 rounded-full flex items-center justify-center border-2 border-white shadow-sm z-20">
+                              <span className="text-[10px] font-bold text-white leading-none pt-[1px] px-1">{issue.unread_count > 99 ? '99+' : issue.unread_count}</span>
+                            </div>
+                          )}
                           <div className="absolute -top-10 -right-10 w-24 h-24 bg-gradient-to-br from-[#34D399]/10 to-transparent rounded-full blur-2xl pointer-events-none group-hover:scale-150 transition-transform duration-700"></div>
-                          <h4 className="text-[17px] font-black text-[#1E432B] truncate mb-1.5 relative z-10">{issue.title}</h4>
-                          <p className="text-[13px] font-medium text-[#738F7C] line-clamp-1 mb-6 flex-1 relative z-10">
+                          <div className="flex items-start justify-between gap-2 z-10 mb-1.5 relative">
+                            <h4 className="text-[17px] font-black text-[#1E432B] truncate">{issue.title}</h4>
+                          </div>
+                          <p className="text-[13px] font-medium text-[#738F7C] line-clamp-1 mb-4 relative z-10">
                             <Clock size={12} className="inline mr-1" /> {daysOpen === 0 ? 'Opened today' : `${daysOpen} days open`}
                           </p>
+                          {coverPhoto && (
+                            <div className="relative w-full h-32 rounded-[16px] overflow-hidden mb-4 bg-[#F3F7F4] shrink-0 z-10">
+                              <img src={coverPhoto} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                            </div>
+                          )}
                           <div className="flex items-center justify-between mt-auto relative z-10">
                             <div className="flex flex-wrap gap-2">
                               <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
@@ -351,8 +384,12 @@ export function DashboardHome() {
                                 issue.severity === 'Major' ? 'bg-[#FEF3C7] text-[#D97706]' :
                                 'bg-[#D1FAE5] text-[#059669]'
                               }`}>{issue.severity}</span>
-                              <span className="px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-600">
-                                {issue.status}
+                              <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                issue.takedown_status === 'taken-down' ? 'bg-[#FFE4E6] text-[#E11D48]' :
+                                issue.takedown_status === 'requested' ? 'bg-[#FFEDD5] text-[#C2410C]' :
+                                'bg-blue-50 text-blue-600'
+                              }`}>
+                                {issue.takedown_status === 'taken-down' ? 'Taken Down' : issue.takedown_status === 'requested' ? 'Takedown Pending' : issue.status}
                               </span>
                             </div>
                             <span className="text-xs font-black text-[#1E432B] opacity-0 group-hover:opacity-100 transition-opacity">View →</span>
@@ -377,7 +414,7 @@ export function DashboardHome() {
                           <div className="absolute -top-10 -right-10 w-24 h-24 bg-gradient-to-br from-[#FBBF24]/10 to-transparent rounded-full blur-2xl pointer-events-none group-hover:scale-150 transition-transform duration-700"></div>
                           <button 
                             onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }}
-                            className="absolute top-4 right-4 text-[#B5C9BE] hover:text-[#E11D48] hover:bg-[#FFE4E6] p-1.5 rounded-full transition-colors opacity-0 group-hover:opacity-100 z-20"
+                            className="absolute top-4 right-4 text-[#B5C9BE] hover:text-[#E11D48] hover:bg-[#FFE4E6] p-1.5 rounded-full transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 z-20"
                             title="Delete Task"
                           >
                             <X size={16} strokeWidth={3} />
@@ -478,8 +515,8 @@ export function DashboardHome() {
 
       {/* Task Creation Modal */}
       {isTaskModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#224C31]/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border-4 border-white/50">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#224C31]/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md max-h-[90vh] overflow-y-auto rounded-[32px] shadow-2xl animate-in zoom-in-95 duration-200 border-4 border-white/50 custom-scrollbar">
             <div className="px-8 py-6 border-b border-[#E1EAE4] flex items-center justify-between bg-[#F3F7F4]/50">
               <div>
                 <h3 className="font-black text-2xl text-[#1E432B]">Record Task</h3>

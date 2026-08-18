@@ -42,6 +42,8 @@ export const ProfileView: React.FC = () => {
   
   const { user } = useAuthStore();
   const { setActiveView } = useDemoStore();
+  const issuesUnreadCount = useUserStore(state => state.issuesUnreadCount) || 0;
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isEditingBio, setIsEditingBio] = useState(false);
   const [editBioText, setEditBioText] = useState(bio || '');
@@ -67,12 +69,14 @@ export const ProfileView: React.FC = () => {
   const [showStore, setShowStore] = useState(false);
   const [reportedCasesCount, setReportedCasesCount] = useState<number>(0);
 
+
   useEffect(() => {
     if (user?.uid) {
       fetchVouchers();
       apiClient(`/users/${user.uid}/issues`).then(res => {
         if (res.issues) {
-          setReportedCasesCount(res.issues.length);
+          const activeIssues = res.issues.filter((i: any) => i.takedown_status !== 'taken-down');
+          setReportedCasesCount(activeIssues.length);
         }
       }).catch(() => {});
     }
@@ -276,10 +280,17 @@ export const ProfileView: React.FC = () => {
       <div className="grid grid-cols-2 gap-4 relative z-10">
         <div 
           onClick={() => setActiveView('cases')}
-          className="glass-card p-4 flex flex-col gap-2 cursor-pointer hover:shadow-md hover:-translate-y-1 transition-transform group border border-white/60"
+          className="glass-card p-4 flex flex-col gap-2 cursor-pointer hover:shadow-md hover:-translate-y-1 transition-transform group border border-white/60 relative"
         >
+          {(issuesUnreadCount || 0) > 0 && (
+            <div className="absolute -top-2 -right-2 shrink-0 min-w-[20px] h-[20px] bg-rose-500 rounded-full flex items-center justify-center border-2 border-white shadow-sm z-20">
+              <span className="text-[10px] font-bold text-white leading-none pt-[1px] px-1">{issuesUnreadCount > 99 ? '99+' : issuesUnreadCount}</span>
+            </div>
+          )}
           <div className="w-10 h-10 bg-orange-100/50 rounded-full flex items-center justify-center text-orange-500 group-hover:scale-110 transition-transform"><Building2 size={20}/></div>
-          <span className="text-xs font-bold text-[var(--color-text-muted)]">Cases Reported</span>
+          <div className="flex justify-between items-start">
+            <span className="text-xs font-bold text-[var(--color-text-muted)]">Cases Reported</span>
+          </div>
           <span className="text-xl font-black text-[var(--color-text-main)] flex items-center gap-2">
             {reportedCasesCount} 
             <span className="text-[10px] text-orange-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">View Reports &rarr;</span>

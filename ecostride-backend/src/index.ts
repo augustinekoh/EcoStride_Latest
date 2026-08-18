@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { decodeJwt } from 'jose';
+import { decodeJwt, SignJWT, importPKCS8 } from 'jose';
 import { checkAndAwardBadges } from './badgeEngine';
 import { AwsClient } from 'aws4fetch';
 import { authoritiesRouter } from './authorities';
@@ -26,6 +26,7 @@ type Bindings = {
   CHAT_ROOM: DurableObjectNamespace;
   ISSUE_CHAT: DurableObjectNamespace;
   AVATARS_BUCKET: R2Bucket;
+  FIREBASE_SERVICE_ACCOUNT?: string;
   R2_ACCOUNT_ID: string;
   R2_ACCESS_KEY_ID: string;
   R2_SECRET_ACCESS_KEY: string;
@@ -38,6 +39,50 @@ type Variables = {
 const app = new Hono<{ Bindings: Bindings, Variables: Variables }>();
 
 app.use('*', cors());
+
+export async function deleteFirebaseAuthUser(env: Bindings, uid: string) {
+  if (!env.FIREBASE_SERVICE_ACCOUNT) {
+    throw new Error('FIREBASE_SERVICE_ACCOUNT not configured');
+  }
+  const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+  
+  const privateKey = await importPKCS8(sa.private_key, 'RS256');
+  const jwt = await new SignJWT({
+    iss: sa.client_email,
+    sub: sa.client_email,
+    aud: 'https://oauth2.googleapis.com/token',
+    scope: 'https://www.googleapis.com/auth/identitytoolkit'
+  })
+    .setProtectedHeader({ alg: 'RS256' })
+    .setIssuedAt()
+    .setExpirationTime('1h')
+    .sign(privateKey);
+
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`
+  });
+  
+  if (!tokenRes.ok) throw new Error('Failed to get Google OAuth token');
+  const tokenData = await tokenRes.json() as any;
+  const accessToken = tokenData.access_token;
+
+  const delRes = await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${sa.project_id}/accounts:delete`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ localId: uid })
+  });
+
+  if (!delRes.ok) {
+    const errData = await delRes.text();
+    console.error('Failed to delete Firebase user:', errData);
+    throw new Error('Failed to delete user from Firebase Auth');
+  }
+}
 
 app.get('/api/debug-schema', async (c) => {
   const schema = await c.env.DB.prepare('PRAGMA table_info(chat_messages)').all();
@@ -99,14 +144,20 @@ app.get('/api/authorities/verify-token/:token', async (c) => {
   const tokenHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
   const invitation: any = await c.env.DB.prepare(
-    'SELECT email, expires_at, used FROM authority_invitations WHERE token_hash = ?'
+    'SELECT email, expires_at, used, country, state, city FROM authority_invitations WHERE token_hash = ?'
   ).bind(tokenHash).first();
 
   if (!invitation) return c.json({ error: 'Invalid token' }, 404);
   if (invitation.used === 1) return c.json({ error: 'Token has already been used' }, 400);
   if (invitation.expires_at < Date.now()) return c.json({ error: 'Token has expired' }, 400);
 
-  return c.json({ success: true, email: invitation.email });
+  return c.json({ 
+    success: true, 
+    email: invitation.email,
+    country: invitation.country,
+    state: invitation.state,
+    city: invitation.city
+  });
 });
 
 // POST register authority
@@ -163,17 +214,30 @@ app.post('/api/authorities/register', async (c) => {
     if (!existing) isUnique = true;
   }
 
+  // Ensure columns exist (auto-migration) to prevent 500 errors
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN position TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN bio TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN country TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN state TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN city TEXT').run(); } catch(e) {}
+
   // Upsert user as authority (match by id or email)
   const userExists = await c.env.DB.prepare('SELECT id FROM users WHERE id = ? OR email = ?').bind(jwtUser.sub, jwtUser.email).first() as any;
-  if (userExists) {
-    await c.env.DB.prepare(
-      'UPDATE users SET id = ?, role = ?, email = ?, username = ?, position = ?, bio = ?, avatar = ?, country = ?, state = ?, city = ? WHERE id = ?'
-    ).bind(jwtUser.sub, 'authority', jwtUser.email, name, position, position, avatar, country, state, city, userExists.id).run();
-  } else {
-    await c.env.DB.prepare(
-      'INSERT INTO users (id, email, username, player_id, role, created_at, position, bio, avatar, country, state, city, coins, total_distance_km) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)'
-    ).bind(jwtUser.sub, jwtUser.email, name, playerId, 'authority', Date.now(), position, position, avatar, country, state, city).run();
+
+  // Ensure username uniqueness
+  const existingName = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(name).first();
+  if (existingName) {
+    return c.json({ error: 'This username is already taken. Please choose another one.' }, 400);
   }
+
+  if (userExists) {
+    return c.json({ error: 'This email is already in use by a regular citizen or merchant. You must use a brand new official email to register as an Authority.' }, 400);
+  }
+
+  await c.env.DB.prepare(
+    'INSERT INTO users (id, email, username, player_id, role, created_at, position, bio, avatar, country, state, city, coins, total_distance_km) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)'
+  ).bind(jwtUser.sub, jwtUser.email, name, playerId, 'authority', Date.now(), position, position, avatar, country, state, city).run();
 
   return c.json({ success: true });
 });
@@ -329,7 +393,7 @@ app.get('/api/users/:id', async (c) => {
 
   let user: any = await c.env.DB.prepare(`
     SELECT users.*, guilds.name as guildName,
-    (SELECT COUNT(*) FROM infrastructure_reports WHERE author_id = users.id AND deleted_at IS NULL) as cases_reported
+    (SELECT COUNT(*) FROM infrastructure_reports WHERE author_id = users.id AND deleted_at IS NULL AND (takedown_status IS NULL OR takedown_status != 'taken-down')) as cases_reported
     FROM users 
     LEFT JOIN guilds ON users.guild_id = guilds.id 
     WHERE users.id = ?
@@ -339,7 +403,7 @@ app.get('/api/users/:id', async (c) => {
   if (!user && jwtUser && jwtUser.email) {
     const userByEmail: any = await c.env.DB.prepare(`
       SELECT users.*, guilds.name as guildName,
-      (SELECT COUNT(*) FROM infrastructure_reports WHERE author_id = users.id AND deleted_at IS NULL) as cases_reported
+      (SELECT COUNT(*) FROM infrastructure_reports WHERE author_id = users.id AND deleted_at IS NULL AND (takedown_status IS NULL OR takedown_status != 'taken-down')) as cases_reported
       FROM users 
       LEFT JOIN guilds ON users.guild_id = guilds.id 
       WHERE users.email = ?
@@ -459,7 +523,20 @@ app.get('/api/users/:id/issues', async (c) => {
     ORDER BY r.created_at DESC
   `).bind(id).all();
   
-  return c.json({ issues: issues.results });
+  const issuesWithUnread = await Promise.all(issues.results.map(async (issue: any) => {
+    const guildId = `issue_${issue.id}`;
+    const lastReadRecord = await c.env.DB.prepare('SELECT last_read_at FROM user_chat_reads WHERE user_id = ? AND guild_id = ?').bind(id, guildId).first() as any;
+    const lastReadAt = lastReadRecord ? lastReadRecord.last_read_at : 0;
+    
+    const unreadRecord = await c.env.DB.prepare('SELECT COUNT(*) as unread_count FROM issue_messages WHERE issue_id = ? AND created_at > ? AND sender_id != ?').bind(issue.id, lastReadAt, id).first() as any;
+    
+    return {
+      ...issue,
+      unread_count: unreadRecord ? unreadRecord.unread_count : 0
+    };
+  }));
+
+  return c.json({ issues: issuesWithUnread });
 });
 
 // POST user avatar upload
@@ -632,10 +709,25 @@ app.delete('/api/users/:id', async (c) => {
   await c.env.DB.prepare('UPDATE purchases SET user_id = ? WHERE user_id = ? AND merchant_id IS NOT NULL').bind('deleted_user', id).run();
   await c.env.DB.prepare('DELETE FROM purchases WHERE user_id = ? AND merchant_id IS NULL').bind(id).run();
   
-    // Then delete user
-    await c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(id).run();
-    
-    return c.json({ success: true });
+  // Reassign authority-related tables to 'deleted_user' to avoid FK violations
+  await c.env.DB.prepare('UPDATE infrastructure_reports SET author_id = ? WHERE author_id = ?').bind('deleted_user', id).run();
+  await c.env.DB.prepare("UPDATE infrastructure_reports SET authority_id = NULL, status = CASE WHEN status = 'in-progress' THEN 'pending' ELSE status END WHERE authority_id = ?").bind(id).run();
+  await c.env.DB.prepare('UPDATE authority_tasks SET created_by = ? WHERE created_by = ?').bind('deleted_user', id).run();
+  await c.env.DB.prepare('UPDATE issue_messages SET sender_id = ? WHERE sender_id = ?').bind('deleted_user', id).run();
+  await c.env.DB.prepare('UPDATE report_activity SET actor_id = ? WHERE actor_id = ?').bind('deleted_user', id).run();
+  await c.env.DB.prepare('UPDATE authority_invitations SET created_by = ? WHERE created_by = ?').bind('deleted_user', id).run();
+
+  // Try to delete Firebase Auth user. (If not configured or errors, we log it but don't fail the DB deletion)
+  try {
+    await deleteFirebaseAuthUser(c.env, id);
+  } catch (authErr) {
+    console.error("Failed to delete Firebase Auth user (could be local dev or already deleted):", authErr);
+  }
+
+  // Then delete user from D1
+  await c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(id).run();
+  
+  return c.json({ success: true });
   } catch (err: any) {
     console.error("DELETE user error:", err);
     return c.json({ error: err.message }, 500);
@@ -672,6 +764,13 @@ app.post('/api/admin/invite-authority', async (c) => {
 
   const body = await c.req.json();
   const email = body.email;
+  const country = body.country || null;
+  const state = body.state || null;
+  const city = body.city || null;
+  
+  const locationParts = [city, state, country].filter(Boolean);
+  const location = locationParts.length > 0 ? locationParts.join(', ') : null;
+
   if (!email || typeof email !== 'string') return c.json({ error: 'Valid email is required' }, 400);
 
   const rawToken = crypto.randomUUID() + crypto.randomUUID().replace(/-/g, '');
@@ -687,13 +786,68 @@ app.post('/api/admin/invite-authority', async (c) => {
 
   const id = crypto.randomUUID();
   await c.env.DB.prepare(
-    'INSERT INTO authority_invitations (id, email, token_hash, expires_at, used, created_at, created_by) VALUES (?, ?, ?, ?, 0, ?, ?)'
-  ).bind(id, email, tokenHash, expiresAt, now, jwtUser.sub).run();
+    'INSERT INTO authority_invitations (id, email, token_hash, expires_at, used, created_at, created_by, country, state, city) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)'
+  ).bind(id, email, tokenHash, expiresAt, now, jwtUser.sub, country, state, city).run();
 
   const reqOrigin = c.req.header('origin') || c.req.header('referer')?.replace(/\/$/, '') || new URL(c.req.url).origin;
   const registrationUrl = `${reqOrigin}/authority/register/${rawToken}`;
 
-  return c.json({ success: true, registrationUrl, expiresAt });
+  const resendApiKey = c.env.RESEND_API_KEY;
+  if (resendApiKey) {
+    try {
+      const emailHtml = `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
+          <div style="background-color: #0f172a; padding: 32px; text-align: center;">
+            <h1 style="color: #3b82f6; margin: 0; font-size: 28px;">EcoStride <span style="color:white;">Admin</span></h1>
+          </div>
+          <div style="padding: 32px; background-color: #ffffff;">
+            <h2 style="color: #0f172a; margin-top: 0;">Official Authority Invitation</h2>
+            <p style="color: #475569; font-size: 16px; line-height: 1.5;">
+              You have been invited by the EcoStride administration team to join as an official Authority.
+            </p>
+            <p style="color: #475569; font-size: 16px; line-height: 1.5;">
+              By accepting this invitation, you will be able to manage reported environmental issues, communicate with citizens, and oversee your jurisdiction.
+            </p>
+            ${location ? `
+            <div style="background-color: #f1f5f9; padding: 16px; border-radius: 8px; margin: 24px 0;">
+              <p style="color: #334155; font-size: 15px; margin: 0;">
+                <strong>Assigned Jurisdiction:</strong> ${location}
+              </p>
+            </div>
+            ` : ''}
+            <div style="text-align: center; margin: 32px 0;">
+              <a href="${registrationUrl}" style="background-color: #3b82f6; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+                Accept Invitation & Register
+              </a>
+            </div>
+            <p style="color: #94a3b8; font-size: 14px; margin-bottom: 0;">
+              This link is unique to you and will expire in 7 days. If you did not expect this invitation, please ignore this email.
+            </p>
+          </div>
+        </div>
+      `;
+
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: 'EcoStride <onboarding@resend.dev>',
+          to: [email],
+          subject: 'You are invited to join EcoStride as an Authority',
+          html: emailHtml
+        })
+      });
+    } catch (e) {
+      console.error('Failed to send invitation email:', e);
+      // We still return success since the token was created in DB, 
+      // but maybe the email failed due to sandbox limits.
+    }
+  }
+
+  return c.json({ success: true, registrationUrl, expiresAt, emailSent: !!resendApiKey });
 });
 
 
@@ -909,9 +1063,28 @@ app.post('/api/issues', async (c) => {
   try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN country TEXT').run(); } catch(e) {}
   try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN state TEXT').run(); } catch(e) {}
   try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN city TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN takedown_status TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN takedown_reason TEXT').run(); } catch(e) {}
 
-  const id = 'issue-' + Date.now() + '-' + Math.random().toString(36).substring(2,7);
   const now = Date.now();
+  
+  // Calculate start of today in UTC+8
+  const dateObj = new Date(now);
+  const offsetMs = 8 * 60 * 60 * 1000;
+  const localNow = new Date(dateObj.getTime() + offsetMs);
+  
+  const yy = String(localNow.getUTCFullYear()).slice(-2);
+  const m = String(localNow.getUTCMonth() + 1);
+  const d = String(localNow.getUTCDate());
+  const dateStr = `${yy}${m}${d}`;
+  
+  const startOfDayUTC = new Date(Date.UTC(localNow.getUTCFullYear(), localNow.getUTCMonth(), localNow.getUTCDate())).getTime() - offsetMs;
+  
+  const { results: countResults } = await c.env.DB.prepare('SELECT COUNT(*) as c FROM infrastructure_reports WHERE created_at >= ?').bind(startOfDayUTC).all();
+  const todayCount = (countResults[0]?.c as number) || 0;
+  const sequence = todayCount;
+  
+  const id = `ISSUE-${sequence}-${dateStr}`;
   
   const insertIssue = c.env.DB.prepare(`
     INSERT INTO infrastructure_reports 
@@ -967,6 +1140,47 @@ app.get('/api/issues/:id/timeline', async (c) => {
   return c.json({ timeline: timeline.results });
 });
 
+// POST /api/issues/:id/take-down (User take down issue)
+app.post('/api/issues/:id/take-down', async (c) => {
+  const jwtUser = c.get('user') as any;
+  if (!jwtUser) return c.json({ error: 'Unauthorized' }, 401);
+  const id = c.req.param('id');
+  const body = await c.req.json();
+  const reason = body.reason?.trim();
+  if (!reason) return c.json({ error: 'Reason is required' }, 400);
+
+  const issue: any = await c.env.DB.prepare('SELECT id, author_id, authority_id, status FROM infrastructure_reports WHERE id = ? AND deleted_at IS NULL').bind(id).first();
+  if (!issue) return c.json({ error: 'Issue not found' }, 404);
+  if (issue.author_id !== jwtUser.sub) return c.json({ error: 'Forbidden' }, 403);
+
+  const now = Date.now();
+  const activityId = crypto.randomUUID();
+
+  if (issue.authority_id || issue.status !== 'pending') {
+    // Requires authority approval
+    const updateIssue = c.env.DB.prepare('UPDATE infrastructure_reports SET takedown_status = ?, takedown_reason = ?, updated_at = ? WHERE id = ?')
+      .bind('requested', reason, now, id);
+    const insertActivity = c.env.DB.prepare(`
+      INSERT INTO report_activity (id, report_id, actor_id, actor_type, activity_type, title, description, created_at) 
+      VALUES (?, ?, ?, 'user', 'TAKEDOWN_REQUESTED', 'Takedown Requested', ?, ?)
+    `).bind(activityId, id, jwtUser.sub, `User requested to take down the report. Reason: ${reason}`, now);
+    
+    await c.env.DB.batch([updateIssue, insertActivity]);
+    return c.json({ success: true, message: 'Takedown request sent for approval', takedown_status: 'requested' });
+  } else {
+    // Direct takedown
+    const updateIssue = c.env.DB.prepare('UPDATE infrastructure_reports SET takedown_status = ?, takedown_reason = ?, updated_at = ? WHERE id = ?')
+      .bind('taken-down', reason, now, id);
+    const insertActivity = c.env.DB.prepare(`
+      INSERT INTO report_activity (id, report_id, actor_id, actor_type, activity_type, title, description, created_at) 
+      VALUES (?, ?, ?, 'user', 'ISSUE_TAKEN_DOWN', 'Issue Taken Down', ?, ?)
+    `).bind(activityId, id, jwtUser.sub, `User took down the report. Reason: ${reason}`, now);
+    
+    await c.env.DB.batch([updateIssue, insertActivity]);
+    return c.json({ success: true, message: 'Issue taken down successfully', takedown_status: 'taken-down' });
+  }
+});
+
 // GET /api/issues
 app.get('/api/issues', async (c) => {
   const minLat = c.req.query('minLat');
@@ -983,7 +1197,7 @@ app.get('/api/issues', async (c) => {
     FROM infrastructure_reports r
     LEFT JOIN users u ON r.author_id = u.id
     LEFT JOIN users auth ON r.authority_id = auth.id
-    WHERE r.deleted_at IS NULL
+    WHERE r.deleted_at IS NULL AND (r.takedown_status IS NULL OR r.takedown_status != 'taken-down')
       AND r.status != 'resolved'
       AND r.lat >= ? AND r.lat <= ?
       AND r.lng >= ? AND r.lng <= ?
@@ -1019,6 +1233,24 @@ app.get('/api/issues/:id/messages', async (c) => {
   const messages = await c.env.DB.prepare('SELECT m.*, u.username as sender_name, u.role as sender_role FROM issue_messages m LEFT JOIN users u ON m.sender_id = u.id WHERE issue_id = ? ORDER BY created_at ASC').bind(id).all();
   return c.json({ messages: messages.results });
 });
+
+// POST /api/issues/:id/read
+app.post('/api/issues/:id/read', async (c) => {
+  const id = c.req.param('id');
+  const jwtUser = c.get('user') as any;
+  if (!jwtUser) return c.json({ error: 'Unauthorized' }, 401);
+
+  const guildId = `issue_${id}`;
+  
+  await c.env.DB.prepare(`
+    INSERT INTO user_chat_reads (user_id, guild_id, last_read_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(user_id, guild_id) DO UPDATE SET last_read_at = ?
+  `).bind(jwtUser.sub, guildId, Date.now(), Date.now()).run();
+
+  return c.json({ success: true });
+});
+
 
 // GET /api/issues/:id/chat (WebSocket Upgrade)
 app.get('/api/issues/:id/chat', async (c) => {
@@ -1082,7 +1314,6 @@ app.post('/api/issues/:id/share', async (c) => {
 
   const issue: any = await c.env.DB.prepare('SELECT author_id FROM infrastructure_reports WHERE id = ? AND deleted_at IS NULL').bind(id).first();
   if (!issue) return c.json({ error: 'Issue not found' }, 404);
-  if (issue.author_id !== userId) return c.json({ error: 'Only the reporter can share this issue' }, 403);
 
   const userCheck: any = await c.env.DB.prepare('SELECT username, avatar FROM users WHERE id = ?').bind(userId).first();
   const username = userCheck ? userCheck.username : 'Unknown User';
@@ -1156,7 +1387,7 @@ app.get('/api/leaderboard', async (c) => {
   try { await c.env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_users_distance ON users(total_distance_km DESC)').run(); } catch(e) {}
   try { await c.env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_users_coins ON users(coins DESC)').run(); } catch(e) {}
 
-  const baseSelect = "SELECT users.id, users.username, users.guild_id, guilds.name as guildName, users.coins, users.total_distance_km, users.total_trees_planted, users.avatar, users.player_id FROM users LEFT JOIN guilds ON users.guild_id = guilds.id WHERE users.role != 'admin'";
+  const baseSelect = "SELECT users.id, users.username, users.guild_id, guilds.name as guildName, users.coins, users.total_distance_km, users.total_trees_planted, users.avatar, users.player_id FROM users LEFT JOIN guilds ON users.guild_id = guilds.id WHERE users.role NOT IN ('admin', 'authority')";
   
   const topDistance = await c.env.DB.prepare(`${baseSelect} ORDER BY users.total_distance_km DESC, users.id ASC LIMIT 50`).all();
   const topCoins = await c.env.DB.prepare(`${baseSelect} ORDER BY users.coins DESC, users.id ASC LIMIT 50`).all();
@@ -1168,8 +1399,8 @@ app.get('/api/leaderboard', async (c) => {
       const dist = user.total_distance_km || 0;
       const cns = user.coins || 0;
 
-      const distCount = await c.env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role != 'admin' AND (total_distance_km > ? OR (total_distance_km = ? AND id < ?))").bind(dist, dist, userId).first() as any;
-      const coinsCount = await c.env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role != 'admin' AND (coins > ? OR (coins = ? AND id < ?))").bind(cns, cns, userId).first() as any;
+      const distCount = await c.env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role NOT IN ('admin', 'authority') AND (total_distance_km > ? OR (total_distance_km = ? AND id < ?))").bind(dist, dist, userId).first() as any;
+      const coinsCount = await c.env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role NOT IN ('admin', 'authority') AND (coins > ? OR (coins = ? AND id < ?))").bind(cns, cns, userId).first() as any;
 
       userRank = {
         distanceRank: (distCount?.count || 0) + 1,
@@ -2543,12 +2774,18 @@ app.get('/api/admin/messages', async (c) => {
   const messages = await c.env.DB.prepare(`
     SELECT m.*, u.username as sender_name, u.bio as sender_position, u.avatar as sender_avatar 
     FROM mail m 
-    LEFT JOIN users u ON m.sender = u.id 
+    LEFT JOIN users u ON u.id = m.sender_id OR (m.sender_id IS NULL AND u.id = m.sender)
     WHERE m.recipient_type = 'admin' 
     ORDER BY m.created_at DESC
   `).all();
   
-  return c.json({ success: true, messages: messages.results });
+  let readMailIds: string[] = [];
+  try {
+    const read = await c.env.DB.prepare('SELECT mail_id FROM user_read_mail WHERE user_id = ?').bind(jwtUser.sub).all();
+    readMailIds = read.results.map((r: any) => r.mail_id);
+  } catch(e) {}
+  
+  return c.json({ success: true, messages: messages.results, read_mail_ids: readMailIds });
 });
 
 // POST /api/admin/authority-message (Direct admin message to an authority)
@@ -2572,11 +2809,49 @@ app.post('/api/admin/authority-message', async (c) => {
 
   const mailId = crypto.randomUUID();
   const now = Date.now();
+  
+  try { await c.env.DB.prepare('ALTER TABLE mail ADD COLUMN sender_id TEXT').run(); } catch(e) {}
+
   await c.env.DB.prepare(
-    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)'
-  ).bind(mailId, title?.trim() || 'Admin Notice', content.trim(), 'EcoStride Admin', 'authority', targetUser.id, now).run();
+    'INSERT INTO mail (id, title, content, sender, sender_id, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)'
+  ).bind(mailId, title?.trim() || 'Admin Notice', content.trim(), 'EcoStride Admin', jwtUser.sub, 'authority', targetUser.id, now).run();
 
   return c.json({ success: true, mailId });
+});
+
+// GET /api/admin/messages/sent (Fetch messages sent by admin to authorities)
+app.get('/api/admin/messages/sent', async (c) => {
+  const jwtUser = c.get('user') as any;
+  if (!jwtUser || !jwtUser.sub) return c.json({ error: 'Unauthorized' }, 401);
+  const dbUser = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(jwtUser.sub).first() as any;
+  if (!dbUser || dbUser.role !== 'admin') return c.json({ error: 'Forbidden: Requires admin role' }, 403);
+
+  try { await c.env.DB.prepare('ALTER TABLE mail ADD COLUMN sender_id TEXT').run(); } catch(e) {}
+
+  const messages = await c.env.DB.prepare(`
+    SELECT m.*, u.username as recipient_name, u.bio as recipient_position, u.avatar as recipient_avatar 
+    FROM mail m 
+    LEFT JOIN users u ON m.recipient_id = u.id 
+    WHERE m.sender_id = ? AND m.recipient_type = 'authority' 
+    ORDER BY m.created_at DESC
+  `).bind(jwtUser.sub).all();
+  
+  return c.json({ success: true, messages: messages.results });
+});
+
+// DELETE /api/messages/:id (Recall a sent message)
+app.delete('/api/messages/:id', async (c) => {
+  const id = c.req.param('id');
+  const jwtUser = c.get('user') as any;
+  if (!jwtUser || !jwtUser.sub) return c.json({ error: 'Unauthorized' }, 401);
+
+  // Allow deleting if sender_id matches
+  const mail = await c.env.DB.prepare('SELECT id, sender_id FROM mail WHERE id = ?').bind(id).first() as any;
+  if (!mail) return c.json({ error: 'Message not found' }, 404);
+  if (mail.sender_id !== jwtUser.sub) return c.json({ error: 'Forbidden: You can only recall your own messages' }, 403);
+
+  await c.env.DB.prepare('DELETE FROM mail WHERE id = ?').bind(id).run();
+  return c.json({ success: true, message: 'Message recalled successfully' });
 });
 
 // POST /api/admin/users/:id/coins
