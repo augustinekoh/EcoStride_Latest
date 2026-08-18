@@ -2,10 +2,10 @@ import { create } from 'zustand';
 import type { User } from 'firebase/auth';
 
 interface AuthState {
-  user: User | null;
-  role: 'user' | 'merchant' | 'admin' | null;
+  user: any | null
+  role: 'user' | 'merchant' | 'admin' | 'authority' | null
   loading: boolean;
-  setUser: (user: User | null, role?: 'user' | 'merchant' | 'admin' | null) => void;
+  setUser: (user: any | null, role: 'user' | 'merchant' | 'admin' | 'authority' | null) => void;
   setLoading: (loading: boolean) => void;
 }
 

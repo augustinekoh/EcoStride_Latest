@@ -37,13 +37,17 @@ export const ShareSignpostModal: React.FC<Props> = ({ signpostId, isOpen, onClos
 
   if (!isOpen) return null;
 
-  const handleShare = async (targetId: string) => {
+  const handleShare = async (targetId: string, isFriend = false) => {
     setSharing(true);
     setError('');
     try {
+      let finalTargetId = targetId;
+      if (isFriend && auth.currentUser) {
+        finalTargetId = `1to1_${[auth.currentUser.uid, targetId].sort().join('_')}`;
+      }
       await apiClient(`/signposts/${signpostId}/share`, {
         method: 'POST',
-        body: JSON.stringify({ targetId })
+        body: JSON.stringify({ targetId: finalTargetId })
       });
       if (onShared) onShared();
       onClose();
@@ -106,12 +110,11 @@ export const ShareSignpostModal: React.FC<Props> = ({ signpostId, isOpen, onClos
             ) : friends.length > 0 ? (
               <div className="space-y-1">
                 {friends.map(friend => {
-                  const targetId = `1to1_${[auth.currentUser?.uid, friend.id].sort().join('_')}`;
                   return (
                     <button
                       key={friend.id}
                       disabled={sharing}
-                      onClick={() => handleShare(targetId)}
+                      onClick={() => handleShare(friend.id, true)}
                       className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left disabled:opacity-50 border border-transparent hover:border-slate-100 dark:hover:border-slate-700"
                     >
                       <div className="w-12 h-12 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden flex-shrink-0">

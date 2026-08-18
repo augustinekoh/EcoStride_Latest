@@ -16,13 +16,17 @@ interface UserState {
   email: string
   player_id?: string
   bio: string
-  nationality: string
+  country: string
+  state: string
+  city: string
   avatar: string | null
   guildId: string | null
   guildName: string | null
   bannedUntil?: number
   communityUnreadCount: number
   friendsUnreadCount: number
+  issuesUnreadCount: number
+  authorityUnreadCount: number
   setCoins: (coins: number | ((prev: number) => number)) => void
   setGuildId: (id: string | null) => void
   totalTreesPlanted: number
@@ -80,7 +84,9 @@ export const useUserStore = create<UserState>()(
       lastName: '',
       email: '',
       bio: '',
-      nationality: '',
+      country: '',
+      state: '',
+      city: '',
       avatar: null,
       guildId: null,
       guildName: null,
@@ -164,8 +170,12 @@ export const useUserStore = create<UserState>()(
         set({
           userCoins: 0, totalCarbonSaved: 0, totalDistanceKm: 0, streaks: 0, vouchersCollected: 0,
           challengesCompleted: 0, username: '', firstName: '', lastName: '', email: '',
-          player_id: undefined, bio: '', nationality: '', avatar: null, guildId: null, guildName: null,
-          bannedUntil: undefined, communityUnreadCount: 0, friendsUnreadCount: 0,
+          player_id: undefined, bio: '', country: '', state: '', city: '', avatar: null, guildId: null, guildName: null,
+          bannedUntil: undefined,
+          communityUnreadCount: 0,
+          friendsUnreadCount: 0,
+          issuesUnreadCount: 0,
+          authorityUnreadCount: 0,
           totalTreesPlanted: 0, newsEnabled: false, dailyReminderEnabled: true,
           newFollowerEnabled: true, shareActivity: true, doNotDisturb: false, isDarkMode: false,
           shareActivityStatus: true, isPublicProfile: true, allowFriendRequests: true,

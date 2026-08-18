@@ -1,8 +1,18 @@
 import { getAuth } from 'firebase/auth';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+export const getApiBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+    const hostname = window.location.hostname;
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1' && envUrl.includes('localhost')) {
+      return envUrl.replace('localhost', hostname);
+    }
+  }
+  return envUrl;
+};
 
 export const apiClient = async (endpoint: string, options: RequestInit = {}) => {
+  const API_BASE_URL = getApiBaseUrl();
   const auth = getAuth();
   const user = auth.currentUser;
   
@@ -23,7 +33,7 @@ export const apiClient = async (endpoint: string, options: RequestInit = {}) => 
   });
 
   if (!response.ok) {
-    let errorMsg = 'An error occurred';
+    let errorMsg = `HTTP Error ${response.status} ${response.statusText}`;
     try {
       const errorData = await response.json();
       errorMsg = errorData.error || errorMsg;
@@ -41,7 +51,7 @@ export const resolveAvatarUrl = (url: string | undefined | null, defaultUsername
   
   if (url.includes('/r2/')) {
     const r2Path = url.substring(url.indexOf('/r2/'));
-    const baseUrl = API_BASE_URL.replace('/api', '');
+    const baseUrl = getApiBaseUrl().replace('/api', '');
     return `${baseUrl}${r2Path}`;
   }
   

@@ -8,16 +8,6 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 export default defineConfig({
   plugins: [react(), tailwindcss(), cloudflare()],
   server: {
-    host: true,
-    proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:8787',
-        changeOrigin: true
-      },
-      '/r2': {
-        target: 'http://127.0.0.1:8787',
-        changeOrigin: true
-      }
-    }
+    host: true
   }
 })

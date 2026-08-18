@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, UserPlus, UserMinus, Check, Clock, TreePine, Award, Footprints, Users, AlertTriangle } from 'lucide-react';
+import { X, User, UserPlus, UserMinus, Check, Clock, TreePine, Award, Footprints, Users, AlertTriangle, MapPin } from 'lucide-react';
 import { auth } from '../../firebase';
 import { apiClient } from '../../lib/api';
 import { BadgeInfoModal } from './BadgeInfoModal';
+import { formatLocation } from '../../lib/locationData';
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -89,7 +90,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
   const distanceWalked = typeof distanceRaw === 'number' ? `${distanceRaw.toFixed(2)}km` : (distanceRaw || '0km');
   const communityJoined = displayUser.guildName ?? displayUser.guild_name ?? displayUser.guild_id ?? displayUser.guildId ?? displayUser.community ?? 'None';
   const casesReported = displayUser.cases_reported ?? displayUser.casesReported ?? 0;
-  const nationality = displayUser.nationality || 'Global Citizen';
+  const userLocation = formatLocation(displayUser.city, displayUser.state, displayUser.country);
   const bio = displayUser.bio || "This user hasn't written a bio yet.";
 
   let badges: any[] = [];
@@ -153,10 +154,13 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
               <span className="text-xs font-black tracking-wide">UID: {displayUser.player_id || '10101010'}</span>
             </div>
             
-            {/* Nationality */}
-            <p className="text-sm font-bold mt-2 drop-shadow-sm">
-              {nationality}
-            </p>
+            {/* Location */}
+            {userLocation ? (
+              <div className="flex items-center justify-center gap-1.5 text-xs font-black text-slate-800 mt-2 bg-white/30 backdrop-blur-md px-3 py-1 rounded-full border border-white/40 shadow-sm">
+                <MapPin size={12} className="text-[#1d3539] shrink-0" />
+                <span>{userLocation}</span>
+              </div>
+            ) : null}
 
             {/* Bio */}
             <p className="text-sm font-medium italic px-4 mt-2 mb-2 leading-snug drop-shadow-sm">

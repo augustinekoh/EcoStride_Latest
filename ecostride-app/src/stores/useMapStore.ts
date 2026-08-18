@@ -4,7 +4,12 @@ interface MapState {
   signposts: any[]
   setSignposts: (signposts: any[]) => void
   
+  issues: any[]
+  setIssues: (issues: any[]) => void
+
   activeSignpost: any | null
+  activeIssue: any | null
+  setActiveIssue: (issue: any | null) => void
   territoryConquered: boolean
   plantedTrees: any[]
   setActiveSignpost: (signpost: any | null) => void
@@ -41,7 +46,12 @@ export const useMapStore = create<MapState>((set) => ({
   signposts: [],
   setSignposts: (signposts) => set({ signposts }),
   
+  issues: [],
+  setIssues: (issues) => set({ issues }),
+
   activeSignpost: null,
+  activeIssue: null,
+  setActiveIssue: (activeIssue) => set({ activeIssue }),
   territoryConquered: false,
   plantedTrees: [],
   setActiveSignpost: (activeSignpost) => set({ activeSignpost }),

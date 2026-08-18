@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthorityRegistration } from './components/authorities/AuthorityRegistration';
 import { useDemoStore } from './stores/useDemoStore';
 import { BottomNavBar } from './components/controls/BottomNavBar';
 import { ProfileView } from './components/profile/ProfileView';
@@ -23,10 +24,12 @@ import { apiClient } from './lib/api';
 import { useUserStore } from './stores/useUserStore';
 import { useMailStore } from './stores/useMailStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { AuthoritiesDashboard } from './components/authorities/AuthoritiesDashboard';
+import { CaseReportsView } from './components/cases/CaseReportsView';
 
 function PublicApp() {
   const { activeView, isWaitingForApproval, isChatExpanded } = useDemoStore();
-  const { user } = useAuthStore();
+  const { user, role } = useAuthStore();
   const { isDarkMode, bannedUntil } = useUserStore();
 
   if (!user || isWaitingForApproval) {
@@ -71,7 +74,8 @@ function PublicApp() {
 
   // Google sign-ins and other verified users will have emailVerified = true.
   // We only block if they explicitly registered with Email/Password and haven't verified.
-  if (!user?.emailVerified) {
+  // Authorities and Admins bypass this check.
+  if (!user?.emailVerified && role !== 'authority' && role !== 'admin') {
     return (
       <div className={`w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500 ${isDarkMode ? 'dark' : ''}`}>
         <VerificationPending />
@@ -79,9 +83,17 @@ function PublicApp() {
     );
   }
 
+  if (role === 'authority') {
+    return <Navigate to="/authorities" replace />;
+  }
+  
+  if (role === 'admin') {
+    return <Navigate to="/admin" replace />;
+  }
+
   return (
     <div className={`w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500 ${isDarkMode ? 'dark' : ''}`}>
-      {activeView !== 'settings' && !isChatExpanded && <BottomNavBar />}
+      {activeView !== 'settings' && activeView !== 'cases' && !isChatExpanded && <BottomNavBar />}
       
       {activeView === 'landing' && <LandingPage />}
       {activeView === 'profile' && <ProfileView />}
@@ -97,16 +109,33 @@ function PublicApp() {
       {activeView === 'merchant_dashboard' && <MerchantDashboard />}
       {activeView === 'merchant_onboarding' && <MerchantOnboardingForm />}
       {activeView === 'group' && <SocialRouter />}
+      {activeView === 'cases' && <CaseReportsView />}
     </div>
   );
 }
 
 function AdminApp() {
-  const { role } = useAuthStore();
+  const { role, loading } = useAuthStore();
+  if (loading) {
+    return <div className="w-screen h-screen bg-slate-900 flex items-center justify-center font-bold text-xl text-white">Loading Admin Portal...</div>;
+  }
   if (role !== 'admin') {
     return <AdminLogin />;
   }
   return <AdminDashboard />;
+}
+
+function AuthoritiesAppWrapper() {
+  const { role, loading } = useAuthStore();
+  
+  if (loading) {
+    return <div className="w-screen h-screen bg-[#224C31] flex items-center justify-center font-bold text-xl text-white">Loading Authority Portal...</div>;
+  }
+
+  if (role !== 'authority') {
+    return <Navigate to="/" replace />;
+  }
+  return <AuthoritiesDashboard />;
 }
 
 function App() {
@@ -163,7 +192,9 @@ function App() {
                 guildId: data.user.guild_id || null,
                 guildName: data.user.guildName || null,
                 bio: data.user.bio || '',
-                nationality: data.user.nationality || '',
+                country: data.user.country || '',
+                state: data.user.state || '',
+                city: data.user.city || '',
                 unlockedBadges: data.user.unlocked_badges ? JSON.parse(data.user.unlocked_badges) : [],
                 bannedUntil: data.user.banned_until
               });
@@ -182,12 +213,12 @@ function App() {
             if (data.user && data.user.guild_id) {
               try {
                 const unreadData = await apiClient('/chat/unread/' + data.user.guild_id);
-                useUserStore.getState().setUserData({ communityUnreadCount: unreadData.unread_count || 0 });
+                useUserStore.getState().setLocalData({ communityUnreadCount: unreadData.unread_count || 0 });
               } catch (err) {
                 console.error("Failed to fetch community unread count", err);
               }
             } else {
-              useUserStore.getState().setUserData({ communityUnreadCount: 0 });
+              useUserStore.getState().setLocalData({ communityUnreadCount: 0 });
             }
 
             // Friends Chat Unread polling
@@ -195,25 +226,38 @@ function App() {
               const friendsData = await apiClient('/friends/' + user.uid);
               if (friendsData.friends) {
                 const totalFriendsUnread = friendsData.friends.reduce((sum: number, f: any) => sum + (f.unread_count || 0), 0);
-                useUserStore.getState().setUserData({ friendsUnreadCount: totalFriendsUnread });
+                useUserStore.getState().setLocalData({ friendsUnreadCount: totalFriendsUnread });
               }
             } catch (err) {
               console.error("Failed to fetch friends unread count", err);
+            }
+
+            // Issues Chat Unread polling
+            try {
+              const issuesData = await apiClient('/users/' + user.uid + '/issues');
+              if (issuesData.issues) {
+                const totalIssuesUnread = issuesData.issues.reduce((sum: number, i: any) => sum + (i.unread_count || 0), 0);
+                useUserStore.getState().setLocalData({ issuesUnreadCount: totalIssuesUnread });
+              }
+            } catch (err) {
+              console.error("Failed to fetch issues unread count", err);
             }
 
             // Mailbox listener via API
             const mailData = await apiClient('/mail');
             if (mailData.mail) {
               const userState = useUserStore.getState() as any;
+              const role = useAuthStore.getState().role;
               const filtered = mailData.mail.filter((m: any) => {
                 if (m.expires_for_new_users && userState.createdAt) {
                   if (userState.createdAt > m.created_at) return false;
                 }
-                const role = useAuthStore.getState().role;
                 if (m.recipient_type === 'all') return true;
                 if (m.recipient_type === 'user' && m.recipient_id === user.uid) return true;
                 if (m.recipient_type === 'merchant_all' && role === 'merchant') return true;
                 if (m.recipient_type === 'guild' && userState.guildId && m.recipient_id === userState.guildId) return true;
+                if (m.recipient_type === 'authority' && m.recipient_id === user.uid) return true;
+                if (m.recipient_type === 'authority_all' && role === 'authority') return true;
                 return false;
               });
               
@@ -291,7 +335,7 @@ function App() {
           checkDemoStatus();
           demoPollInterval = setInterval(checkDemoStatus, 3000);
         } else {
-          fetchUserDataAndMails();
+          await fetchUserDataAndMails();
           userPollInterval = setInterval(fetchUserDataAndMails, 60000);
         }
       } else {
@@ -314,8 +358,10 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/authority/register/:token" element={<AuthorityRegistration />} />
         <Route path="/" element={<PublicApp />} />
         <Route path="/admin" element={<AdminApp />} />
+        <Route path="/authorities/*" element={<AuthoritiesAppWrapper />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

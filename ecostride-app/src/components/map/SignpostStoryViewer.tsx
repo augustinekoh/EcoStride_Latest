@@ -149,18 +149,16 @@ export const SignpostStoryViewer: React.FC<Props> = ({
             {showLikeAnim && <div className="absolute inset-0 bg-white/40 animate-ping rounded-xl pointer-events-none" />}
           </button>
 
-          {auth.currentUser?.uid === signpost.authorId && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (onShare) onShare(signpost.id);
-              }}
-              className="p-2 bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/40 rounded-xl text-white transition-colors active:scale-95 pointer-events-auto flex items-center justify-center"
-              title="Share Signpost"
-            >
-              <Send size={18} />
-            </button>
-          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onShare) onShare(signpost.id);
+            }}
+            className="p-2 bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/40 rounded-xl text-white transition-colors active:scale-95 pointer-events-auto flex items-center justify-center"
+            title="Share Signpost"
+          >
+            <Send size={18} />
+          </button>
 
           {auth.currentUser?.uid === signpost.authorId && onDelete && (
             <button

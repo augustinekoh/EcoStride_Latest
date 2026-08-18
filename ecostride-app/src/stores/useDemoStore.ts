@@ -4,7 +4,7 @@ interface DemoState {
   currentMode: 'explore' | 'demo'
   demoProgress: number
   isAutoPlaying: boolean
-  activeView: 'landing' | 'map' | 'merchant_dashboard' | 'merchant_onboarding' | 'leaderboard' | 'group' | 'profile' | 'city' | 'settings'
+  activeView: 'landing' | 'map' | 'merchant_dashboard' | 'merchant_onboarding' | 'leaderboard' | 'group' | 'profile' | 'city' | 'settings' | 'cases'
   showReportModal: boolean
   completedDistanceKm: number
   isWaitingForApproval: boolean
@@ -18,7 +18,7 @@ interface DemoState {
   setMode: (mode: 'explore' | 'demo') => void
   setProgress: (progress: number | ((prev: number) => number)) => void
   setIsAutoPlaying: (playing: boolean) => void
-  setActiveView: (view: 'landing' | 'map' | 'merchant_dashboard' | 'merchant_onboarding' | 'leaderboard' | 'group' | 'profile' | 'city' | 'settings') => void
+  setActiveView: (view: 'landing' | 'map' | 'merchant_dashboard' | 'merchant_onboarding' | 'leaderboard' | 'group' | 'profile' | 'city' | 'settings' | 'cases') => void
   setShowReportModal: (show: boolean) => void
   setCompletedDistanceKm: (dist: number) => void
 }

@@ -2,15 +2,18 @@ import React, { useState } from 'react';
 import { useDemoStore } from '../../stores/useDemoStore';
 import { useUserStore } from '../../stores/useUserStore';
 import { useMailStore } from '../../stores/useMailStore';
-import { Home, Map as MapIcon, Users, User, Building } from 'lucide-react';
+import { Home, Map as MapIcon, Users, User, Building, ClipboardList } from 'lucide-react';
 
 export const BottomNavBar: React.FC = () => {
   const { activeView, setActiveView } = useDemoStore();
   const [isExpanded, setIsExpanded] = useState(false);
   const communityUnreadCount = useUserStore(state => state.communityUnreadCount);
   const friendsUnreadCount = useUserStore(state => state.friendsUnreadCount);
+  const issuesUnreadCount = useUserStore(state => state.issuesUnreadCount) || 0;
   const unreadRequestsCount = useMailStore(state => state.unreadRequestsCount);
+  const unreadMailCount = useMailStore(state => state.unreadMailCount) || 0;
   const totalSocialUnread = communityUnreadCount + friendsUnreadCount + unreadRequestsCount;
+  const totalProfileUnread = issuesUnreadCount + unreadMailCount;
 
   const showBar = activeView !== 'map' || isExpanded;
 
@@ -65,6 +68,11 @@ export const BottomNavBar: React.FC = () => {
                   {item.id === 'group' && totalSocialUnread > 0 && (
                     <div className="absolute top-0 right-0 -mt-1 -mr-1 min-w-[18px] h-[18px] bg-rose-500 rounded-full flex items-center justify-center border-2 border-white">
                       <span className="text-[9px] font-bold text-white">{totalSocialUnread > 99 ? '99+' : totalSocialUnread}</span>
+                    </div>
+                  )}
+                  {item.id === 'profile' && totalProfileUnread > 0 && (
+                    <div className="absolute top-0 right-0 -mt-1 -mr-1 min-w-[18px] h-[18px] bg-rose-500 rounded-full flex items-center justify-center border-2 border-white">
+                      <span className="text-[9px] font-bold text-white">{totalProfileUnread > 99 ? '99+' : totalProfileUnread}</span>
                     </div>
                   )}
                 </div>

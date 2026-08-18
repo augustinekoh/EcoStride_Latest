@@ -4,6 +4,7 @@ import { useDemoStore } from '../../stores/useDemoStore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { Settings, Edit2, Check, Globe, Building2, TreePine, Users, Award, Ticket, X, QrCode, Clock, Store, Camera, Loader2, Coins } from 'lucide-react';
 import { apiClient, resolveAvatarUrl } from '../../lib/api';
+import { formatLocation } from '../../lib/locationData';
 import QRCode from 'react-qr-code';
 import imageCompression from 'browser-image-compression';
 import { AvatarCropModal } from '../modals/AvatarCropModal';
@@ -18,7 +19,9 @@ export const ProfileView: React.FC = () => {
     username, 
     player_id,
     bio, 
-    nationality, 
+    country,
+    state,
+    city,
     totalTreesPlanted, 
     streaks, 
     unlockedBadges,
@@ -39,6 +42,8 @@ export const ProfileView: React.FC = () => {
   
   const { user } = useAuthStore();
   const { setActiveView } = useDemoStore();
+  const issuesUnreadCount = useUserStore(state => state.issuesUnreadCount) || 0;
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isEditingBio, setIsEditingBio] = useState(false);
   const [editBioText, setEditBioText] = useState(bio || '');
@@ -62,10 +67,18 @@ export const ProfileView: React.FC = () => {
   
   // Store Modal
   const [showStore, setShowStore] = useState(false);
+  const [reportedCasesCount, setReportedCasesCount] = useState<number>(0);
+
 
   useEffect(() => {
     if (user?.uid) {
       fetchVouchers();
+      apiClient(`/users/${user.uid}/issues`).then(res => {
+        if (res.issues) {
+          const activeIssues = res.issues.filter((i: any) => i.takedown_status !== 'taken-down');
+          setReportedCasesCount(activeIssues.length);
+        }
+      }).catch(() => {});
     }
   }, [user]);
 
@@ -265,10 +278,23 @@ export const ProfileView: React.FC = () => {
       {/* Activity Stats */}
       <h3 className="text-sm font-black text-[var(--color-text-muted)] uppercase tracking-widest pl-2 relative z-10 mt-6">Activity Stats</h3>
       <div className="grid grid-cols-2 gap-4 relative z-10">
-        <div className="glass-card p-4 flex flex-col gap-2 border border-white/60">
-          <div className="w-10 h-10 bg-orange-100/50 rounded-full flex items-center justify-center text-orange-500"><Building2 size={20}/></div>
-          <span className="text-xs font-bold text-[var(--color-text-muted)]">Cases Reported</span>
-          <span className="text-xl font-black text-[var(--color-text-main)]">{streaks}</span>
+        <div 
+          onClick={() => setActiveView('cases')}
+          className="glass-card p-4 flex flex-col gap-2 cursor-pointer hover:shadow-md hover:-translate-y-1 transition-transform group border border-white/60 relative"
+        >
+          {(issuesUnreadCount || 0) > 0 && (
+            <div className="absolute -top-2 -right-2 shrink-0 min-w-[20px] h-[20px] bg-rose-500 rounded-full flex items-center justify-center border-2 border-white shadow-sm z-20">
+              <span className="text-[10px] font-bold text-white leading-none pt-[1px] px-1">{issuesUnreadCount > 99 ? '99+' : issuesUnreadCount}</span>
+            </div>
+          )}
+          <div className="w-10 h-10 bg-orange-100/50 rounded-full flex items-center justify-center text-orange-500 group-hover:scale-110 transition-transform"><Building2 size={20}/></div>
+          <div className="flex justify-between items-start">
+            <span className="text-xs font-bold text-[var(--color-text-muted)]">Cases Reported</span>
+          </div>
+          <span className="text-xl font-black text-[var(--color-text-main)] flex items-center gap-2">
+            {reportedCasesCount} 
+            <span className="text-[10px] text-orange-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">View Reports &rarr;</span>
+          </span>
         </div>
         <div 
           onClick={() => setActiveView('map')}
@@ -439,7 +465,7 @@ export const ProfileView: React.FC = () => {
       <div className="relative flex justify-between items-center p-4 md:p-8 z-50">
         <div className="flex items-center gap-2 px-3 py-1.5 glass-card rounded-full shadow-sm border border-white/60">
           <Globe size={14} className="text-[var(--color-teal-dark)]"/>
-          <span className="text-xs font-black text-[var(--color-text-main)] uppercase tracking-widest">{nationality || 'Global Citizen'}</span>
+          <span className="text-xs font-black text-[var(--color-text-main)] uppercase tracking-widest">{formatLocation(city, state, country) || 'Location Unassigned'}</span>
         </div>
         
         <div className="relative" style={{ transform: 'translateZ(0)', '--pullcord-top': '-15px', '--pullcord-right': '20px', '--pullcord-z': 0 } as React.CSSProperties}>
