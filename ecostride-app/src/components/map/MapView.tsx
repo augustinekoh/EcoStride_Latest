@@ -833,15 +833,13 @@ export const MapView: React.FC = () => {
                       )}
                     </div>
 
-                    {isOwner && (
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); setShowShareIssueModal(true); }}
-                        className="p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 transition-colors shadow-sm border border-slate-200"
-                        title="Share to Community"
-                      >
-                        <Send size={16} />
-                      </button>
-                    )}
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); setShowShareIssueModal(true); }}
+                      className="p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 transition-colors shadow-sm border border-slate-200"
+                      title="Share to Community"
+                    >
+                      <Send size={16} />
+                    </button>
                   </div>
 
                   {/* Authority Take Down Confirmation Box */}

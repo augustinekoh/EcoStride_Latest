@@ -13,7 +13,7 @@ export const BottomNavBar: React.FC = () => {
   const friendsUnreadCount = useUserStore(state => state.friendsUnreadCount);
   const issuesUnreadCount = useUserStore(state => state.issuesUnreadCount) || 0;
   const unreadRequestsCount = useMailStore(state => state.unreadRequestsCount);
-  const unreadMailCount = useMailStore(state => state.unreadMailCount) || 0;
+  const unreadMailCount = useMailStore(state => state.unreadCount) || 0;
   const totalSocialUnread = communityUnreadCount + friendsUnreadCount + unreadRequestsCount;
   const totalProfileUnread = issuesUnreadCount + unreadMailCount;
 

@@ -1319,7 +1319,7 @@ export const AdminDashboard: React.FC = () => {
                         className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-teal-950 outline-none focus:border-teal-500 appearance-none cursor-pointer"
                       >
                         <option value="">Select a Country...</option>
-                        {getCountries().map(c => <option key={c.isoCode} value={c.name}>{c.name}</option>)}
+                        {getCountries().map(c => <option key={c.code} value={c.name}>{c.name}</option>)}
                       </select>
                     </div>
 
@@ -1335,7 +1335,7 @@ export const AdminDashboard: React.FC = () => {
                           className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-teal-950 outline-none focus:border-teal-500 appearance-none cursor-pointer"
                         >
                           <option value="">Select a State...</option>
-                          {getStatesForCountry(authorityInviteCountry).map(s => <option key={s.isoCode} value={s.name}>{s.name}</option>)}
+                          {getStatesForCountry(authorityInviteCountry).map(s => <option key={s.code} value={s.name}>{s.name}</option>)}
                         </select>
                       </div>
                     )}

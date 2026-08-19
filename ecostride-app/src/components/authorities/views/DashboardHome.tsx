@@ -29,6 +29,8 @@ interface Issue {
   updated_at: number;
   location?: string;
   photos?: string;
+  unread_count?: number;
+  takedown_status?: string;
 }
 
 function ErrorFallback({ error, reset }: { error: Error, reset: () => void }) {
@@ -362,7 +364,7 @@ export function DashboardHome() {
                         >
                           {(issue.unread_count || 0) > 0 && (
                             <div className="absolute -top-2 -right-2 shrink-0 min-w-[20px] h-[20px] bg-rose-500 rounded-full flex items-center justify-center border-2 border-white shadow-sm z-20">
-                              <span className="text-[10px] font-bold text-white leading-none pt-[1px] px-1">{issue.unread_count > 99 ? '99+' : issue.unread_count}</span>
+                              <span className="text-[10px] font-bold text-white leading-none pt-[1px] px-1">{(issue.unread_count || 0) > 99 ? '99+' : issue.unread_count}</span>
                             </div>
                           )}
                           <div className="absolute -top-10 -right-10 w-24 h-24 bg-gradient-to-br from-[#34D399]/10 to-transparent rounded-full blur-2xl pointer-events-none group-hover:scale-150 transition-transform duration-700"></div>
