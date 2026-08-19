@@ -346,10 +346,15 @@ export const ProfileView: React.FC = () => {
                   onClick={() => setSelectedBadge(badge)}
                   className="w-20 h-20 bg-gradient-to-br from-[var(--color-soft-green)] to-white rounded-2xl flex flex-col items-center justify-center border border-white shadow-sm hover:shadow-md hover:-translate-y-1 transition-transform relative cursor-pointer"
                 >
-                  <span className="text-3xl mb-1 drop-shadow-sm">{badge.icon}</span>
-                  <span className="text-[9px] font-black text-slate-800 text-center uppercase tracking-wider leading-tight px-1">{badge.name}</span>
+                  <div className="w-full h-full rounded-[15px] overflow-hidden flex items-center justify-center">
+                    {badge.icon?.startsWith('http') ? (
+                      <img src={badge.icon} alt={badge.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-4xl drop-shadow-sm">{badge.icon}</span>
+                    )}
+                  </div>
                   {badge.level > 1 && (
-                    <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full border border-white shadow-sm">
+                    <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full border border-white shadow-sm z-10">
                       Lv.{badge.level}
                     </div>
                   )}

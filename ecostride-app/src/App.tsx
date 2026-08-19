@@ -196,6 +196,7 @@ function App() {
                 state: data.user.state || '',
                 city: data.user.city || '',
                 unlockedBadges: data.user.unlocked_badges ? JSON.parse(data.user.unlocked_badges) : [],
+                showcasedBadges: data.user.showcased_badges ? JSON.parse(data.user.showcased_badges) : [],
                 bannedUntil: data.user.banned_until
               });
               
@@ -300,6 +301,8 @@ function App() {
           }
         };
 
+        (window as any).triggerAppRefresh = fetchUserDataAndMails;
+
         if (user.email?.toLowerCase() === 'ecostride0@gmail.com' || user.email?.toLowerCase() === 'ecostride_demo@gmail.com') {
           // Poll demo request status every 3 seconds
           const checkDemoStatus = async () => {
@@ -336,7 +339,7 @@ function App() {
           demoPollInterval = setInterval(checkDemoStatus, 3000);
         } else {
           await fetchUserDataAndMails();
-          userPollInterval = setInterval(fetchUserDataAndMails, 60000);
+          userPollInterval = setInterval(fetchUserDataAndMails, 180000);
         }
       } else {
         setUser(null, null);

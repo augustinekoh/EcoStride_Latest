@@ -104,15 +104,20 @@ export const BadgeShowcaseModal: React.FC<BadgeShowcaseModalProps> = ({ onClose 
                     onClick={() => toggleBadge(badge.id)}
                     className={`w-full aspect-square rounded-2xl flex flex-col items-center justify-center border-2 transition-all cursor-pointer relative shadow-sm hover:-translate-y-1 ${isSelected ? 'border-[var(--color-teal-dark)] bg-white' : 'border-slate-200 bg-white opacity-80 hover:opacity-100'}`}
                   >
-                    <span className="text-2xl mb-0.5 drop-shadow-sm">{badge.icon}</span>
-                    <span className="text-[8px] font-black text-slate-800 text-center uppercase tracking-wider leading-tight px-0.5 line-clamp-2">{badge.name}</span>
+                    <div className="w-full h-full rounded-[14px] overflow-hidden flex items-center justify-center">
+                      {badge.icon?.startsWith('http') ? (
+                        <img src={badge.icon} alt={badge.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-3xl drop-shadow-sm">{badge.icon}</span>
+                      )}
+                    </div>
                     {badge.level > 1 && (
-                      <div className="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[8px] font-black px-1 py-0.5 rounded-full shadow-sm">
+                      <div className="absolute top-1 right-1 bg-amber-500 text-white text-[8px] font-black px-1 py-0.5 rounded-full shadow-sm z-10">
                         Lv.{badge.level}
                       </div>
                     )}
                     {isSelected && (
-                      <div className="absolute -bottom-1.5 -right-1.5 w-4 h-4 bg-[var(--color-teal-dark)] rounded-full flex items-center justify-center border-2 border-white">
+                      <div className="absolute -bottom-1.5 -right-1.5 w-5 h-5 bg-[var(--color-teal-dark)] rounded-full flex items-center justify-center border-2 border-white z-10">
                         <Check size={10} className="text-white" />
                       </div>
                     )}

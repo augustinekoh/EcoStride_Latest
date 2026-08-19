@@ -1,4 +1,4 @@
-export const compressImage = (file: File, maxWidth = 1200, maxHeight = 1200, quality = 0.8): Promise<File> => {
+export const compressImage = (file: File, maxWidth = 1200, maxHeight = 1200, quality = 0.8, cropSquare = false): Promise<File> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -8,6 +8,20 @@ export const compressImage = (file: File, maxWidth = 1200, maxHeight = 1200, qua
       img.onload = () => {
         let width = img.width;
         let height = img.height;
+        let sx = 0;
+        let sy = 0;
+        let sWidth = width;
+        let sHeight = height;
+
+        if (cropSquare) {
+          const minDim = Math.min(width, height);
+          sx = (width - minDim) / 2;
+          sy = (height - minDim) / 2;
+          sWidth = minDim;
+          sHeight = minDim;
+          width = minDim;
+          height = minDim;
+        }
 
         if (width > height) {
           if (width > maxWidth) {
@@ -31,7 +45,7 @@ export const compressImage = (file: File, maxWidth = 1200, maxHeight = 1200, qua
           return;
         }
 
-        ctx.drawImage(img, 0, 0, width, height);
+        ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, width, height);
 
         canvas.toBlob(
           (blob) => {

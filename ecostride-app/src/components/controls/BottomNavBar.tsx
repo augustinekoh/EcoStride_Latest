@@ -4,6 +4,8 @@ import { useUserStore } from '../../stores/useUserStore';
 import { useMailStore } from '../../stores/useMailStore';
 import { Home, Map as MapIcon, Users, User, Building, ClipboardList } from 'lucide-react';
 
+let lastNavRefreshTime = 0;
+
 export const BottomNavBar: React.FC = () => {
   const { activeView, setActiveView } = useDemoStore();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -39,6 +41,15 @@ export const BottomNavBar: React.FC = () => {
                 <button 
                   key={item.id}
                   onClick={() => {
+                    if (item.id === 'landing' || item.id === 'map') {
+                      const now = Date.now();
+                      if (now - lastNavRefreshTime > 30000) {
+                        if ((window as any).triggerAppRefresh) {
+                          (window as any).triggerAppRefresh();
+                          lastNavRefreshTime = now;
+                        }
+                      }
+                    }
                     setActiveView(item.id as any);
                     setIsExpanded(false); 
                   }}
@@ -58,6 +69,15 @@ export const BottomNavBar: React.FC = () => {
               <button 
                 key={item.id}
                 onClick={() => {
+                  if (item.id === 'landing' || item.id === 'map') {
+                    const now = Date.now();
+                    if (now - lastNavRefreshTime > 30000) {
+                      if ((window as any).triggerAppRefresh) {
+                        (window as any).triggerAppRefresh();
+                        lastNavRefreshTime = now;
+                      }
+                    }
+                  }
                   setActiveView(item.id as any);
                   setIsExpanded(false); 
                 }}

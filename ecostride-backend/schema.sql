@@ -288,3 +288,51 @@ CREATE TABLE IF NOT EXISTS authority_invitations (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_authority_invitations_token ON authority_invitations(token_hash);
 CREATE INDEX IF NOT EXISTS idx_authority_invitations_email ON authority_invitations(email);
+
+
+CREATE TABLE IF NOT EXISTS city_events (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  start_date INTEGER NOT NULL,
+  end_date INTEGER NOT NULL,
+  entry_fee INTEGER DEFAULT 0,
+  promo_image TEXT,
+  event_type TEXT NOT NULL,
+  status TEXT DEFAULT 'active'
+);
+
+CREATE TABLE IF NOT EXISTS city_event_badges (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL,
+  icon_url TEXT NOT NULL,
+  tier_level INTEGER NOT NULL,
+  target_value INTEGER NOT NULL,
+  FOREIGN KEY(event_id) REFERENCES city_events(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS city_event_participants (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  joined_at INTEGER NOT NULL,
+  starting_score INTEGER DEFAULT 0,
+  badges_awarded TEXT DEFAULT '[]',
+  FOREIGN KEY(event_id) REFERENCES city_events(id) ON DELETE CASCADE,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS city_event_submissions (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  proof_url TEXT NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'pending',
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY(event_id) REFERENCES city_events(id) ON DELETE CASCADE,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+

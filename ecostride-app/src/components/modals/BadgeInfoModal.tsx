@@ -21,7 +21,7 @@ const BADGE_DESCRIPTIONS: Record<string, string> = {
 export const BadgeInfoModal: React.FC<BadgeInfoModalProps> = ({ badge, onClose }) => {
   if (!badge) return null;
 
-  const description = BADGE_DESCRIPTIONS[badge.id] || 'An exclusive achievement earned through your eco-friendly actions!';
+  const description = badge.description || BADGE_DESCRIPTIONS[badge.id] || 'An exclusive achievement earned through your eco-friendly actions!';
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm px-4" onClick={onClose}>
@@ -29,11 +29,15 @@ export const BadgeInfoModal: React.FC<BadgeInfoModalProps> = ({ badge, onClose }
         className="rounded-3xl w-full max-w-[320px] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 relative border border-white/20 shadow-2xl bg-white"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header Graphic */}
+        {/* Header */}
         <div className="h-32 bg-gradient-to-br from-amber-200 to-orange-400 relative flex items-center justify-center">
           <div className="absolute inset-0 bg-white/20 backdrop-blur-[2px]"></div>
-          <div className="w-20 h-20 bg-white/90 rounded-full flex items-center justify-center text-5xl shadow-lg relative z-10 border-4 border-white">
-            {badge.icon}
+          <div className="w-20 h-20 bg-white/90 rounded-full flex items-center justify-center text-5xl shadow-lg relative z-10 border-4 border-white overflow-hidden">
+            {badge.icon?.startsWith('http') ? (
+              <img src={badge.icon} alt={badge.name} className="w-full h-full object-cover" />
+            ) : (
+              <span>{badge.icon}</span>
+            )}
           </div>
           <button onClick={onClose} className="absolute top-3 right-3 p-1.5 bg-black/20 hover:bg-black/30 text-white rounded-full transition-colors z-20">
             <X size={18} />

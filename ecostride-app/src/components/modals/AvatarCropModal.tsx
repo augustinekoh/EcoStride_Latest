@@ -7,13 +7,17 @@ interface AvatarCropModalProps {
   onClose: () => void;
   imageSrc: string | null;
   onConfirm: (croppedBlob: Blob) => void;
+  aspect?: number;
+  cropShape?: 'round' | 'rect';
 }
 
 export const AvatarCropModal: React.FC<AvatarCropModalProps> = ({
   isOpen,
   onClose,
   imageSrc,
-  onConfirm
+  onConfirm,
+  aspect = 1,
+  cropShape = 'round'
 }) => {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -76,7 +80,7 @@ export const AvatarCropModal: React.FC<AvatarCropModalProps> = ({
   if (!isOpen || !imageSrc) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col h-[500px]">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
@@ -95,8 +99,8 @@ export const AvatarCropModal: React.FC<AvatarCropModalProps> = ({
             image={imageSrc}
             crop={crop}
             zoom={zoom}
-            aspect={1}
-            cropShape="round"
+            aspect={aspect}
+            cropShape={cropShape}
             showGrid={false}
             onCropChange={setCrop}
             onCropComplete={onCropComplete}

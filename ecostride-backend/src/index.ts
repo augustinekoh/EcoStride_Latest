@@ -4,6 +4,7 @@ import { decodeJwt, SignJWT, importPKCS8 } from 'jose';
 import { checkAndAwardBadges } from './badgeEngine';
 import { AwsClient } from 'aws4fetch';
 import { authoritiesRouter } from './authorities';
+import { cityEventsRouter } from './cityEvents';
 import { isValidLocation } from './locationData';
 
 export { CommunityChatRoom } from './CommunityChatRoom';
@@ -244,6 +245,9 @@ app.post('/api/authorities/register', async (c) => {
 
 // Mount Authorities Router
 app.route('/api/authorities', authoritiesRouter);
+
+// Mount City Events Router
+app.route('/api/city-events', cityEventsRouter);
 
 // POST chat image upload
 app.post('/api/chat/upload', async (c) => {
@@ -2922,19 +2926,22 @@ app.post('/api/admin/cleanup', async (c) => {
   // Sync all existing trees to their author's current guild
   await c.env.DB.prepare('UPDATE trees SET guild_id = (SELECT guild_id FROM users WHERE users.id = trees.author_id)').run();
   
-  let treeIntervalDays = 7;
+  let treeIntervalDays = 0;
   const setting = await c.env.DB.prepare('SELECT value FROM global_settings WHERE key = ?').bind('tree_reset_interval_days').first() as any;
-  if (setting && setting.value) {
-    treeIntervalDays = parseInt(setting.value as string) || 7;
+  if (setting && setting.value !== undefined && setting.value !== null) {
+    treeIntervalDays = parseInt(setting.value as string);
+    if (isNaN(treeIntervalDays)) treeIntervalDays = 0;
   }
   
-  const treeThreshold = Date.now() - (treeIntervalDays * 24 * 60 * 60 * 1000);
-  const treesToDelete = await c.env.DB.prepare('SELECT author_id, COUNT(*) as count FROM trees WHERE planted_at < ? GROUP BY author_id').bind(treeThreshold).all();
-  for (const row of treesToDelete.results as any[]) {
-    await c.env.DB.prepare('UPDATE users SET total_trees_planted = MAX(total_trees_planted - ?, 0) WHERE id = ?').bind(row.count, row.author_id).run();
+  if (treeIntervalDays > 0) {
+    const treeThreshold = Date.now() - (treeIntervalDays * 24 * 60 * 60 * 1000);
+    const treesToDelete = await c.env.DB.prepare('SELECT author_id, COUNT(*) as count FROM trees WHERE planted_at < ? GROUP BY author_id').bind(treeThreshold).all();
+    for (const row of treesToDelete.results as any[]) {
+      await c.env.DB.prepare('UPDATE users SET total_trees_planted = MAX(total_trees_planted - ?, 0) WHERE id = ?').bind(row.count, row.author_id).run();
+    }
+    
+    await c.env.DB.prepare('DELETE FROM trees WHERE planted_at < ?').bind(treeThreshold).run();
   }
-  
-  await c.env.DB.prepare('DELETE FROM trees WHERE planted_at < ?').bind(treeThreshold).run();
   
   const spThreshold = Date.now() - (3 * 24 * 60 * 60 * 1000);
   await c.env.DB.prepare('DELETE FROM signposts WHERE created_at < ?').bind(spThreshold).run();
