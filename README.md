@@ -15,6 +15,7 @@ EcoStride converts your physical movement into environmental impact. Every step 
 - 🗺️ **Core Map Exploration**: Built on Mapbox GL JS with real-time geolocation tracking, custom markers, a dedicated "My Location" button, and modern Glassmorphism UI. Features a sleek Draggable Map Widget (Picture-in-Picture) so you never lose your map context.
 - 💰 **Carbon Points & Economy**: Step-to-coin conversion algorithm. View your environmental impact via detailed Carbon Stats and an interactive `CityView`.
 - 🏆 **Dynamic Badge Engine**: Server-side async badge awarding based on user achievements (trees planted, distance walked, active days). Showcase them on your public profile!
+- 🏟️ **City Events**: Admin-created local community events (e.g., marathons, cleanups). Users can join, submit proofs, and earn exclusive event-specific badges.
 - 🏪 **Merchant & Reward Hub**: Step-by-step merchant onboarding. Users can redeem Eco Coins for vouchers, and merchants can use the built-in QR Code Scanner for verification.
 - 💬 **Social & Community**: Create/join guilds, manage Capybara friend requests, and chat in real-time via Cloudflare Durable Objects + WebSockets (1v1 & Group Chat, with Photo Uploads, Message Recall, and Rich Card Sharing).
 - 🏛️ **Authority & Issue Reporting**: Civic engagement platform allowing users to report infrastructural issues to dedicated regional authorities, complete with case tracking, 1v1 resolution chat, and Authority Take-Down capabilities.
@@ -55,6 +56,8 @@ EcoStride/
 │   │   ├── index.ts          # Main Cloudflare router & Admin firewall
 │   │   ├── authorities.ts    # Authority registration & regional data APIs
 │   │   ├── badgeEngine.ts    # Asynchronous achievement & badge processor
+│   │   ├── cityEvents.ts     # City Events logic & dynamic badge awarding
+│   │   ├── locationData.ts   # Canonical geographic location dataset
 │   │   ├── CommunityChatRoom.ts # Durable Object for WebSocket group chatting
 │   │   └── IssueConversationDO.ts # Durable Object for 1v1 issue resolution chat
 ```

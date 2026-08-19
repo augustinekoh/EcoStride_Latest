@@ -120,9 +120,15 @@ export const PublicProfileModal: React.FC<Props> = ({ userId, isOpen, onClose })
                           className="w-12 h-12 shrink-0 bg-[#fff4d6] border-2 border-[#1d3539] rounded-full flex items-center justify-center text-xl shadow-[2px_2px_0px_0px_#1d3539] relative cursor-pointer hover:-translate-y-0.5 transition-transform" 
                           title={badge.name}
                         >
-                          {badge.icon}
+                          <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center">
+                            {badge.icon?.startsWith('http') ? (
+                              <img src={badge.icon} alt={badge.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <span>{badge.icon}</span>
+                            )}
+                          </div>
                           {badge.level > 1 && (
-                            <div className="absolute -top-1 -right-1 bg-amber-500 text-white text-[9px] font-black px-1 rounded-full border border-[#1d3539] shadow-[1px_1px_0px_0px_#1d3539]">
+                            <div className="absolute -top-1 -right-1 bg-amber-500 text-white text-[9px] font-black px-1 rounded-full border border-[#1d3539] shadow-[1px_1px_0px_0px_#1d3539] z-10">
                               Lv.{badge.level}
                             </div>
                           )}

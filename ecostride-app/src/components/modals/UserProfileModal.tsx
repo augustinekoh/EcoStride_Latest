@@ -228,12 +228,17 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
                     <div 
                       key={idx} 
                       onClick={() => setSelectedBadge(badge)}
-                      className="aspect-[4/3] w-full bg-white/40 backdrop-blur-md border border-white/50 rounded-2xl flex flex-col items-center justify-center shadow-sm transition-transform hover:scale-105 relative cursor-pointer group"
+                      className="aspect-square w-full bg-white/40 backdrop-blur-md border border-white/50 rounded-2xl flex flex-col items-center justify-center shadow-sm transition-transform hover:scale-105 relative cursor-pointer group"
                     >
-                      <span className="text-3xl mb-1 drop-shadow-sm group-hover:scale-110 transition-transform">{badge.icon}</span>
-                      <span className="text-[10px] font-black text-slate-800 text-center uppercase tracking-wider leading-tight px-2 line-clamp-2">{badge.name}</span>
+                      <div className="w-full h-full rounded-[15px] overflow-hidden flex items-center justify-center">
+                        {badge.icon?.startsWith('http') ? (
+                          <img src={badge.icon} alt={badge.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
+                        ) : (
+                          <span className="text-4xl drop-shadow-sm group-hover:scale-110 transition-transform">{badge.icon}</span>
+                        )}
+                      </div>
                       {badge.level > 1 && (
-                        <div className="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full border border-white shadow-sm">
+                        <div className="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full border border-white shadow-sm z-10">
                           Lv.{badge.level}
                         </div>
                       )}

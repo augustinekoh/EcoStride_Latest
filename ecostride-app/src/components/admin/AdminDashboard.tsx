@@ -3,14 +3,17 @@ import { auth } from '../../firebase';
 import Map, { Marker, Popup } from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { MAPBOX_TOKEN } from '../../lib/mapboxAPI';
-import { LayoutDashboard, Mail, Store, Users, FileCheck, Globe, LogOut, RefreshCw, Shield, Link, Copy, Check, MapPin } from 'lucide-react';
+import { LayoutDashboard, Mail, Store, Users, FileCheck, Globe, LogOut, RefreshCw, Shield, Link, Copy, Check, MapPin, CalendarRange, AlertTriangle, ChevronDown } from 'lucide-react';
 import { apiClient } from '../../lib/api';
 import { AdminMessagesModal } from './AdminMessagesModal';
 import { MessageAuthorityModal } from './MessageAuthorityModal';
+import { AdminCityEvents } from './AdminCityEvents';
+import { AdminPhotoProofs } from './AdminPhotoProofs';
 import { formatLocation, getCountries, getStatesForCountry, getCitiesForState } from '../../lib/locationData';
 
 export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('overview');
+  const [expandedMenus, setExpandedMenus] = useState<string[]>(['events_parent']);
   const [isAdminMessagesOpen, setIsAdminMessagesOpen] = useState(false);
   const [isMessageAuthorityModalOpen, setIsMessageAuthorityModalOpen] = useState(false);
   const [selectedAuthorityForMessage, setSelectedAuthorityForMessage] = useState<any | null>(null);
@@ -23,7 +26,7 @@ export const AdminDashboard: React.FC = () => {
   const [signposts, setSignposts] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [guilds, setGuilds] = useState<any[]>([]);
-  const [resetInterval, setResetInterval] = useState<number>(7);
+  const [resetInterval, setResetInterval] = useState<number>(0);
   const [isSaving, setIsSaving] = useState(false);
   const [editingCoins, setEditingCoins] = useState<{ [uid: string]: number }>({});
   const [userSearchTerm, setUserSearchTerm] = useState('');
@@ -79,7 +82,7 @@ export const AdminDashboard: React.FC = () => {
         apiClient('/settings').catch(() => ({ config: {} }))
       ]);
       
-      if (settingsRes && settingsRes.config && settingsRes.config.tree_reset_interval_days) {
+      if (settingsRes && settingsRes.config && settingsRes.config.tree_reset_interval_days !== undefined) {
         setResetInterval(parseInt(settingsRes.config.tree_reset_interval_days));
       }
       
@@ -140,6 +143,9 @@ export const AdminDashboard: React.FC = () => {
         if (msgRes.messages) {
           setAdminMessages(msgRes.messages);
         }
+        if (msgRes.read_mail_ids) {
+          setReadAdminMessageIds(msgRes.read_mail_ids);
+        }
       } catch (e) {}
     } catch (err) {
       console.error(err);
@@ -159,6 +165,12 @@ export const AdminDashboard: React.FC = () => {
   }, []);
 
   const handleSaveConfig = async () => {
+    if (resetInterval > 0) {
+      if (!window.confirm("WARNING: Setting this cron job might cause active tree planting activities' total tree calculation to be incorrect. Are you sure you want to proceed?")) {
+        return;
+      }
+    }
+    
     setIsSaving(true);
     try {
       await apiClient('/settings', { method: 'POST', body: JSON.stringify({ treeResetInterval: resetInterval }) });
@@ -527,6 +539,15 @@ export const AdminDashboard: React.FC = () => {
 
   const menuItems = [
     { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={20} /> },
+    { 
+      id: 'events_parent', 
+      label: 'City Events', 
+      icon: <CalendarRange size={20} />,
+      subItems: [
+        { id: 'events', label: 'Event Management' },
+        { id: 'photo-proofs', label: 'Photo Proofs' }
+      ]
+    },
     { id: 'applications', label: 'Applications', icon: <FileCheck size={20} />, badge: applications.length + demoRequests.length },
     { id: 'merchants', label: 'Active Merchants', icon: <Store size={20} /> },
     { id: 'store', label: 'Store Manager', icon: <Store size={20} /> },
@@ -554,25 +575,54 @@ export const AdminDashboard: React.FC = () => {
         <div className="flex-1 overflow-y-auto py-4">
           <nav className="flex flex-col gap-1 px-3">
             {menuItems.map(item => (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`flex items-center justify-between px-5 py-4 rounded-2xl font-bold transition-all duration-300 relative overflow-hidden group ${
-                  activeTab === item.id 
-                    ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-500/20 translate-x-2' 
-                    : 'text-teal-800/60 hover:bg-white/60 hover:text-teal-900 hover:translate-x-1'
-                }`}
-              >
-                <div className="flex items-center gap-3 relative z-10">
-                  {item.icon}
-                  {item.label}
-                </div>
-                {item.badge && item.badge > 0 && (
-                  <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-black">
-                    {item.badge}
-                  </span>
+              <div key={item.id}>
+                <button
+                  onClick={() => {
+                    if (item.subItems) {
+                      setExpandedMenus(prev => prev.includes(item.id) ? prev.filter(id => id !== item.id) : [...prev, item.id]);
+                    } else {
+                      setActiveTab(item.id);
+                    }
+                  }}
+                  className={`flex w-full items-center justify-between px-5 py-4 rounded-2xl font-bold transition-all duration-300 relative overflow-hidden group ${
+                    (activeTab === item.id || (item.subItems && item.subItems.find(s => s.id === activeTab))) && !item.subItems
+                      ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-500/20 translate-x-2' 
+                      : (item.subItems && item.subItems.find(s => s.id === activeTab))
+                        ? 'text-teal-900 bg-white/60'
+                        : 'text-teal-800/60 hover:bg-white/60 hover:text-teal-900 hover:translate-x-1'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 relative z-10">
+                    {item.icon}
+                    {item.label}
+                  </div>
+                  {item.badge && item.badge > 0 && (
+                    <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-black">
+                      {item.badge}
+                    </span>
+                  )}
+                  {item.subItems && (
+                    <ChevronDown size={16} className={`transition-transform duration-300 ${expandedMenus.includes(item.id) ? 'rotate-180' : ''}`} />
+                  )}
+                </button>
+                {item.subItems && expandedMenus.includes(item.id) && (
+                  <div className="flex flex-col gap-1 mt-1 mb-2 ml-12 border-l-2 border-teal-100 pl-4">
+                    {item.subItems.map(sub => (
+                      <button
+                        key={sub.id}
+                        onClick={() => setActiveTab(sub.id)}
+                        className={`text-left px-4 py-2 rounded-xl font-bold transition-all duration-200 text-sm ${
+                          activeTab === sub.id 
+                            ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-md' 
+                            : 'text-teal-700/60 hover:text-teal-900 hover:bg-white/50'
+                        }`}
+                      >
+                        {sub.label}
+                      </button>
+                    ))}
+                  </div>
                 )}
-              </button>
+              </div>
             ))}
           </nav>
         </div>
@@ -630,6 +680,16 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* EVENTS TAB */}
+          {activeTab === 'events' && (
+            <AdminCityEvents />
+          )}
+
+          {/* PHOTO PROOFS TAB */}
+          {activeTab === 'photo-proofs' && (
+            <AdminPhotoProofs />
           )}
 
           {/* APPLICATIONS TAB */}
@@ -1259,7 +1319,7 @@ export const AdminDashboard: React.FC = () => {
                         className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-teal-950 outline-none focus:border-teal-500 appearance-none cursor-pointer"
                       >
                         <option value="">Select a Country...</option>
-                        {getCountries().map(c => <option key={c.isoCode} value={c.name}>{c.name}</option>)}
+                        {getCountries().map(c => <option key={c.code} value={c.name}>{c.name}</option>)}
                       </select>
                     </div>
 
@@ -1275,7 +1335,7 @@ export const AdminDashboard: React.FC = () => {
                           className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-teal-950 outline-none focus:border-teal-500 appearance-none cursor-pointer"
                         >
                           <option value="">Select a State...</option>
-                          {getStatesForCountry(authorityInviteCountry).map(s => <option key={s.isoCode} value={s.name}>{s.name}</option>)}
+                          {getStatesForCountry(authorityInviteCountry).map(s => <option key={s.code} value={s.name}>{s.name}</option>)}
                         </select>
                       </div>
                     )}
@@ -1598,10 +1658,11 @@ export const AdminDashboard: React.FC = () => {
                   <h3 className="font-bold text-teal-950">Global Game Settings</h3>
                   <p className="text-sm text-teal-700/70">Configure global mechanics</p>
                 </div>
-                <div className="flex items-center gap-4 bg-transparent p-2 rounded-xl border border-slate-200">
-                  <label className="text-sm font-bold text-slate-700 pl-2">Tree Reset Interval (Days):</label>
+                <div className="flex items-center gap-3">
+                  <label className="text-sm font-bold text-slate-700 pl-2">Tree Reset Interval (Days, 0 = Never):</label>
                   <input 
                     type="number" 
+                    min="0"
                     value={resetInterval} 
                     onChange={(e) => setResetInterval(Number(e.target.value))}
                     className="w-20 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-center text-teal-950 font-bold outline-none focus:border-teal-500"

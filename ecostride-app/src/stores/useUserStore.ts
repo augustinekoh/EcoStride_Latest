@@ -93,6 +93,8 @@ export const useUserStore = create<UserState>()(
       bannedUntil: undefined,
       communityUnreadCount: 0,
       friendsUnreadCount: 0,
+      issuesUnreadCount: 0,
+      authorityUnreadCount: 0,
       setCoins: (coins) => set((state) => ({ 
         userCoins: typeof coins === 'function' ? coins(state.userCoins) : coins 
       })),
