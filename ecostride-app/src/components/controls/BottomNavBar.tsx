@@ -15,7 +15,7 @@ export const BottomNavBar: React.FC = () => {
   const unreadRequestsCount = useMailStore(state => state.unreadRequestsCount);
   const unreadMailCount = useMailStore(state => state.unreadCount) || 0;
   const totalSocialUnread = communityUnreadCount + friendsUnreadCount + unreadRequestsCount;
-  const totalProfileUnread = issuesUnreadCount + unreadMailCount;
+  const totalProfileUnread = issuesUnreadCount;
 
   const showBar = activeView !== 'map' || isExpanded;
 
@@ -32,7 +32,7 @@ export const BottomNavBar: React.FC = () => {
 
 
       <div className={`fixed bottom-4 md:absolute md:bottom-8 left-1/2 -translate-x-1/2 z-[100] w-[95%] sm:w-[90%] md:max-w-md transition-all duration-500 ease-out origin-bottom ${showBar ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-12 scale-90 pointer-events-none'}`}>
-        <div className="glass-pill rounded-full border-2 pb-2 pt-2 px-1 sm:px-2 flex items-center justify-between shadow-2xl bg-white/80">
+        <div className="glass-pill rounded-full border-2 pb-2 pt-2 px-1 sm:px-2 flex items-center justify-between shadow-2xl max-md:bg-white/60 max-md:backdrop-blur-lg md:bg-white/80">
           {navItems.map((item) => {
             const isActive = activeView === item.id;
             
@@ -85,6 +85,11 @@ export const BottomNavBar: React.FC = () => {
               >
                 <div className={`relative p-2 rounded-[1.2rem] transition-colors ${isActive ? 'glass-active text-[var(--color-teal-dark)]' : 'text-[var(--color-text-muted)] hover:bg-white/20 hover:text-[var(--color-text-main)]'}`}>
                   {item.icon}
+                  {item.id === 'landing' && unreadMailCount > 0 && (
+                    <div className="absolute top-0 right-0 -mt-1 -mr-1 min-w-[18px] h-[18px] bg-rose-500 rounded-full flex items-center justify-center border-2 border-white">
+                      <span className="text-[9px] font-bold text-white">{unreadMailCount > 99 ? '99+' : unreadMailCount}</span>
+                    </div>
+                  )}
                   {item.id === 'group' && totalSocialUnread > 0 && (
                     <div className="absolute top-0 right-0 -mt-1 -mr-1 min-w-[18px] h-[18px] bg-rose-500 rounded-full flex items-center justify-center border-2 border-white">
                       <span className="text-[9px] font-bold text-white">{totalSocialUnread > 99 ? '99+' : totalSocialUnread}</span>

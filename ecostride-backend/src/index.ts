@@ -456,6 +456,7 @@ app.post('/api/users/:id', async (c) => {
   const user = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(id).first();
   if (!user) {
     if (!body.username) return c.json({ error: 'Username is required for new users' }, 400);
+    if (!/^[a-zA-Z0-9@_-]+$/.test(body.username)) return c.json({ error: 'Username contains invalid characters' }, 400);
     
     // Check if username is already taken
     const existingUsername = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(body.username).first();
@@ -488,7 +489,12 @@ app.post('/api/users/:id', async (c) => {
     try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN showcased_badges TEXT').run(); } catch(e) {}
     try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN banned_until INTEGER DEFAULT 0').run(); } catch(e) {}
     
-    if (body.username !== undefined) { updates.push('username = ?'); values.push(body.username); }
+    if (body.username !== undefined) { 
+      if (!/^[a-zA-Z0-9@_-]+$/.test(body.username)) return c.json({ error: 'Username contains invalid characters' }, 400);
+      const existingUsername = await c.env.DB.prepare('SELECT id FROM users WHERE username = ? AND id != ?').bind(body.username, id).first();
+      if (existingUsername) return c.json({ error: 'Username is already taken' }, 400);
+      updates.push('username = ?'); values.push(body.username); 
+    }
     if (body.role !== undefined) { updates.push('role = ?'); values.push(body.role); }
     if (body.coins !== undefined) { updates.push('coins = ?'); values.push(body.coins); }
     if (body.totalDistanceKm !== undefined) { updates.push('total_distance_km = ?'); values.push(body.totalDistanceKm); }
