@@ -464,6 +464,7 @@ export const MapView: React.FC = () => {
     setActiveTree(null);
 
     if (mapboxRouteGeoJSON) return;
+    if (isFreeWalk) return;
 
     const customDest = {
       id: 'custom-destination',
@@ -606,7 +607,7 @@ export const MapView: React.FC = () => {
       {!isAuthority && (
         <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[200] w-11/12 max-w-sm">
           <div className="relative">
-            <form onSubmit={handleUserSearch} className="flex items-center gap-2 glass-pill p-1.5 transition-all focus-within:-translate-y-1 relative z-50">
+            <form onSubmit={handleUserSearch} className="flex items-center gap-2 glass-pill p-1.5 transition-all focus-within:-translate-y-1 relative z-50 max-md:!bg-white/60 max-md:!backdrop-blur-lg">
               <div className="relative">
                 <button 
                   type="button" 

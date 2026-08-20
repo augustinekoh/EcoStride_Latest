@@ -194,7 +194,12 @@ export const AuthModal: React.FC = () => {
                   type="text" 
                   required
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (/^[a-zA-Z0-9@_-]*$/.test(val)) {
+                      setUsername(val);
+                    }
+                  }}
                   className="w-full border-2 border-slate-900 rounded-xl px-4 py-2 font-bold focus:outline-none focus:ring-4 focus:ring-brand-yellow/50" 
                   placeholder="CoolRider99"
                 />
