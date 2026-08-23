@@ -30,6 +30,9 @@ interface UserState {
   setCoins: (coins: number | ((prev: number) => number)) => void
   setGuildId: (id: string | null) => void
   totalTreesPlanted: number
+  pushEnabled: boolean
+  mailboxEnabled: boolean
+  socialEnabled: boolean
   newsEnabled: boolean
   dailyReminderEnabled: boolean
   newFollowerEnabled: boolean
@@ -39,6 +42,7 @@ interface UserState {
   allowFriendRequests: boolean
   doNotDisturb: boolean
   isDarkMode: boolean
+  hasSeenTutorial: boolean
   notifications: { id: string; title: string; message: string; icon: string; time: string }[]
   unlockedBadges: string[]
   showcasedBadges: string[]
@@ -54,15 +58,37 @@ interface UserState {
   clearNotifications: () => void
   hasReadAlerts: boolean
   setHasReadAlerts: (read: boolean) => void
+  setHasSeenTutorial: (seen: boolean) => void
   clearUser: () => void
 }
 
 const syncToAPI = async (data: any) => {
   if (auth.currentUser) {
     try {
+      // Map flat boolean preference flags to nested preferences object for backend
+      const payload = { ...data };
+      const prefsKeys = ['pushEnabled', 'mailboxEnabled', 'socialEnabled', 'newsEnabled', 'dailyReminderEnabled', 'newFollowerEnabled'];
+      
+      let hasPrefs = false;
+      const preferences: any = {};
+      
+      for (const key of prefsKeys) {
+        if (payload[key] !== undefined) {
+          // Convert camelCase to snake_case for DB
+          const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+          preferences[snakeKey] = payload[key];
+          delete payload[key];
+          hasPrefs = true;
+        }
+      }
+      
+      if (hasPrefs) {
+        payload.preferences = preferences;
+      }
+
       await apiClient(`/users/${auth.currentUser.uid}`, {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify(payload)
       });
     } catch (e) {
       console.error("Failed to sync to API:", e);
@@ -100,6 +126,9 @@ export const useUserStore = create<UserState>()(
       })),
       setGuildId: (id) => set({ guildId: id }),
       totalTreesPlanted: 0,
+      pushEnabled: true,
+      mailboxEnabled: true,
+      socialEnabled: true,
       newsEnabled: false,
       dailyReminderEnabled: true,
       newFollowerEnabled: true,
@@ -114,7 +143,9 @@ export const useUserStore = create<UserState>()(
       showcasedBadges: [],
       activityHistory: [],
       createdAt: undefined,
+      hasSeenTutorial: false,
       hasReadAlerts: false,
+      setHasSeenTutorial: (seen) => set({ hasSeenTutorial: seen }),
       setHasReadAlerts: (read) => set({ hasReadAlerts: read }),
       setLocalData: (data) => set((state) => ({ ...state, ...data })),
       setUserData: (data) => set((state) => {
@@ -182,7 +213,7 @@ export const useUserStore = create<UserState>()(
           newFollowerEnabled: true, shareActivity: true, doNotDisturb: false, isDarkMode: false,
           shareActivityStatus: true, isPublicProfile: true, allowFriendRequests: true,
           notifications: [], unlockedBadges: [], showcasedBadges: [], activityHistory: [],
-          createdAt: undefined, hasReadAlerts: false
+          createdAt: undefined, hasReadAlerts: false, hasSeenTutorial: false
         });
       }
     }),

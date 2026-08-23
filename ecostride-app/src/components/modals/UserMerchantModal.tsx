@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
-import { X, Search, Store, Ticket } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Search, Store, Ticket, ChevronRight } from 'lucide-react';
 import { useUserStore } from '../../stores/useUserStore';
 import { useMapStore } from '../../stores/useMapStore';
+import { useAuthStore } from '../../stores/useAuthStore';
+import { apiClient } from '../../lib/api';
+import { normalizeMerchant } from '../../types/merchant';
 
 interface UserMerchantModalProps {
   isOpen: boolean;
@@ -9,16 +12,37 @@ interface UserMerchantModalProps {
 }
 
 export const UserMerchantModal: React.FC<UserMerchantModalProps> = ({ isOpen, onClose }) => {
-  const { vouchersCollected } = useUserStore();
-  const { merchants } = useMapStore();
+  const { user } = useAuthStore();
+  const { merchants, setSelectedMerchant, setFlyToLocation } = useMapStore();
   const [searchQuery, setSearchQuery] = useState('');
+  const [voucherCount, setVoucherCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (isOpen && user?.uid) {
+      apiClient(`/users/${user.uid}/vouchers`).then(res => {
+        if (res.vouchers) {
+          const activeVouchers = res.vouchers.filter((v: any) => v.status === 'active' || v.status === 'redeemed');
+          setVoucherCount(activeVouchers.length);
+        }
+      }).catch(() => {});
+    }
+  }, [isOpen, user]);
 
   if (!isOpen) return null;
 
-  const filteredMerchants = merchants.filter(m => 
+  const normalizedList = merchants.map(m => normalizeMerchant(m));
+  const filteredMerchants = normalizedList.filter(m => 
     m.storeName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
     m.category?.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleSelectStore = (merchant: any) => {
+    setSelectedMerchant(merchant);
+    if (merchant.location && Array.isArray(merchant.location) && merchant.location.length === 2) {
+      setFlyToLocation(merchant.location);
+    }
+    onClose();
+  };
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[var(--color-teal-dark)]/20 backdrop-blur-md px-4">
@@ -45,7 +69,7 @@ export const UserMerchantModal: React.FC<UserMerchantModalProps> = ({ isOpen, on
             </div>
             <div>
               <p className="text-xs font-black uppercase text-[var(--color-text-muted)]">My Vouchers</p>
-              <p className="text-xl font-black text-[var(--color-text-main)]">{vouchersCollected} Collected</p>
+              <p className="text-xl font-black text-[var(--color-text-main)]">{voucherCount} Collected</p>
             </div>
           </div>
 
@@ -67,16 +91,28 @@ export const UserMerchantModal: React.FC<UserMerchantModalProps> = ({ isOpen, on
             <div className="space-y-3">
               {filteredMerchants.length > 0 ? (
                 filteredMerchants.map((merchant) => (
-                  <div key={merchant.id} className="glass-active border border-white/40 rounded-2xl p-3 shadow-sm flex items-center justify-between hover:-translate-y-0.5 hover:shadow-md transition-all cursor-pointer">
-                    <div>
-                      <h4 className="font-black text-[var(--color-text-main)]">{merchant.storeName}</h4>
-                      <p className="text-xs font-bold text-[var(--color-text-muted)]">{merchant.category}</p>
+                  <div 
+                    key={merchant.id} 
+                    onClick={() => handleSelectStore(merchant)}
+                    className="glass-active border border-white/40 rounded-2xl p-3 shadow-sm flex items-center justify-between hover:-translate-y-0.5 hover:shadow-md transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-white/60 flex items-center justify-center text-xl shadow-inner border border-white/80 shrink-0">
+                        {merchant.icon || '🏪'}
+                      </div>
+                      <div>
+                        <h4 className="font-black text-[var(--color-text-main)] group-hover:text-[var(--color-teal-dark)] transition-colors">{merchant.storeName}</h4>
+                        <p className="text-xs font-bold text-[var(--color-text-muted)]">{merchant.category}</p>
+                      </div>
                     </div>
-                    {merchant.offers && (
-                      <span className="text-[10px] font-black uppercase bg-[var(--color-teal-dark)] text-white px-2 py-1 rounded-full shadow-sm">
-                        {merchant.offers}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {merchant.offers && (
+                        <span className="text-[10px] font-black uppercase bg-[var(--color-teal-dark)] text-white px-2 py-1 rounded-full shadow-sm">
+                          {merchant.offers}
+                        </span>
+                      )}
+                      <ChevronRight size={16} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                    </div>
                   </div>
                 ))
               ) : (
@@ -92,3 +128,4 @@ export const UserMerchantModal: React.FC<UserMerchantModalProps> = ({ isOpen, on
     </div>
   );
 };
+

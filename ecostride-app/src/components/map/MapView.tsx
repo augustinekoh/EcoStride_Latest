@@ -25,6 +25,7 @@ import { SignpostStoryViewer } from './SignpostStoryViewer';
 import { IssueStoryViewer } from './IssueStoryViewer';
 import { UserProfileModal } from '../modals/UserProfileModal';
 import { useMapGeolocation } from './useMapGeolocation';
+import { normalizeMerchant } from '../../types/merchant';
 
 const getDurationSince = (timestamp: number) => {
   const diffInSeconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -53,9 +54,10 @@ export const MapView: React.FC = () => {
     mapDisplayMode, setMapDisplayMode,
     issues, setIssues,
     activeIssue, setActiveIssue,
+    isWalkModeActive, setIsWalkModeActive,
   } = useMapStore();
   
-  const { userCoins, deductCoins, addCoins, guildName, guildId } = useUserStore();
+  const { userCoins, deductCoins, addCoins, guildName, guildId, activityHistory, hasSeenTutorial, setHasSeenTutorial } = useUserStore();
 
   const mapRef = useRef(null);
   const location = useLocation();
@@ -68,6 +70,48 @@ export const MapView: React.FC = () => {
   const [activeIssueImageIndex, setActiveIssueImageIndex] = useState(0);
   const [showTakeDownConfirm, setShowTakeDownConfirm] = useState(false);
   const [isTakingDownIssue, setIsTakingDownIssue] = useState(false);
+  
+  const [backgroundDistance, setBackgroundDistance] = useState(0);
+
+  // BUG 3 FIX: On mount, check if a walk was active before the app was killed/refreshed
+  useEffect(() => {
+    const checkActiveWalk = async () => {
+      try {
+        const { isWalkTrackingActive } = await import('../../lib/backgroundTracking');
+        const active = await isWalkTrackingActive();
+        if (active && !isWalkModeActive) {
+          setIsWalkModeActive(true);
+        }
+      } catch (err) {
+        console.error('Failed to check active walk on startup:', err);
+      }
+    };
+    checkActiveWalk();
+  }, []); // Run once on mount
+
+  useEffect(() => {
+    let interval: any;
+    if (isWalkModeActive) {
+      // Immediately fetch once, then poll
+      (async () => {
+        try {
+          const { getCurrentWalkDistance } = await import('../../lib/backgroundTracking');
+          const dist = await getCurrentWalkDistance();
+          setBackgroundDistance(dist);
+        } catch (e) { /* ignore */ }
+      })();
+      interval = setInterval(async () => {
+        try {
+          const { getCurrentWalkDistance } = await import('../../lib/backgroundTracking');
+          const dist = await getCurrentWalkDistance();
+          setBackgroundDistance(dist);
+        } catch (e) { /* ignore */ }
+      }, 5000);
+    } else {
+      setBackgroundDistance(0);
+    }
+    return () => clearInterval(interval);
+  }, [isWalkModeActive]);
 
   useEffect(() => {
     setActiveIssueImageIndex(0);
@@ -75,20 +119,20 @@ export const MapView: React.FC = () => {
   }, [activeIssue?.id]);
   const [showNavPrompt, setShowNavPrompt] = useState(() => {
     if (typeof window !== 'undefined') {
-      return !sessionStorage.getItem('hide_nav_instruction');
+      return !useUserStore.getState().hasSeenTutorial;
     }
     return true;
   });
   const [showNavPromptConfirm, setShowNavPromptConfirm] = useState(false);
   const [showFabTooltip, setShowFabTooltip] = useState(() => {
     if (typeof window !== 'undefined' && window.innerWidth <= 640) {
-      return !sessionStorage.getItem('seen_fab_tooltip');
+      return !useUserStore.getState().hasSeenTutorial;
     }
     return false;
   });
   const [showMapHomeTooltip, setShowMapHomeTooltip] = useState(() => {
     if (typeof window !== 'undefined') {
-      return !sessionStorage.getItem('seen_map_home_tooltip');
+      return !useUserStore.getState().hasSeenTutorial;
     }
     return false;
   });
@@ -156,7 +200,7 @@ export const MapView: React.FC = () => {
     if (!isFabDragging) {
       setIsFabOpen(!isFabOpen);
       setShowFabTooltip(false);
-      if (typeof window !== 'undefined') sessionStorage.setItem('seen_fab_tooltip', 'true');
+      if (typeof window !== 'undefined') setHasSeenTutorial(true);
     }
   };
 
@@ -249,16 +293,7 @@ export const MapView: React.FC = () => {
         setSignposts(formattedSignposts);
         
         if (merchantsRes.merchants) {
-          const formattedMerchants = merchantsRes.merchants.map((m: any, idx: number) => {
-             let loc = [103.6400 + (idx * 0.002), 1.5600 + (idx * 0.002)]; // fallback if null
-             try { if (m.location) loc = JSON.parse(m.location); } catch(e) {}
-             return {
-               ...m,
-               location: loc,
-               icon: '🏪',
-               offers: m.store_name
-             };
-          });
+          const formattedMerchants = merchantsRes.merchants.map((m: any) => normalizeMerchant(m));
           setMerchants(formattedMerchants);
         }
       } catch (err) {
@@ -613,7 +648,7 @@ export const MapView: React.FC = () => {
                   type="button" 
                   onClick={() => {
                     setActiveView('landing');
-                    if (typeof window !== 'undefined') sessionStorage.setItem('seen_map_home_tooltip', 'true');
+                    if (typeof window !== 'undefined') setHasSeenTutorial(true);
                     setShowMapHomeTooltip(false);
                   }} 
                   className="bg-white/50 text-[#1d3539] p-2 rounded-full border border-white/60 hover:bg-white/80 transition-colors shrink-0 relative z-10"
@@ -628,7 +663,7 @@ export const MapView: React.FC = () => {
                       onClick={(e) => {
                         e.stopPropagation();
                         setShowMapHomeTooltip(false);
-                        if (typeof window !== 'undefined') sessionStorage.setItem('seen_map_home_tooltip', 'true');
+                        if (typeof window !== 'undefined') setHasSeenTutorial(true);
                       }}
                       className="absolute -top-2 -right-2 w-5 h-5 bg-[#1d3539] rounded-full flex items-center justify-center border border-[#5496a2] shadow-sm hover:scale-110 active:scale-95 transition-transform"
                     >
@@ -1101,7 +1136,7 @@ export const MapView: React.FC = () => {
                 onClick={() => {
                   setShowNavPrompt(false);
                   setShowNavPromptConfirm(false);
-                  if (typeof window !== 'undefined') sessionStorage.setItem('hide_nav_instruction', 'true');
+                  if (typeof window !== 'undefined') setHasSeenTutorial(true);
                 }}
                 className="flex-1 py-3 bg-[#5496a2] border-2 border-[#1d3539] text-white font-black rounded-xl hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_#1d3539] transition-all"
               >
@@ -1195,6 +1230,31 @@ export const MapView: React.FC = () => {
               <span className="text-[10px] text-brand-green font-bold flex items-center gap-1 mt-0.5"><span className="w-1.5 h-1.5 rounded-full bg-brand-green"></span>100 Coins</span>
             </div>
           </div>
+
+          {/* Walk Mode Option */}
+          <div className="relative group">
+            <button 
+              onClick={async () => {
+                setIsFabOpen(false);
+                if (!isWalkModeActive) {
+                  const { startWalkSession } = await import('../../lib/backgroundTracking');
+                  const walkId = await startWalkSession();
+                  if (walkId) {
+                    setIsWalkModeActive(true);
+                    showToast('Background Walk Mode started');
+                  } else {
+                    showToast('Failed to start Walk Mode');
+                  }
+                }
+              }}
+              className={`w-14 h-14 ${isWalkModeActive ? 'bg-brand-green text-white shadow-lg' : 'glass-pill text-2xl'} flex items-center justify-center hover:scale-110 hover:-translate-y-1 transition-all active:scale-95`}
+            >
+              🚶
+            </button>
+            <div className="absolute right-16 top-1/2 -translate-y-1/2 whitespace-nowrap bg-slate-900 text-white text-xs font-bold px-2 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+              {isWalkModeActive ? 'Walk Active' : 'Start Walk'}
+            </div>
+          </div>
         </div>
 
         {/* Main Dreamy Leaf FAB */}
@@ -1225,7 +1285,7 @@ export const MapView: React.FC = () => {
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowFabTooltip(false);
-                  if (typeof window !== 'undefined') sessionStorage.setItem('seen_fab_tooltip', 'true');
+                  if (typeof window !== 'undefined') setHasSeenTutorial(true);
                 }}
                 className="absolute -top-2 -right-2 w-5 h-5 bg-[#1d3539] rounded-full flex items-center justify-center border border-[#5496a2] shadow-sm hover:scale-110 active:scale-95 transition-transform"
               >
@@ -1281,7 +1341,7 @@ export const MapView: React.FC = () => {
           </div>
           
           <div className="flex gap-3 w-full mt-3">
-            <button onClick={() => setMerchantStoreFilter(selectedMerchant.owner_id)} className="flex-1 bg-[#fff4d6] border-2 border-[#80abb1] text-[#1d3539] font-black py-3 rounded-xl hover:bg-[#e9efce] hover:border-[#5496a2] transition-all uppercase tracking-wider text-sm flex items-center justify-center gap-2">
+            <button onClick={() => setMerchantStoreFilter(selectedMerchant.id)} className="flex-1 bg-[#fff4d6] border-2 border-[#80abb1] text-[#1d3539] font-black py-3 rounded-xl hover:bg-[#e9efce] hover:border-[#5496a2] transition-all uppercase tracking-wider text-sm flex items-center justify-center gap-2">
               <Gift size={18} /> Vouchers
             </button>
             <button onClick={handleStartNavigation} className="flex-1 bg-[#5496a2] text-white font-black py-3 rounded-xl shadow-md hover:-translate-y-1 hover:shadow-lg transition-all uppercase tracking-wider text-sm flex items-center justify-center gap-2">
@@ -1349,6 +1409,40 @@ export const MapView: React.FC = () => {
             className="ml-1 sm:ml-2 text-xs sm:text-sm font-black text-red-500 hover:text-red-700 uppercase px-4 py-2 rounded-2xl border-2 border-red-500 bg-red-50 hover:bg-red-100 transition-colors shrink-0 shadow-[2px_2px_0px_0px_rgba(239,68,68,1)] active:translate-y-0.5 active:shadow-none"
           >
             Stop
+          </button>
+        </div>
+      )}
+
+      {/* Background Walk Mode Active Overlay */}
+      {!isAuthority && isWalkModeActive && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[calc(100vw-2rem)] sm:w-auto bg-white border-2 border-brand-green shadow-[4px_4px_0px_0px_#10b981] px-4 sm:px-6 py-3 rounded-2xl sm:rounded-3xl flex items-center gap-3 sm:gap-6 z-[90] animate-in slide-in-from-bottom-10 fade-in duration-300">
+          <div className="flex-1 min-w-0 flex gap-4 sm:gap-8 justify-between">
+            <div>
+              <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase leading-tight truncate">Walk Mode</p>
+              <p className="text-sm sm:text-lg font-black text-brand-green truncate leading-tight">{backgroundDistance.toFixed(2)} <span className="text-xs">km</span></p>
+            </div>
+            <div>
+              <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase leading-tight truncate">Saved</p>
+              <p className="text-sm sm:text-lg font-black text-[#5496a2] truncate leading-tight">{(backgroundDistance / 5.88).toFixed(2)} <span className="text-xs">kg CO2</span></p>
+            </div>
+          </div>
+          <button 
+            onClick={async () => {
+              const { stopWalkSession } = await import('../../lib/backgroundTracking');
+              try {
+                const res = await stopWalkSession();
+                setIsWalkModeActive(false);
+                if (res) {
+                  setCompletedDistanceKm(res.distance);
+                  setShowReportModal(true); // Assuming this works for Walk Mode too
+                }
+              } catch (e) {
+                showToast('Failed to stop walk. Network error?');
+              }
+            }} 
+            className="ml-1 sm:ml-2 text-xs sm:text-sm font-black text-red-500 hover:text-red-700 uppercase px-4 py-2 rounded-2xl border-2 border-red-500 bg-red-50 hover:bg-red-100 transition-colors shrink-0 shadow-[2px_2px_0px_0px_rgba(239,68,68,1)] active:translate-y-0.5 active:shadow-none"
+          >
+            End Walk
           </button>
         </div>
       )}

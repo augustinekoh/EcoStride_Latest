@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, MapPin, Send } from 'lucide-react';
+import { resolveImageUrl } from '../../lib/api';
 
 interface Props {
   issue: any;
@@ -63,7 +64,7 @@ export const IssueStoryViewer: React.FC<Props> = ({
     }
   };
 
-  const currentImg = images[currentIndex] || images[0] || 'https://via.placeholder.com/600x800?text=No+Photo';
+  const currentImg = resolveImageUrl(images[currentIndex] || images[0] || 'https://via.placeholder.com/600x800?text=No+Photo');
 
   return (
     <div 
@@ -163,3 +164,4 @@ export const IssueStoryViewer: React.FC<Props> = ({
     </div>
   );
 };
+

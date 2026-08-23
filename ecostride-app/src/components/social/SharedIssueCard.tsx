@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Clock, Map, MapPin } from 'lucide-react';
-import { apiClient } from '../../lib/api';
+import { apiClient, resolveImageUrl } from '../../lib/api';
 import { useMapStore } from '../../stores/useMapStore';
 import { useDemoStore } from '../../stores/useDemoStore';
 import { useAuthStore } from '../../stores/useAuthStore';
@@ -101,7 +101,7 @@ export const SharedIssueCard: React.FC<{ issueId: string }> = ({ issueId }) => {
     >
       {photos.length > 0 ? (
         <div className="w-full h-28 relative overflow-hidden bg-slate-100 dark:bg-slate-900 rounded-t-xl">
-          <img src={photos[0]} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+          <img src={resolveImageUrl(photos[0])} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
           <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
             <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md shadow-sm ${
@@ -154,3 +154,4 @@ export const SharedIssueCard: React.FC<{ issueId: string }> = ({ issueId }) => {
     </div>
   );
 };
+

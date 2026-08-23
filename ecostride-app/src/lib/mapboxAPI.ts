@@ -1,3 +1,9 @@
+import mapboxgl from 'mapbox-gl';
+
+// Use pre-built CSP worker to avoid blob URL workers that crash on Android WebView
+// (blob workers use `import.meta` which is unsupported outside ES modules)
+mapboxgl.workerUrl = '/mapbox-gl-csp-worker.js';
+
 export const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
 
 export const getWalkingRoute = async (start: [number, number], end: [number, number]) => {

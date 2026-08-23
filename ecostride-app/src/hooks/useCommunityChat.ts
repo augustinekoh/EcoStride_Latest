@@ -112,7 +112,21 @@ export function useCommunityChat(guildId: string | undefined | null, token: stri
 
   useEffect(() => {
     connect();
+    
+    const onResume = () => {
+      console.log('[useCommunityChat] App resumed, forcing reconnect...');
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      if (wsRef.current) {
+        wsRef.current.onclose = null; // Prevent exponential backoff
+        wsRef.current.close();
+      }
+      reconnectAttempts.current = 0;
+      connect();
+    };
+    document.addEventListener('appResumed', onResume);
+
     return () => {
+      document.removeEventListener('appResumed', onResume);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (wsRef.current) {
         // Prevent reconnect loop on unmount

@@ -3,3 +3,7 @@ dist/
 .wrangler/
 .env
 .env.*
+*.apk
+*.jks
+*.keystore
+keystore.properties

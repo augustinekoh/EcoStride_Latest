@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { notificationService } from './notificationService';
 
 export const authoritiesRouter = new Hono<{ Bindings: any, Variables: { user: any } }>();
 
@@ -435,15 +436,20 @@ authoritiesRouter.patch('/issues/:id/resolve', async (c) => {
     VALUES (?, ?, ?, 'authority', 'REPORT_RESOLVED', 'Report Resolved', 'The authority marked the report as resolved.', ?)
   `).bind(activityId, id, jwtUser.sub, now);
 
-  const mailId = 'mail-' + now + '-' + Math.random().toString(36).substring(2, 7);
+  await c.env.DB.batch([updateIssue, insertActivity]);
+  
   const issueTitle = issue.title ? `"${issue.title}"` : 'your reported infrastructure issue';
   const mailContent = `Great news! Your issue report ${issueTitle} has been successfully resolved by the local authority.\n\nThank you for contributing to the community!`;
   
-  const insertMail = c.env.DB.prepare(
-    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)'
-  ).bind(mailId, 'Issue Resolved', mailContent, 'Authority Office', 'user', issue.author_id, now);
-
-  await c.env.DB.batch([updateIssue, insertActivity, insertMail]);
+  await notificationService.createMailAndNotify(c.env, {
+    title: 'Issue Resolved',
+    content: mailContent,
+    sender: 'Authority Office',
+    recipient_type: 'user',
+    recipient_id: issue.author_id,
+    notification_type: 'mailbox',
+    notification_priority: 'high'
+  });
     
   return c.json({ success: true });
 });
@@ -510,16 +516,20 @@ const handleTakeDownIssue = async (c: any) => {
     VALUES (?, ?, ?, 'authority', 'ISSUE_TAKEN_DOWN', 'Issue Report Taken Down', ?, ?)
   `).bind(activityId, id, jwtUser.sub, `The report was taken down by the authority. Reason: ${reason}`, now);
 
-  // 3. System auto-generates a message to the user's mailbox
-  const mailId = 'mail-' + now + '-' + Math.random().toString(36).substring(2, 7);
+  await c.env.DB.batch([updateIssue, insertActivity]);
+  
   const issueTitle = issue.title ? `"${issue.title}"` : 'your reported infrastructure issue';
   const mailContent = `Your issue report ${issueTitle} has been taken down by the local authority.\n\nReason: ${reason}\n\nPlease verify your GPS location or adjust the map marker accurately before submitting a new report.`;
-  
-  const insertMail = c.env.DB.prepare(
-    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)'
-  ).bind(mailId, 'Issue Report Notice', mailContent, 'Authority Office', 'user', issue.author_id, now);
 
-  await c.env.DB.batch([updateIssue, insertActivity, insertMail]);
+  const mailId = await notificationService.createMailAndNotify(c.env, {
+    title: 'Issue Report Notice',
+    content: mailContent,
+    sender: 'Authority Office',
+    recipient_type: 'user',
+    recipient_id: issue.author_id,
+    notification_type: 'mailbox',
+    notification_priority: 'high'
+  });
 
   return c.json({ 
     success: true, 
@@ -547,12 +557,18 @@ authoritiesRouter.post('/issues/:id/approve-takedown', async (c: any) => {
     VALUES (?, ?, ?, 'authority', 'ISSUE_TAKEN_DOWN', 'Takedown Approved', 'Authority approved the user takedown request.', ?)
   `).bind(activityId, id, jwtUser.sub, now);
   
-  const mailId = 'mail-' + now + '-' + Math.random().toString(36).substring(2, 7);
-  const insertMail = c.env.DB.prepare(
-    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)'
-  ).bind(mailId, 'Takedown Approved', `Your request to take down issue "${issue.title}" has been approved.`, 'Authority Office', 'user', issue.author_id, now);
+  await c.env.DB.batch([updateIssue, insertActivity]);
+  
+  await notificationService.createMailAndNotify(c.env, {
+    title: 'Takedown Approved',
+    content: `Your request to take down issue "${issue.title}" has been approved.`,
+    sender: 'Authority Office',
+    recipient_type: 'user',
+    recipient_id: issue.author_id,
+    notification_type: 'mailbox',
+    notification_priority: 'high'
+  });
 
-  await c.env.DB.batch([updateIssue, insertActivity, insertMail]);
   return c.json({ success: true, message: 'Takedown approved' });
 });
 
@@ -575,12 +591,18 @@ authoritiesRouter.post('/issues/:id/reject-takedown', async (c: any) => {
     VALUES (?, ?, ?, 'authority', 'TAKEDOWN_REJECTED', 'Takedown Rejected', ?, ?)
   `).bind(activityId, id, jwtUser.sub, `Authority rejected the takedown request. Reason: ${reason}`, now);
 
-  const mailId = 'mail-' + now + '-' + Math.random().toString(36).substring(2, 7);
-  const insertMail = c.env.DB.prepare(
-    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)'
-  ).bind(mailId, 'Takedown Rejected', `Your request to take down issue "${issue.title}" has been rejected.\n\nReason: ${reason}`, 'Authority Office', 'user', issue.author_id, now);
+  await c.env.DB.batch([updateIssue, insertActivity]);
+  
+  await notificationService.createMailAndNotify(c.env, {
+    title: 'Takedown Rejected',
+    content: `Your request to take down issue "${issue.title}" has been rejected.\n\nReason: ${reason}`,
+    sender: 'Authority Office',
+    recipient_type: 'user',
+    recipient_id: issue.author_id,
+    notification_type: 'mailbox',
+    notification_priority: 'high'
+  });
 
-  await c.env.DB.batch([updateIssue, insertActivity, insertMail]);
   return c.json({ success: true, message: 'Takedown rejected' });
 });
 

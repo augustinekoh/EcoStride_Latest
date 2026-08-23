@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useUserStore } from '../../stores/useUserStore';
-import { apiClient } from '../../lib/api';
+import { apiClient, resolveImageUrl } from '../../lib/api';
 import { Trophy, TreeDeciduous, Users, MoreVertical, ShieldAlert, MicOff, Mic, UserMinus, UserIcon, Settings, X } from 'lucide-react';
 import { auth } from '../../firebase';
 import { UserProfileModal } from '../modals/UserProfileModal';
 import { EditCommunityModal } from '../modals/EditCommunityModal';
+import { useAppRefresh } from '../../hooks/useAppRefresh';
 
 interface Member {
   id: string;
@@ -45,7 +46,7 @@ export function CommunityDashboard() {
   const isAdmin = currentUserId === guild?.admin_id;
 
   const fetchGuild = () => {
-    apiClient(`/guilds/${activeGuildId}`)
+    return apiClient(`/guilds/${activeGuildId}`)
       .then(data => {
         if (data.guild) setGuild(data.guild);
         if (data.members) setMembers(data.members);
@@ -53,6 +54,8 @@ export function CommunityDashboard() {
       .catch(console.error)
       .finally(() => setIsLoading(false));
   };
+
+  useAppRefresh(fetchGuild);
 
   useEffect(() => {
     fetchGuild();
@@ -162,7 +165,7 @@ export function CommunityDashboard() {
               <div className="absolute inset-0 bg-[#5496a2]/5" />
               {guild?.icon ? (
                 (guild.icon.startsWith('http') || guild.icon.startsWith('/')) ? (
-                  <img src={guild.icon} alt={guild.name} className="w-full h-full object-cover" />
+                  <img src={resolveImageUrl(guild.icon)} alt={guild.name} className="w-full h-full object-cover" />
                 ) : (
                   <span className="text-5xl">{guild.icon}</span>
                 )
@@ -244,7 +247,7 @@ export function CommunityDashboard() {
                 <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
                   {member.avatar ? (
                     (member.avatar.startsWith('http') || member.avatar.startsWith('/')) ? (
-                      <img src={member.avatar} alt={member.username} className="w-full h-full object-cover" />
+                      <img src={resolveImageUrl(member.avatar)} alt={member.username} className="w-full h-full object-cover" />
                     ) : (
                       <span className="text-xl">{member.avatar}</span>
                     )
@@ -371,7 +374,7 @@ export function CommunityDashboard() {
             </button>
             <div className="w-full aspect-square rounded-full border-4 border-[#1d3539] overflow-hidden bg-white/10 shadow-comic flex items-center justify-center text-9xl">
               {(guild.icon.startsWith('http') || guild.icon.startsWith('/')) ? (
-                <img src={guild.icon} alt="community full" className="w-full h-full object-cover" />
+                <img src={resolveImageUrl(guild.icon)} alt="community full" className="w-full h-full object-cover" />
               ) : (
                 guild.icon
               )}
@@ -382,3 +385,4 @@ export function CommunityDashboard() {
     </div>
   );
 }
+

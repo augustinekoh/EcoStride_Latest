@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Users, TreePine, MapPin } from 'lucide-react';
-import { apiClient } from '../../lib/api';
+import { apiClient, resolveImageUrl } from '../../lib/api';
 
 interface CommunityProfileModalProps {
   isOpen: boolean;
@@ -62,7 +62,7 @@ export const CommunityProfileModal: React.FC<CommunityProfileModalProps> = ({ is
               <div className="w-full bg-[#5496a2]/10 h-32 relative flex justify-center mb-16 shrink-0">
                 <div className="absolute -bottom-12 w-28 h-28 bg-[#fff4d6] rounded-full border-4 border-[#fff4d6] shadow-xl flex items-center justify-center text-5xl overflow-hidden">
                   {(community.icon && (community.icon.startsWith('http') || community.icon.startsWith('/'))) ? (
-                    <img src={community.icon} alt={community.name} className="w-full h-full object-cover" />
+                    <img src={resolveImageUrl(community.icon)} alt={community.name} className="w-full h-full object-cover" />
                   ) : (
                     community.icon || '🌍'
                   )}
@@ -106,3 +106,4 @@ export const CommunityProfileModal: React.FC<CommunityProfileModalProps> = ({ is
     </div>
   );
 };
+

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { MessageCircle, X, Send, User, ArrowLeft, Camera, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useCommunityChat } from '../../hooks/useCommunityChat';
 import { auth } from '../../firebase';
@@ -362,7 +363,10 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
                         <div className="text-[15px] font-medium leading-relaxed whitespace-pre-wrap break-words">
                           {msg.content.split(/(\[IMAGE:.*?\]|\[SIGNPOST:.*?\]|\[ISSUE:.*?\])/g).map((part, i) => {
                             if (part.startsWith('[IMAGE:')) {
-                              const url = part.replace('[IMAGE:', '').replace(']', '');
+                              let url = part.replace('[IMAGE:', '').replace(']', '');
+                                if (Capacitor.isNativePlatform() && url.includes('localhost')) {
+                                  url = url.replace('localhost', '192.168.0.194');
+                                }
                               return <img 
                                 key={i} 
                                 src={url} 
@@ -620,3 +624,5 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
     </div>
   );
 }
+
+

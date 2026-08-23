@@ -1,3 +1,5 @@
+import { notificationService } from './notificationService';
+
 export async function checkAndAwardBadges(c: any, userId: string) {
   try {
     const user = await c.env.DB.prepare('SELECT total_distance_km, total_trees_planted, unlocked_badges, guild_id FROM users WHERE id = ?').bind(userId).first();
@@ -78,19 +80,16 @@ export async function checkAndAwardBadges(c: any, userId: string) {
           msg = `You upgraded the '${b.name}' badge to Level ${b.level}!`;
         }
         
-        await c.env.DB.prepare(`
-          INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, created_at, action_type, expires_for_new_users)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
-        `).bind(
-          'mail-' + crypto.randomUUID(),
-          'Achievement Unlocked 🎉',
-          msg,
-          'System',
-          'user',
-          userId,
-          Date.now(),
-          'badge_unlock'
-        ).run();
+        await notificationService.createMailAndNotify(c.env, {
+          title: 'Badge Unlocked!',
+          content: msg,
+          sender: 'EcoStride Achievements',
+          recipient_type: 'user',
+          recipient_id: userId,
+          action_type: 'badge_unlocked',
+          notification_type: 'mailbox',
+          notification_priority: 'normal'
+        });
       }
     }
   } catch (err) {

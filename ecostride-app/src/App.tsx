@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { NativeBridge } from './components/NativeBridge';
 import { AuthorityRegistration } from './components/authorities/AuthorityRegistration';
 import { useDemoStore } from './stores/useDemoStore';
 import { BottomNavBar } from './components/controls/BottomNavBar';
@@ -19,16 +20,20 @@ import { AdminDashboard } from './components/admin/AdminDashboard';
 import { SocialRouter } from './components/social/SocialRouter';
 import { useAuthStore } from './stores/useAuthStore';
 import { auth } from './firebase';
-import { onAuthStateChanged, setPersistence, browserSessionPersistence } from 'firebase/auth';
+import { onAuthStateChanged, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { apiClient } from './lib/api';
 import { useUserStore } from './stores/useUserStore';
 import { useMailStore } from './stores/useMailStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { PushNotifications } from '@capacitor/push-notifications';
+import { Capacitor } from '@capacitor/core';
 import { AuthoritiesDashboard } from './components/authorities/AuthoritiesDashboard';
 import { CaseReportsView } from './components/cases/CaseReportsView';
+import { StartupAnimation } from './components/StartupAnimation';
+import { PullToRefresh } from './components/controls/PullToRefresh';
 
 function PublicApp() {
-  const { activeView, isWaitingForApproval, isChatExpanded } = useDemoStore();
+  const { activeView, isWaitingForApproval, isChatExpanded, isMobileMenuOpen } = useDemoStore();
   const { user, role } = useAuthStore();
   const { isDarkMode, bannedUntil } = useUserStore();
 
@@ -93,23 +98,25 @@ function PublicApp() {
 
   return (
     <div className={`w-screen h-screen overflow-hidden relative text-slate-900 font-sans transition-colors duration-500 ${isDarkMode ? 'dark' : ''}`}>
-      {activeView !== 'settings' && activeView !== 'cases' && !isChatExpanded && <BottomNavBar />}
+      {activeView !== 'settings' && activeView !== 'cases' && !isChatExpanded && !isMobileMenuOpen && <BottomNavBar />}
       
-      {activeView === 'landing' && <LandingPage />}
-      {activeView === 'profile' && <ProfileView />}
-      {activeView === 'settings' && <SettingsView />}
-      {activeView === 'city' && <CityView />}
-      {activeView === 'map' && (
-        <ErrorBoundary>
-          <MapView />
-          <RouteSimulator />
-          <ImpactReportModal />
-        </ErrorBoundary>
-      )}
-      {activeView === 'merchant_dashboard' && <MerchantDashboard />}
-      {activeView === 'merchant_onboarding' && <MerchantOnboardingForm />}
-      {activeView === 'group' && <SocialRouter />}
-      {activeView === 'cases' && <CaseReportsView />}
+      <PullToRefresh disabled={activeView === 'map'}>
+        {activeView === 'landing' && <LandingPage />}
+        {activeView === 'profile' && <ProfileView />}
+        {activeView === 'settings' && <SettingsView />}
+        {activeView === 'city' && <CityView />}
+        {activeView === 'map' && (
+          <ErrorBoundary>
+            <MapView />
+            <RouteSimulator />
+            <ImpactReportModal />
+          </ErrorBoundary>
+        )}
+        {activeView === 'merchant_dashboard' && <MerchantDashboard />}
+        {activeView === 'merchant_onboarding' && <MerchantOnboardingForm />}
+        {activeView === 'group' && <SocialRouter />}
+        {activeView === 'cases' && <CaseReportsView />}
+      </PullToRefresh>
     </div>
   );
 }
@@ -139,6 +146,7 @@ function AuthoritiesAppWrapper() {
 }
 
 function App() {
+  const [animationDone, setAnimationDone] = useState(false);
   const { setUser, loading, setLoading } = useAuthStore();
   const { setUserData } = useUserStore();
   const isDarkMode = useUserStore(state => state.isDarkMode);
@@ -163,12 +171,71 @@ function App() {
     };
     cleanup();
 
-    // Force session persistence so closing the tab or opening a new tab logs out the user
-    setPersistence(auth, browserSessionPersistence).catch(console.error);
+    // We want the user to stay logged in across app restarts
+    setPersistence(auth, browserLocalPersistence).catch(console.error);
     
     let demoPollInterval: ReturnType<typeof setTimeout>;
     let userPollInterval: ReturnType<typeof setTimeout>;
     let isInitialMailFetch = true;
+
+    let hasRegisteredPush = false;
+    const registerPushNotifications = async (uid: string) => {
+      if (hasRegisteredPush || !Capacitor.isNativePlatform()) return;
+      hasRegisteredPush = true;
+      try {
+        let permStatus = await PushNotifications.checkPermissions();
+        console.log('[Push] Permission status:', permStatus.receive);
+        if (permStatus.receive === 'prompt') {
+          permStatus = await PushNotifications.requestPermissions();
+        }
+        if (permStatus.receive !== 'granted') {
+          console.warn('[Push] Permission not granted:', permStatus.receive);
+          return;
+        }
+        
+        // IMPORTANT: Attach listeners BEFORE calling register()
+        // to avoid a race condition where the 'registration' event fires
+        // before the listener is attached.
+        await PushNotifications.removeAllListeners();
+
+        PushNotifications.addListener('registration', async (token) => {
+          console.log('[Push] FCM token received:', token.value.substring(0, 20) + '...');
+          try {
+            await apiClient(`/users/${uid}/devices`, {
+              method: 'POST',
+              body: JSON.stringify({ token: token.value, platform: Capacitor.getPlatform() })
+            });
+            console.log('[Push] Device registered with backend successfully');
+          } catch (err) {
+            console.error('[Push] Failed to register device with backend:', err);
+          }
+        });
+
+        PushNotifications.addListener('registrationError', (error) => {
+          console.error('[Push] Registration error:', JSON.stringify(error));
+        });
+
+        PushNotifications.addListener('pushNotificationReceived', (notification) => {
+          // App is in the foreground — suppress notification popup,
+          // only silently refresh the mailbox so new messages appear.
+          console.log('[Push] Foreground notification suppressed:', notification.title);
+          (window as any).triggerAppRefresh?.();
+        });
+
+        PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
+          const data = notification.notification.data;
+          if (data && data.mailId) {
+            (window as any).pendingNotificationRoute = `/mailbox/${data.mailId}`;
+          }
+        });
+
+        // Now call register AFTER listeners are attached
+        await PushNotifications.register();
+        console.log('[Push] PushNotifications.register() called');
+      } catch (e) {
+        console.error('[Push] Registration failed:', e);
+      }
+    };
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -197,7 +264,15 @@ function App() {
                 city: data.user.city || '',
                 unlockedBadges: data.user.unlocked_badges ? JSON.parse(data.user.unlocked_badges) : [],
                 showcasedBadges: data.user.showcased_badges ? JSON.parse(data.user.showcased_badges) : [],
-                bannedUntil: data.user.banned_until
+                bannedUntil: data.user.banned_until,
+                ...(data.user.preferences ? {
+                  pushEnabled: data.user.preferences.push_enabled === 1,
+                  mailboxEnabled: data.user.preferences.mailbox_enabled === 1,
+                  socialEnabled: data.user.preferences.social_enabled === 1,
+                  newsEnabled: data.user.preferences.news_enabled === 1,
+                  dailyReminderEnabled: data.user.preferences.daily_reminder_enabled === 1,
+                  newFollowerEnabled: data.user.preferences.new_follower_enabled === 1
+                } : {})
               });
               
               // Handle role
@@ -207,8 +282,11 @@ function App() {
                 setUser(user, data.user.role || 'user');
               }
             } else {
-              setUser(user, 'user');
+              const currentRole = useAuthStore.getState().role || 'user';
+              setUser(user, currentRole);
             }
+
+            registerPushNotifications(user.uid);
 
             // Community Chat Unread polling
             if (data.user && data.user.guild_id) {
@@ -295,10 +373,18 @@ function App() {
                 category: m.category
               })), mailData.read_mail_ids || []);
             }
-          } catch (e) {
-            console.error("Failed to fetch user data", e);
-            setUser(user, 'user');
-          }
+            } catch (e: any) {
+              console.error("Failed to fetch user data", e);
+              if (e.message && (e.message.includes('401') || e.message.includes('403'))) {
+                auth.signOut();
+                setUser(null, null);
+                useUserStore.getState().clearUser();
+              } else {
+                // Preserve current role on network/server errors instead of downgrading
+                const currentRole = useAuthStore.getState().role || 'user';
+                setUser(user, currentRole);
+              }
+            }
         };
 
         (window as any).triggerAppRefresh = fetchUserDataAndMails;
@@ -360,6 +446,8 @@ function App() {
 
   return (
     <BrowserRouter>
+      {!animationDone && <StartupAnimation onComplete={() => setAnimationDone(true)} />}
+      <NativeBridge />
       <Routes>
         <Route path="/authority/register/:token" element={<AuthorityRegistration />} />
         <Route path="/" element={<PublicApp />} />

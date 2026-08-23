@@ -9,8 +9,10 @@ interface DemoState {
   completedDistanceKm: number
   isWaitingForApproval: boolean
   isChatExpanded: boolean
+  isMobileMenuOpen: boolean
   activePrivateChat: any | null
   setIsChatExpanded: (val: boolean) => void
+  setIsMobileMenuOpen: (val: boolean) => void
   setActivePrivateChat: (chat: any | null) => void
   setIsWaitingForApproval: (val: boolean) => void
   demoRequestRejected: boolean
@@ -32,11 +34,13 @@ export const useDemoStore = create<DemoState>((set) => ({
   completedDistanceKm: 0,
   isWaitingForApproval: false,
   isChatExpanded: false,
+  isMobileMenuOpen: false,
   activePrivateChat: null,
   demoRequestRejected: false,
   setDemoRequestRejected: (val) => set({ demoRequestRejected: val }),
   setIsWaitingForApproval: (val) => set({ isWaitingForApproval: val }),
   setIsChatExpanded: (val) => set({ isChatExpanded: val }),
+  setIsMobileMenuOpen: (val) => set({ isMobileMenuOpen: val }),
   setActivePrivateChat: (chat) => set({ activePrivateChat: chat }),
   setMode: (mode) => set({ currentMode: mode }),
   setProgress: (progress) => set((state) => ({ 

@@ -106,7 +106,19 @@ export const AdminDashboard: React.FC = () => {
         
         const user = res.users.find((u: any) => u.id === a.owner_id);
         return { 
-          id: a.id, merchantId: a.owner_id, storeName: details.storeName || 'Unknown Store', menuLink: details.menuLink, type: a.type, vouchers: details.vouchers || [], merchantEmail: user ? user.email : 'Unknown', category: details.category, location: details.location, subscriptionPlan: details.subscriptionPlan || 'N/A', applicantUsername: details.username || 'Unknown', applicantUid: user?.player_id || details.uid || a.owner_id
+          id: a.id, 
+          ownerId: a.owner_id, 
+          targetMerchantId: details.merchantId || null, 
+          storeName: details.storeName || 'Unknown Store', 
+          menuLink: details.menuLink, 
+          type: a.type, 
+          vouchers: details.vouchers || [], 
+          merchantEmail: user ? user.email : 'Unknown', 
+          category: details.category, 
+          location: details.location, 
+          subscriptionPlan: details.subscriptionPlan || 'N/A', 
+          applicantUsername: details.username || 'Unknown', 
+          applicantUid: user?.player_id || details.uid || a.owner_id
         };
       }));
       setDemoRequests(res.demoRequests.filter((d: any) => d.status === 'pending'));
@@ -260,7 +272,7 @@ export const AdminDashboard: React.FC = () => {
       
       // Send mail
       await apiClient('/mail', { method: 'POST', body: JSON.stringify({
-        title: 'Application Approved 🎉', content: `Your application for ${app.storeName} was approved.`, sender: 'System', recipientType: 'user', recipientId: app.merchantId
+        title: 'Application Approved 🎉', content: `Your application for ${app.storeName} was approved.`, sender: 'System', recipientType: 'user', recipientId: app.ownerId
       })});
       
       fetchDashboardData();
@@ -278,7 +290,7 @@ export const AdminDashboard: React.FC = () => {
         content: `Your merchant application for ${app.storeName} was rejected. Reason: ${reason || 'No reason provided.'}`, 
         sender: 'System Admin', 
         recipientType: 'user', 
-        recipientId: app.merchantId
+        recipientId: app.ownerId
       })});
       
       fetchDashboardData();
@@ -504,13 +516,16 @@ export const AdminDashboard: React.FC = () => {
       if (item.merchantId) {
         const reason = window.prompt("Reason for deleting this voucher:");
         if (reason === null) return; // User cancelled
+        const targetMerchant = merchants.find(m => m.id === item.merchantId || m.ownerId === item.merchantId);
+        const recipientUid = targetMerchant ? targetMerchant.ownerId : item.merchantId;
+        
         await apiClient(`/store/${item.id}`, { method: 'DELETE' });
         await apiClient('/mail', { method: 'POST', body: JSON.stringify({
           title: 'Voucher Deleted 🗑️', 
           content: `Your voucher "${item.name}" was deleted by the administrator. Reason: ${reason || 'No reason provided.'}`, 
           sender: 'System Admin', 
           recipientType: 'user', 
-          recipientId: item.merchantId
+          recipientId: recipientUid
         })});
       } else {
         await apiClient(`/store/${item.id}`, { method: 'DELETE' });
@@ -713,7 +728,7 @@ export const AdminDashboard: React.FC = () => {
                           <p className="text-sm text-slate-500 font-bold mt-1">Email: <span className="text-slate-800">{app.merchantEmail}</span></p>
                           {/* Menu Link & Location Diff */}
                           {(() => {
-                            const originalMerchant = app.type === 'modification' ? merchants.find(m => m.ownerId === app.merchantId) : null;
+                            const originalMerchant = app.type === 'modification' ? merchants.find(m => m.id === app.targetMerchantId || m.ownerId === app.ownerId) : null;
                             const isLinkModified = app.type === 'modification' && originalMerchant && originalMerchant.menuLink !== app.menuLink;
                             const isLocationModified = app.type === 'modification' && originalMerchant && JSON.stringify(originalMerchant.location) !== JSON.stringify(app.location);
 
@@ -727,7 +742,7 @@ export const AdminDashboard: React.FC = () => {
                                     <p className="text-sm text-[#1d3539] font-bold">New: <span className="text-blue-600">{app.menuLink || 'N/A'}</span></p>
                                   </div>
                                 ) : (
-                                  <p className="text-sm text-slate-500 font-bold">Link: <span className="text-slate-800">{app.menuLink || 'N/A'}</span></p>
+                                  <p className="text-sm text-slate-500 font-bold break-all">Link: <span className="text-slate-800 break-all">{app.menuLink || 'N/A'}</span></p>
                                 )}
 
                                 {/* Location */}
@@ -782,7 +797,11 @@ export const AdminDashboard: React.FC = () => {
                                   ))
                                 ) : (
                                   (() => {
-                                    const currentMerchantVouchers = storeItems.filter(i => i.merchantId === app.merchantId && i.status !== 'disabled');
+                                    const targetMerchant = merchants.find(m => m.id === app.targetMerchantId || m.ownerId === app.ownerId);
+                                    const currentMerchantVouchers = storeItems.filter(i => 
+                                      (i.merchantId === app.targetMerchantId || (targetMerchant && i.merchantId === targetMerchant.id) || i.merchantId === app.ownerId) && 
+                                      i.status !== 'disabled'
+                                    );
                                     const submittedVouchers = app.vouchers || [];
                                     const newVouchers = submittedVouchers.filter((v: any) => !v.originalId);
                                     const deletedVouchers = currentMerchantVouchers.filter((cv: any) => !submittedVouchers.find((sv: any) => sv.originalId === cv.id));
@@ -937,7 +956,7 @@ export const AdminDashboard: React.FC = () => {
                           <div className="flex-1">
                             <h4 className="font-bold text-lg text-[#111111]">{m.storeName}</h4>
                             <p className="text-sm text-slate-600 mt-1">Status: <span className="font-semibold text-emerald-600 uppercase text-xs tracking-wide">{m.status}</span></p>
-                            <p className="text-xs text-teal-700/70 mt-1">Owner Email: {user ? user.email : 'Unknown'} | Link: {m.menuLink || 'N/A'}</p>
+                            <p className="text-xs text-teal-700/70 mt-1 break-all">Owner Email: {user ? user.email : 'Unknown'} | Link: {m.menuLink || 'N/A'}</p>
                             
                             {m.location ? (
                               <button onClick={() => setViewMapLocation(m.location)} className="text-xs font-bold text-[#5496a2] bg-[#5496a2]/10 px-3 py-1.5 rounded-lg hover:bg-[#5496a2] hover:text-white transition-all active:scale-95 flex items-center gap-1 mt-2">
@@ -948,9 +967,9 @@ export const AdminDashboard: React.FC = () => {
                             )}
                             
                             {/* Store Items Display */}
-                            {storeItems.filter(i => i.merchantId === m.ownerId).length > 0 && (
+                            {storeItems.filter(i => i.merchantId === m.id || i.merchantId === m.ownerId).length > 0 && (
                               <div className="mt-4 flex flex-col gap-3">
-                                {storeItems.filter(i => i.merchantId === m.ownerId).map((item, idx) => (
+                                {storeItems.filter(i => i.merchantId === m.id || i.merchantId === m.ownerId).map((item, idx) => (
                                   <div key={idx} className={`border p-3 rounded-xl flex items-center justify-between shadow-sm ${item.status === 'disabled' ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-slate-200'}`}>
                                     <div className="flex items-center gap-3">
                                       <div className="text-2xl">{item.icon}</div>

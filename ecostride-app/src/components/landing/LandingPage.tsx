@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useUserStore } from '../../stores/useUserStore';
 import { useAuthStore } from '../../stores/useAuthStore';
-import { Bell, Activity, Map as MapIcon, ChevronRight, ChevronDown, ChevronLeft, Calendar as CalendarIcon, X, Trophy, Gift, Mail, Store, Menu } from 'lucide-react';
+import { Bell, Activity, Map as MapIcon, ChevronRight, ChevronDown, ChevronLeft, Calendar as CalendarIcon, X, Trophy, Gift, Mail, Store, Menu, Building, Users } from 'lucide-react';
 import { CarbonStatsModal } from '../modals/CarbonStatsModal';
 import { MailboxModal } from '../modals/MailboxModal';
 import { PointsStoreModal } from '../modals/PointsStoreModal';
@@ -35,7 +35,7 @@ export const LandingPage: React.FC = () => {
   const { activityHistory, notifications, clearNotifications, totalCarbonSaved, totalDistanceKm, hasReadAlerts, setHasReadAlerts, username, avatar } = useUserStore();
   const { user, role } = useAuthStore();
   const { unreadCount } = useMailStore();
-  const { setActiveView } = useDemoStore();
+  const { setActiveView, isMobileMenuOpen, setIsMobileMenuOpen } = useDemoStore();
   
   const [greeting, setGreeting] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
@@ -44,8 +44,7 @@ export const LandingPage: React.FC = () => {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   
 
-  const [isActionMenuOpen, setIsActionMenuOpen] = useState(typeof window !== 'undefined' && window.innerWidth > 640);
-  const [showMenuTooltip, setShowMenuTooltip] = useState(() => {
+    const [showMenuTooltip, setShowMenuTooltip] = useState(() => {
     if (typeof window !== 'undefined' && window.innerWidth <= 640) {
       return !sessionStorage.getItem('seen_menu_tooltip');
     }
@@ -61,6 +60,23 @@ export const LandingPage: React.FC = () => {
 
   const [showAllActivities, setShowAllActivities] = useState(false);
   const [showCarbonModal, setShowCarbonModal] = useState(false);
+  const [initialMailId, setInitialMailId] = useState<string | undefined>();
+
+  useEffect(() => {
+    const route = (window as any).pendingNotificationRoute;
+    if (route) {
+      if (route.startsWith('/mailbox/')) {
+        const mId = route.split('/mailbox/')[1];
+        if (mId) {
+          setInitialMailId(mId);
+          setShowMailbox(true);
+        }
+      } else if (route === '/mailbox') {
+        setShowMailbox(true);
+      }
+      delete (window as any).pendingNotificationRoute;
+    }
+  }, []);
 
   // Swipe to close states
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
@@ -78,7 +94,7 @@ export const LandingPage: React.FC = () => {
   const handleTouchEnd = () => {
     if (touchStartY !== null && touchCurrentY !== null) {
       if (touchCurrentY - touchStartY > 100) {
-        setIsActionMenuOpen(false);
+        setIsMobileMenuOpen(false);
       }
     }
     setTouchStartY(null);
@@ -238,7 +254,7 @@ export const LandingPage: React.FC = () => {
         {/* Top Action Bar (Expandable on Desktop) */}
         <div className="flex items-center justify-end shrink-0">
           {/* Desktop Inline Menu */}
-          <div className={`hidden sm:flex items-center gap-2 overflow-hidden py-2 px-1 transition-all duration-500 ease-out origin-right ${isActionMenuOpen ? 'max-w-[600px] opacity-100 pr-3' : 'max-w-0 opacity-0 pr-0'}`}>
+          <div className={`hidden sm:flex items-center gap-2 overflow-hidden py-2 px-1 transition-all duration-500 ease-out origin-right ${isMobileMenuOpen ? 'max-w-[600px] opacity-100 pr-3' : 'max-w-0 opacity-0 pr-0'}`}>
             <div className="relative">
               <button 
                 onClick={() => {
@@ -290,23 +306,35 @@ export const LandingPage: React.FC = () => {
             )}
           </div>
           
-          <div className="relative">
+          <div className="flex items-center gap-2 relative">
             <button 
               onClick={() => {
-                setIsActionMenuOpen(!isActionMenuOpen);
+                setShowNotifications(!showNotifications);
+                if (!showNotifications) setHasReadAlerts(true);
+              }}
+              className="sm:hidden w-10 h-10 glass-card rounded-full flex items-center justify-center relative transition-transform hover:-translate-y-1 active:translate-y-0"
+            >
+              <Bell className="text-[var(--color-text-main)]" size={18} />
+              {notifications.length > 0 && !hasReadAlerts && (
+                <div className="absolute top-2 right-2 w-2.5 h-2.5 bg-[var(--color-teal-dark)] rounded-full border border-white shadow-sm"></div>
+              )}
+            </button>
+            <button 
+              onClick={() => {
+                setIsMobileMenuOpen(!isMobileMenuOpen);
                 setShowMenuTooltip(false);
                 if (typeof window !== 'undefined') sessionStorage.setItem('seen_menu_tooltip', 'true');
               }}
               className="w-10 h-10 glass-card rounded-full flex items-center justify-center z-10 hover:-translate-y-1 transition-transform shadow-md border-2 border-white/60 bg-white/40"
             >
               <Menu size={20} className="text-[var(--color-text-main)]" />
-              {/* Mobile notification dot on menu button */}
-              {((notifications.length > 0 && !hasReadAlerts) || unreadCount > 0) && (
+              {/* Mobile notification dot on menu button (now only for Mailbox) */}
+              {unreadCount > 0 && (
                 <div className="sm:hidden absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></div>
               )}
             </button>
             {/* Onboarding Tooltip */}
-            {showMenuTooltip && !isActionMenuOpen && (
+            {showMenuTooltip && !isMobileMenuOpen && (
               <div className="absolute top-14 right-0 bg-[#5496a2] text-white text-xs font-bold px-4 py-3 rounded-xl shadow-lg w-36 text-center animate-bounce z-50 pointer-events-auto leading-tight">
                 <div className="absolute -top-1.5 right-4 w-3 h-3 bg-[#5496a2] rotate-45"></div>
                 <button 
@@ -327,14 +355,14 @@ export const LandingPage: React.FC = () => {
 
         {/* Mobile Actions Menu Overlay */}
       <div 
-        className={`fixed inset-0 z-[200] sm:hidden flex flex-col justify-end transition-opacity duration-300 ${isActionMenuOpen || menuDragOffset > 0 ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
+        className={`fixed inset-0 z-[200] sm:hidden flex flex-col justify-end transition-opacity duration-300 ${isMobileMenuOpen || menuDragOffset > 0 ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
       >
-        <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsActionMenuOpen(false)}></div>
+        <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}></div>
         
         <div 
-          className="bg-[#fff4d6] rounded-t-3xl border-t-4 border-x-4 border-[#1d3539] p-6 pb-32 relative z-10 flex flex-col gap-3 shadow-[0_-8px_30px_rgba(0,0,0,0.15)] touch-none overscroll-none"
+          className="bg-[#fff4d6] rounded-t-3xl p-6 pb-10 relative z-10 flex flex-col shadow-[0_-8px_30px_rgba(0,0,0,0.15)] touch-none overscroll-none"
           style={{ 
-            transform: `translateY(${!isActionMenuOpen ? '100%' : menuDragOffset + 'px'})`,
+            transform: `translateY(${!isMobileMenuOpen ? '100%' : menuDragOffset + 'px'})`,
             transition: touchStartY ? 'none' : 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
           }}
           onTouchStart={handleTouchStart}
@@ -343,46 +371,40 @@ export const LandingPage: React.FC = () => {
         >
           <div className="w-12 h-1.5 bg-[#1d3539] rounded-full mx-auto mb-2 opacity-50 cursor-grab active:cursor-grabbing"></div>
           <h3 className="text-lg font-black text-[#1d3539] uppercase mb-2 px-2">Menu</h3>
+          <div className="bg-white/80 backdrop-blur-md rounded-[28px] shadow-sm overflow-hidden flex flex-col">
             
-            <button onClick={() => { setShowNotifications(true); setIsActionMenuOpen(false); setHasReadAlerts(true); }} className="flex items-center justify-between w-full p-4 rounded-2xl bg-white border-2 border-[#1d3539] shadow-sm active:bg-slate-100">
+            <button onClick={() => { setShowMailbox(true); setIsMobileMenuOpen(false); }} className="flex items-center justify-between w-full px-6 py-5 bg-transparent active:bg-slate-50 transition-colors border-b border-slate-100">
               <div className="flex items-center gap-3">
-                <Bell size={20} className="text-[#5496a2]" />
-                <span className="font-bold text-[#1d3539]">Alerts</span>
-              </div>
-              {notifications.length > 0 && !hasReadAlerts && <div className="w-2.5 h-2.5 bg-red-500 rounded-full"></div>}
-            </button>
-
-            <button onClick={() => { setShowMailbox(true); setIsActionMenuOpen(false); }} className="flex items-center justify-between w-full p-4 rounded-2xl bg-white border-2 border-[#1d3539] shadow-sm active:bg-slate-100">
-              <div className="flex items-center gap-3">
-                <Mail size={20} className="text-[#5496a2]" />
-                <span className="font-bold text-[#1d3539]">Mailbox</span>
+                <Mail size={26} className="text-[#5496a2]" />
+                <span className="font-black text-lg text-[#1d3539]">Mailbox</span>
               </div>
               {unreadCount > 0 && <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full font-black">{unreadCount > 99 ? '99+' : unreadCount}</span>}
             </button>
             
-            <button onClick={() => { setShowStore(true); setIsActionMenuOpen(false); }} className="flex items-center w-full p-4 rounded-2xl bg-white border-2 border-[#1d3539] shadow-sm active:bg-slate-100 gap-3">
-              <Gift size={20} className="text-[#5496a2]" />
-              <span className="font-bold text-[#1d3539]">Points Store</span>
+            <button onClick={() => { setShowStore(true); setIsMobileMenuOpen(false); }} className="flex items-center w-full px-6 py-5 bg-transparent active:bg-slate-50 transition-colors border-b border-slate-100 gap-3">
+              <Gift size={26} className="text-[#5496a2]" />
+              <span className="font-black text-lg text-[#1d3539]">Points Store</span>
             </button>
             
-            <button onClick={() => { setShowLeaderboard(true); setIsActionMenuOpen(false); }} className="flex items-center w-full p-4 rounded-2xl bg-white border-2 border-[#1d3539] shadow-sm active:bg-slate-100 gap-3">
-              <Trophy size={20} className="text-[#5496a2]" />
-              <span className="font-bold text-[#1d3539]">City Ranks</span>
+            <button onClick={() => { setShowLeaderboard(true); setIsMobileMenuOpen(false); }} className="flex items-center w-full px-6 py-5 bg-transparent active:bg-slate-50 transition-colors border-b border-slate-100 gap-3">
+              <Trophy size={26} className="text-[#5496a2]" />
+              <span className="font-black text-lg text-[#1d3539]">City Ranks</span>
             </button>
 
-            {user && role === 'merchant' && (
-              <button onClick={() => { setActiveView('merchant_dashboard'); setIsActionMenuOpen(false); }} className="flex items-center w-full p-4 rounded-2xl bg-white border-2 border-[#1d3539] shadow-sm active:bg-slate-100 gap-3">
-                <Store size={20} className="text-[#5496a2]" />
-                <span className="font-bold text-[#1d3539]">Merchant Hub</span>
+            {user && (
+              <button onClick={() => { setActiveView('merchant_dashboard'); setIsMobileMenuOpen(false); }} className="flex items-center w-full px-6 py-5 bg-transparent active:bg-slate-50 transition-colors border-b border-slate-100 last:border-b-0 gap-3">
+                <Store size={26} className="text-[#5496a2]" />
+                <span className="font-black text-lg text-[#1d3539]">{role === 'merchant' ? 'Merchant Hub' : 'Become a Merchant'}</span>
               </button>
             )}
           </div>
         </div>
+      </div>
 
         {showNotifications && (
           <>
             <div className="fixed inset-0 z-[90] sm:hidden" onClick={() => setShowNotifications(false)}></div>
-            <div className="fixed sm:absolute left-1/2 sm:left-auto right-auto sm:right-0 -translate-x-1/2 sm:translate-x-0 top-24 sm:top-12 w-[calc(100vw-2rem)] sm:w-72 glass-card p-5 z-[100] animate-in fade-in slide-in-from-top-2">
+            <div className="fixed sm:absolute left-1/2 sm:left-auto right-auto sm:right-0 -translate-x-1/2 sm:translate-x-0 top-24 sm:top-12 w-[calc(100vw-2rem)] sm:w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-3xl shadow-xl p-5 z-[100] animate-in fade-in slide-in-from-top-2">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="font-black text-[var(--color-text-main)]">Alerts</h3>
                 <div className="flex items-center gap-3">
@@ -399,9 +421,9 @@ export const LandingPage: React.FC = () => {
                 <p className="text-sm font-bold text-[var(--color-text-muted)] py-4 text-center">No new alerts.</p>
               ) : (
                 notifications.map((notif, idx) => (
-                  <div key={notif.id || idx} className="p-4 glass-active rounded-2xl flex items-start gap-3 shadow-sm border border-white/40 animate-in slide-in-from-right-2">
+                  <div key={notif.id || idx} className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-start gap-3 shadow-sm border border-slate-200 dark:border-slate-700 animate-in slide-in-from-right-2">
                     <div className="w-8 h-8 rounded-full bg-[var(--color-teal-dark)] flex-shrink-0 flex items-center justify-center text-white font-bold text-xs shadow-sm">
-                      {notif.icon || '🔔'}
+                      {notif.icon === 'Building' ? <Building size={16} /> : notif.icon === 'Users' ? <Users size={16} /> : (notif.icon || '🔔')}
                     </div>
                     <div>
                       <p className="text-sm font-bold text-[var(--color-text-main)]">{notif.title}</p>
@@ -533,7 +555,7 @@ export const LandingPage: React.FC = () => {
       {showCalendar && (
         <div className="fixed inset-0 z-[120] bg-[var(--color-teal-dark)]/20 backdrop-blur-xl flex flex-col items-center justify-end md:justify-center animate-in fade-in duration-300">
           
-          <div className="w-full max-w-md glass-card rounded-b-none md:rounded-b-[24px] h-[85vh] md:h-auto md:max-h-[85vh] flex flex-col animate-in slide-in-from-bottom-full md:slide-in-from-bottom-10">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border-t md:border border-slate-200 dark:border-slate-800 rounded-b-none md:rounded-[24px] h-[85vh] md:h-auto md:max-h-[85vh] flex flex-col animate-in slide-in-from-bottom-full md:slide-in-from-bottom-10 shadow-2xl">
             <div className="flex justify-between items-center p-8 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 glass-active rounded-full flex items-center justify-center shadow-sm">
@@ -674,9 +696,10 @@ export const LandingPage: React.FC = () => {
       )}
 
       {showCarbonModal && <CarbonStatsModal isOpen={showCarbonModal} onClose={() => setShowCarbonModal(false)} />}
-      {showMailbox && <MailboxModal onClose={() => setShowMailbox(false)} />}
+      {showMailbox && <MailboxModal onClose={() => setShowMailbox(false)} initialMailId={initialMailId} />}
       {showStore && <PointsStoreModal onClose={() => setShowStore(false)} />}
       <LeaderboardModal isOpen={showLeaderboard} onClose={() => setShowLeaderboard(false)} />
     </div>
   );
 };
+

@@ -13,6 +13,7 @@ import { BadgeShowcaseModal } from '../modals/BadgeShowcaseModal';
 import { PointsStoreModal } from '../modals/PointsStoreModal';
 import { PullCord } from 'pullcord';
 import 'pullcord/pullcord.css';
+import { useAppRefresh } from '../../hooks/useAppRefresh';
 
 export const ProfileView: React.FC = () => {
   const { 
@@ -69,16 +70,34 @@ export const ProfileView: React.FC = () => {
   const [showStore, setShowStore] = useState(false);
   const [reportedCasesCount, setReportedCasesCount] = useState<number>(0);
 
+  const fetchProfileCasesCount = async () => {
+    if (!user?.uid) return;
+    try {
+      const res = await apiClient(`/users/${user.uid}/issues`);
+      if (res.issues) {
+        const activeIssues = res.issues.filter((i: any) => i.takedown_status !== 'taken-down');
+        setReportedCasesCount(activeIssues.length);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const refreshProfileData = async () => {
+    if (user?.uid) {
+      await Promise.allSettled([
+        fetchVouchers(),
+        fetchProfileCasesCount()
+      ]);
+    }
+  };
+
+  useAppRefresh(refreshProfileData);
 
   useEffect(() => {
     if (user?.uid) {
       fetchVouchers();
-      apiClient(`/users/${user.uid}/issues`).then(res => {
-        if (res.issues) {
-          const activeIssues = res.issues.filter((i: any) => i.takedown_status !== 'taken-down');
-          setReportedCasesCount(activeIssues.length);
-        }
-      }).catch(() => {});
+      fetchProfileCasesCount();
     }
   }, [user]);
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Trash2, Send } from 'lucide-react';
+import { resolveImageUrl } from '../../lib/api';
 import { auth } from '../../firebase';
 
 interface Props {
@@ -71,7 +72,7 @@ export const SignpostStoryViewer: React.FC<Props> = ({
     }
   };
 
-  const currentImg = images[currentIndex] || images[0];
+  const currentImg = resolveImageUrl(images[currentIndex] || images[0]);
   const authorName = signpost.authorUsername || signpost.authorEmail || 'Guest';
 
   return (
@@ -196,3 +197,4 @@ export const SignpostStoryViewer: React.FC<Props> = ({
     </div>
   );
 };
+

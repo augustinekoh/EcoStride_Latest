@@ -3,6 +3,7 @@ import { Search, Plus, MapPin, Users } from 'lucide-react';
 import { CreateCommunityModal } from './CreateCommunityModal';
 import { CommunityPreviewModal } from './CommunityPreviewModal';
 import { apiClient } from '../../lib/api';
+import { useAppRefresh } from '../../hooks/useAppRefresh';
 
 interface RecommendedGuild {
   id: string;
@@ -28,13 +29,19 @@ export function CommunityDiscovery({ onJoinCommunity }: CommunityDiscoveryProps)
   const [searchResults, setSearchResults] = useState<RecommendedGuild[] | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
-  useEffect(() => {
-    apiClient('/guilds/recommended')
+  const fetchRecommended = () => {
+    return apiClient('/guilds/recommended')
       .then(data => {
         if (data.guilds) setRecommended(data.guilds);
       })
       .catch(console.error)
       .finally(() => setIsLoading(false));
+  };
+
+  useAppRefresh(fetchRecommended);
+
+  useEffect(() => {
+    fetchRecommended();
   }, []);
 
   useEffect(() => {

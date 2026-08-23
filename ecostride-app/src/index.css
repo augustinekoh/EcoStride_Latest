@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
 @import "tailwindcss";
+@custom-variant dark (&:is(.dark *));
 
 @theme {
   --color-pastel-yellow: #FFF6D8;
@@ -48,7 +49,7 @@ body {
   min-height: 100vh;
 }
 
-.dark {
+html.dark, .dark {
   --color-pastel-yellow: #0f172a;
   --color-soft-green-1: #1e293b;
   --color-soft-green-2: #334155;

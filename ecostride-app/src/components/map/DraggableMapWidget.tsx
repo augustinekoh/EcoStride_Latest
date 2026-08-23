@@ -9,11 +9,11 @@ import { useUserStore } from '../../stores/useUserStore';
 
 export const DraggableMapWidget: React.FC = () => {
   const { mapDisplayMode, setMapDisplayMode } = useMapStore();
-  const { guildId } = useUserStore();
+  const { guildId, hasSeenTutorial, setHasSeenTutorial } = useUserStore();
   const [isExpanded, setIsExpanded] = useState(typeof window !== 'undefined' && window.innerWidth > 640);
   const [showEcoHubTooltip, setShowEcoHubTooltip] = useState(() => {
     if (typeof window !== 'undefined' && window.innerWidth <= 640) {
-      return !sessionStorage.getItem('seen_ecohub_tooltip');
+      return !useUserStore.getState().hasSeenTutorial;
     }
     return false;
   });
@@ -138,7 +138,7 @@ export const DraggableMapWidget: React.FC = () => {
     if (!isDragging) {
       setIsExpanded(true);
       setShowEcoHubTooltip(false);
-      if (typeof window !== 'undefined') sessionStorage.setItem('seen_ecohub_tooltip', 'true');
+      if (typeof window !== 'undefined') setHasSeenTutorial(true);
     }
   };
 
@@ -179,7 +179,7 @@ export const DraggableMapWidget: React.FC = () => {
             onClick={(e) => {
               e.stopPropagation();
               setShowEcoHubTooltip(false);
-              sessionStorage.setItem('seen_ecohub_tooltip', 'true');
+              setHasSeenTutorial(true);
             }}
             className="absolute -top-2 -right-2 w-5 h-5 bg-[#1d3539] rounded-full flex items-center justify-center border border-[#5496a2] shadow-sm hover:scale-110 active:scale-95 transition-transform"
           >

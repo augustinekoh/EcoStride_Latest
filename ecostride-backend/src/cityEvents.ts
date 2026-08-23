@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
+import { notificationService } from './notificationService';
 
-export const cityEventsRouter = new Hono<{ Bindings: any }>();
+export const cityEventsRouter = new Hono<{ Bindings: any, Variables: { user: any } }>();
 
 // Initialization helper
 const initTables = async (db: any) => {
@@ -226,7 +227,8 @@ cityEventsRouter.post('/admin/submissions/:id/review', async (c) => {
 });
 
 // Engine: Calculate Progress & Award Badges
-const calculateAndAwardBadges = async (db: any, userId: string, event: any, participant: any) => {
+const calculateAndAwardBadges = async (env: any, userId: string, event: any, participant: any) => {
+  const db = env.DB;
   let currentScore = 0;
   
   // 1. Calculate Score
@@ -285,21 +287,16 @@ const calculateAndAwardBadges = async (db: any, userId: string, event: any, part
       });
       newlyAwarded = true;
       
-      // Send mail notification
-      const mailId = 'mail-' + Date.now() + '-' + Math.random().toString(36).substr(2,5);
-      await db.prepare(`
-        INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, created_at, action_type, expires_for_new_users)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
-      `).bind(
-        mailId,
-        'Event Badge Unlocked 🎉',
-        `Congratulations! You unlocked the '${b.name}' badge for the '${event.title}' event!`,
-        'System',
-        'user',
-        userId,
-        Date.now(),
-        'badge_unlock'
-      ).run();
+      await notificationService.createMailAndNotify(env, {
+        title: 'Event Badge Unlocked 🎉',
+        content: `Congratulations! You unlocked the '${b.name}' badge for the '${event.title}' event!`,
+        sender: 'EcoStride Events',
+        recipient_type: 'user',
+        recipient_id: userId,
+        action_type: 'badge_unlocked',
+        notification_type: 'mailbox',
+        notification_priority: 'normal'
+      });
     }
   }
 
@@ -352,12 +349,12 @@ cityEventsRouter.get('/events', async (c) => {
         if (p.frozen_score !== null && p.frozen_score !== undefined) {
           p.current_score = p.frozen_score;
         } else {
-          p.current_score = await calculateAndAwardBadges(c.env.DB, userId, event, p);
+          p.current_score = await calculateAndAwardBadges(c.env, userId, event, p);
           await c.env.DB.prepare('UPDATE city_event_participants SET frozen_score = ? WHERE id = ?').bind(p.current_score, p.id).run();
         }
       } else {
         // Event is active (or upcoming), calculate dynamically
-        p.current_score = await calculateAndAwardBadges(c.env.DB, userId, event, p);
+        p.current_score = await calculateAndAwardBadges(c.env, userId, event, p);
       }
     }
   }

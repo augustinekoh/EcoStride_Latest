@@ -265,6 +265,21 @@ export const SettingsView: React.FC = () => {
       <div className="space-y-2 relative z-10 animate-in slide-in-from-right-4 fade-in">
         <h3 className="font-black text-xl text-[var(--color-text-main)] mb-6">Notifications</h3>
         <Toggle 
+          label="Push Notifications" 
+          checked={store.pushEnabled} 
+          onChange={(c) => store.setUserData({ pushEnabled: c })} 
+        />
+        <Toggle 
+          label="Mailbox Notifications" 
+          checked={store.mailboxEnabled} 
+          onChange={(c) => store.setUserData({ mailboxEnabled: c })} 
+        />
+        <Toggle 
+          label="Social Notifications" 
+          checked={store.socialEnabled} 
+          onChange={(c) => store.setUserData({ socialEnabled: c })} 
+        />
+        <Toggle 
           label="Latest News" 
           checked={store.newsEnabled} 
           onChange={(c) => {

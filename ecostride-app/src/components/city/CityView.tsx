@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import confetti from 'canvas-confetti';
-import { apiClient } from '../../lib/api';
+import { apiClient, resolveImageUrl } from '../../lib/api';
 import { Calendar, Coins, ArrowRight, Upload, MapPin, Activity, CheckCircle, Info, AlertTriangle, Image as ImageIcon, Loader2, Filter } from 'lucide-react';
 import { AvatarCropModal } from '../modals/AvatarCropModal';
 import { compressImage } from '../../lib/imageUtils';
+import { useAppRefresh } from '../../hooks/useAppRefresh';
 
 export const CityView: React.FC = () => {
   const [events, setEvents] = useState<any[]>([]);
@@ -42,6 +43,8 @@ export const CityView: React.FC = () => {
       setLoading(false);
     }
   };
+
+  useAppRefresh(fetchEvents);
 
   useEffect(() => {
     fetchEvents();
@@ -276,7 +279,7 @@ export const CityView: React.FC = () => {
                       <div key={e.id} onClick={() => setSelectedEvent(e)} className="group cursor-pointer bg-white md:rounded-3xl rounded-2xl shadow-sm md:shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden border border-slate-100 md:hover:-translate-y-1 flex flex-row md:flex-col p-2 md:p-0 gap-2 md:gap-0">
                         <div className="w-[140px] aspect-video md:w-full bg-slate-100 relative rounded-xl md:rounded-none overflow-hidden shrink-0">
                           {e.promo_image ? (
-                            <img src={e.promo_image} alt={e.title} className="w-full h-full object-cover" />
+                            <img src={resolveImageUrl(e.promo_image)} alt={e.title} className="w-full h-full object-cover" />
                           ) : (
                             <div className="w-full h-full bg-gradient-to-br from-teal-400 to-emerald-600 flex items-center justify-center">
                               <Calendar size={32} className="text-white/50 md:w-12 md:h-12" />
@@ -369,7 +372,7 @@ export const CityView: React.FC = () => {
                     <div key={e.id} onClick={() => setSelectedEvent(e)} className="group cursor-pointer bg-white md:rounded-3xl rounded-2xl shadow-sm md:shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden border border-slate-100 flex flex-row md:flex-col p-2 md:p-0 gap-2 md:gap-0">
                       <div className="w-[140px] aspect-video md:w-full bg-slate-100 relative shrink-0 overflow-hidden rounded-xl md:rounded-none">
                         {e.promo_image ? (
-                          <img src={e.promo_image} alt={e.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                          <img src={resolveImageUrl(e.promo_image)} alt={e.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                         ) : (
                           <div className="w-full h-full bg-gradient-to-br from-teal-400 to-emerald-600 flex items-center justify-center">
                             <Calendar size={32} className="text-white/50 md:w-12 md:h-12" />
@@ -442,7 +445,7 @@ export const CityView: React.FC = () => {
                     <div key={e.id} onClick={() => setSelectedEvent(e)} className="cursor-pointer bg-slate-50 md:rounded-3xl rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden border border-slate-200 flex flex-row md:flex-col p-2 md:p-0 gap-2 md:gap-0">
                       {e.promo_image ? (
                         <div className="w-[140px] aspect-video md:w-full bg-slate-200 relative overflow-hidden rounded-xl md:rounded-none shrink-0">
-                          <img src={e.promo_image} alt={e.title} className="w-full h-full object-cover grayscale-[50%] opacity-80 transition-transform duration-500 hover:scale-105" />
+                          <img src={resolveImageUrl(e.promo_image)} alt={e.title} className="w-full h-full object-cover grayscale-[50%] opacity-80 transition-transform duration-500 hover:scale-105" />
                         </div>
                       ) : (
                         <div className="w-[140px] aspect-video md:w-full bg-slate-200 flex items-center justify-center opacity-80 rounded-xl md:rounded-none shrink-0">
@@ -483,7 +486,7 @@ export const CityView: React.FC = () => {
             <div className={`w-full h-full sm:max-h-[90vh] shrink-0 transition-transform duration-300 overflow-y-auto custom-scrollbar flex flex-col ${showSubmissionPanel ? '-translate-x-full' : 'translate-x-0'}`}>
               <div className="aspect-video w-full relative shrink-0">
               {selectedEvent.promo_image ? (
-                <img src={selectedEvent.promo_image} alt="" className="w-full h-full object-cover" />
+                <img src={resolveImageUrl(selectedEvent.promo_image)} alt="" className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full bg-gradient-to-br from-teal-500 to-emerald-700" />
               )}
@@ -541,7 +544,7 @@ export const CityView: React.FC = () => {
                   {badges.filter(b => b.event_id === selectedEvent.id).map(b => (
                     <div key={b.id} className="text-center min-w-[100px] shrink-0 snap-center">
                       {b.icon_url ? (
-                        <img src={b.icon_url} alt={b.name} className="w-16 h-16 mx-auto mb-2 drop-shadow-md object-cover rounded-full" />
+                        <img src={resolveImageUrl(b.icon_url)} alt={b.name} className="w-16 h-16 mx-auto mb-2 drop-shadow-md object-cover rounded-full" />
                       ) : (
                         <div className="w-16 h-16 mx-auto mb-2 bg-slate-200 rounded-full flex items-center justify-center border-2 border-slate-300">
                           <ImageIcon size={24} className="text-slate-400" />
@@ -618,7 +621,7 @@ export const CityView: React.FC = () => {
                        <div className="flex gap-4 items-center">
                          <div className="relative">
                            {uploadUrl ? (
-                             <img src={uploadUrl} alt="Proof preview" className="w-20 h-20 rounded-xl object-cover border-2 border-amber-300" />
+                             <img src={resolveImageUrl(uploadUrl)} alt="Proof preview" className="w-20 h-20 rounded-xl object-cover border-2 border-amber-300" />
                            ) : (
                              <div className="w-20 h-20 rounded-xl bg-amber-100 border-2 border-dashed border-amber-300 flex items-center justify-center text-amber-400">
                                <ImageIcon size={24} />
@@ -662,7 +665,7 @@ export const CityView: React.FC = () => {
                      <div className="space-y-4">
                        {submissions.filter(s => s.event_id === selectedEvent.id).map(s => (
                          <div key={s.id} className="flex gap-3 sm:gap-4 p-4 rounded-xl border border-slate-100 bg-slate-50 items-start">
-                           <img src={s.proof_url} className="w-12 h-12 sm:w-16 sm:h-16 rounded-lg object-cover bg-slate-200 shrink-0" alt="Proof" />
+                           <img src={resolveImageUrl(s.proof_url)} className="w-12 h-12 sm:w-16 sm:h-16 rounded-lg object-cover bg-slate-200 shrink-0" alt="Proof" />
                            <div className="flex-1 min-w-0">
                              <p className="text-xs sm:text-sm font-bold text-slate-700 break-words">{s.description || 'No description'}</p>
                              <p className="text-[10px] sm:text-xs text-slate-500 mt-1">{new Date(s.created_at).toLocaleString()}</p>
@@ -704,7 +707,7 @@ export const CityView: React.FC = () => {
 
             <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-md mb-8 z-10 border-4 border-amber-100 relative group">
               {celebratingEvent.promo_image ? (
-                <img src={celebratingEvent.promo_image} alt="" className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-700" />
+                <img src={resolveImageUrl(celebratingEvent.promo_image)} alt="" className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-700" />
               ) : (
                 <div className="w-full h-full bg-slate-100 flex items-center justify-center">
                   <Calendar size={48} className="text-slate-300" />

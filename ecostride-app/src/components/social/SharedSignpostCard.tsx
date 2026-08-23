@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MapPin, Map } from 'lucide-react';
-import { apiClient } from '../../lib/api';
+import { apiClient, resolveImageUrl } from '../../lib/api';
 import { useMapStore } from '../../stores/useMapStore';
 import { useDemoStore } from '../../stores/useDemoStore';
 
@@ -97,7 +97,7 @@ export const SharedSignpostCard: React.FC<Props> = ({ signpostId, fallbackEmoji,
     >
       <div className={`w-12 h-12 bg-slate-50 dark:bg-slate-900/50 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 group-hover:scale-110 transition-transform ${firstImage ? 'overflow-hidden' : ''}`}>
         {firstImage ? (
-          <img src={firstImage} alt="preview" className="w-full h-full object-cover" />
+          <img src={resolveImageUrl(firstImage)} alt="preview" className="w-full h-full object-cover" />
         ) : (
           emoji
         )}
@@ -119,3 +119,4 @@ export const SharedSignpostCard: React.FC<Props> = ({ signpostId, fallbackEmoji,
     </div>
   );
 };
+

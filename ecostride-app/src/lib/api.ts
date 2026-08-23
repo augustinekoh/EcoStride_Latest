@@ -1,7 +1,14 @@
 import { getAuth } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
 
 export const getApiBaseUrl = () => {
-  const envUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+  let envUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+  
+  // Reroute localhost to host machine's LAN IP for Android emulator
+  if (Capacitor.isNativePlatform() && envUrl.includes('localhost')) {
+    envUrl = envUrl.replace('localhost', '192.168.0.194');
+  }
+
   if (typeof window !== 'undefined' && window.location && window.location.hostname) {
     const hostname = window.location.hostname;
     if (hostname !== 'localhost' && hostname !== '127.0.0.1' && envUrl.includes('localhost')) {
@@ -46,14 +53,24 @@ export const apiClient = async (endpoint: string, options: RequestInit = {}) => 
   return response.json();
 };
 
-export const resolveAvatarUrl = (url: string | undefined | null, defaultUsername?: string) => {
+export const resolveImageUrl = (url: string | undefined | null, defaultUsername?: string) => {
   if (!url) return `https://api.dicebear.com/7.x/bottts/svg?seed=${defaultUsername || 'EcoStride'}`;
   
-  if (url.includes('/r2/')) {
-    const r2Path = url.substring(url.indexOf('/r2/'));
+  let finalUrl = url;
+  
+  if (finalUrl.startsWith('/r2/')) {
     const baseUrl = getApiBaseUrl().replace('/api', '');
-    return `${baseUrl}${r2Path}`;
+    finalUrl = `${baseUrl}${finalUrl}`;
   }
   
-  return url;
+  // Fix hardcoded localhost URLs for Android Emulator
+  if (Capacitor.isNativePlatform()) {
+    const hostIp = '192.168.0.194'; // Use the same IP configured for the API
+    finalUrl = finalUrl.replace('http://localhost:8787', `http://${hostIp}:8787`)
+                       .replace('http://127.0.0.1:8787', `http://${hostIp}:8787`);
+  }
+  
+  return finalUrl;
 };
+
+export const resolveAvatarUrl = resolveImageUrl; // alias for backward compatibility

@@ -17,3 +17,10 @@ old_backups/
 ecostride_chat/
 
 ARCHITECTURE.md
+
+*.apk
+*.jks
+*.keystore
+keystore.properties
+.dev.vars
+*.py

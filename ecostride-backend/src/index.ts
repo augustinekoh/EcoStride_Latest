@@ -6,6 +6,7 @@ import { AwsClient } from 'aws4fetch';
 import { authoritiesRouter } from './authorities';
 import { cityEventsRouter } from './cityEvents';
 import { isValidLocation } from './locationData';
+import { notificationService } from './notificationService';
 
 export { CommunityChatRoom } from './CommunityChatRoom';
 export { IssueConversationDO } from './IssueConversationDO';
@@ -24,10 +25,11 @@ export function parseFirebaseJwt(token: string): any | null {
 type Bindings = {
   DB: D1Database;
   FIREBASE_PROJECT_ID: string;
+  RESEND_API_KEY?: string;
+  FIREBASE_SERVICE_ACCOUNT?: string;
   CHAT_ROOM: DurableObjectNamespace;
   ISSUE_CHAT: DurableObjectNamespace;
   AVATARS_BUCKET: R2Bucket;
-  FIREBASE_SERVICE_ACCOUNT?: string;
   R2_ACCOUNT_ID: string;
   R2_ACCESS_KEY_ID: string;
   R2_SECRET_ACCESS_KEY: string;
@@ -433,6 +435,11 @@ app.get('/api/users/:id', async (c) => {
   if (user) {
     const history = await c.env.DB.prepare('SELECT date, distance FROM activity_history WHERE user_id = ? ORDER BY date ASC').bind(user.id).all();
     user.activityHistory = history.results;
+    
+    const prefs = await c.env.DB.prepare('SELECT * FROM user_notification_preferences WHERE user_id = ?').bind(user.id).first();
+    user.preferences = prefs || {
+      push_enabled: 1, mailbox_enabled: 1, social_enabled: 1, news_enabled: 0, daily_reminder_enabled: 1, new_follower_enabled: 1
+    };
   }
   return c.json({ user });
 });
@@ -513,6 +520,29 @@ app.post('/api/users/:id', async (c) => {
       
       await checkAndAwardBadges(c, id);
     }
+  }
+  
+  if (body.preferences !== undefined) {
+    const p = body.preferences;
+    await c.env.DB.prepare(`
+        INSERT INTO user_notification_preferences (user_id, push_enabled, mailbox_enabled, social_enabled, news_enabled, daily_reminder_enabled, new_follower_enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+        push_enabled = excluded.push_enabled,
+        mailbox_enabled = excluded.mailbox_enabled,
+        social_enabled = excluded.social_enabled,
+        news_enabled = excluded.news_enabled,
+        daily_reminder_enabled = excluded.daily_reminder_enabled,
+        new_follower_enabled = excluded.new_follower_enabled
+    `).bind(
+        id, 
+        p.push_enabled ? 1 : 0, 
+        p.mailbox_enabled ? 1 : 0, 
+        p.social_enabled ? 1 : 0, 
+        p.news_enabled ? 1 : 0, 
+        p.daily_reminder_enabled ? 1 : 0, 
+        p.new_follower_enabled ? 1 : 0
+    ).run();
   }
   
   return c.json({ success: true });
@@ -659,46 +689,54 @@ app.delete('/api/users/:id', async (c) => {
   
   try {
     // Check if the user is a merchant
-    const userRoleCheck = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(id).first();
-  if (userRoleCheck && userRoleCheck.role === 'merchant') {
-    const merchant: any = await c.env.DB.prepare('SELECT store_name FROM merchants WHERE owner_id = ?').bind(id).first();
-    const storeName = merchant ? merchant.store_name : 'a merchant';
-    
-    // 1. Find all items owned by this merchant
-    const items = await c.env.DB.prepare('SELECT id, name, price FROM point_store WHERE merchant_id = ?').bind(id).all();
-    const itemIds = items.results.map((i: any) => i.id);
-    
-    // 2. Soft delete their items from point_store
-    await c.env.DB.prepare('UPDATE point_store SET status = ? WHERE merchant_id = ?').bind('disabled', id).run();
-    
-    // 3. Process active purchases
-    if (itemIds.length > 0) {
-      for (const itemId of itemIds) {
-        const item = items.results.find((i: any) => i.id === itemId);
-        if (!item) continue;
-        const purchases = await c.env.DB.prepare('SELECT id, user_id FROM purchases WHERE item_id = ? AND status = ?').bind(itemId, 'active').all();
+    const userRoleCheck: any = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(id).first();
+    if (userRoleCheck && userRoleCheck.role === 'merchant') {
+      const ownedMerchants = await c.env.DB.prepare('SELECT id, store_name FROM merchants WHERE owner_id = ?').bind(id).all();
+      for (const m of (ownedMerchants.results as any[])) {
+        const storeName = m.store_name || 'a merchant';
+        // 1. Find all items owned by this specific merchant shop
+        const items = await c.env.DB.prepare('SELECT id, name, price FROM point_store WHERE merchant_id = ? OR merchant_id = ?').bind(m.id, id).all();
+        const itemIds = items.results.map((i: any) => i.id);
         
-        for (const p of purchases.results as any[]) {
-          // Refund user
-          await c.env.DB.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(item.price, p.user_id).run();
-          
-          // Disable purchase
-          await c.env.DB.prepare('UPDATE purchases SET status = ? WHERE id = ?').bind('disabled_by_admin', p.id).run();
-          
-          // Send mail
-          const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2,7)}`;
-          const content = `We're sorry, but the voucher "${item.name}" from ${storeName} has been disabled because the merchant has closed their account. Your ${item.price} Eco-Coins have been refunded to your account.`;
-          await c.env.DB.prepare(
-            'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-          ).bind(mailId, 'Voucher Disabled & Refunded', content, 'System Admin', 'user', p.user_id, 0, Date.now()).run();
+        // 2. Soft delete items from point_store
+        await c.env.DB.prepare('UPDATE point_store SET status = ? WHERE merchant_id = ? OR merchant_id = ?').bind('disabled', m.id, id).run();
+        
+        // 3. Process active purchases and refund users
+        if (itemIds.length > 0) {
+          for (const itemId of itemIds) {
+            const item = items.results.find((i: any) => i.id === itemId);
+            if (!item) continue;
+            const purchases = await c.env.DB.prepare('SELECT id, user_id FROM purchases WHERE item_id = ? AND status = ?').bind(itemId, 'active').all();
+            
+            for (const p of purchases.results as any[]) {
+              // Refund user
+              await c.env.DB.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(item.price, p.user_id).run();
+              
+              // Disable purchase
+              await c.env.DB.prepare('UPDATE purchases SET status = ? WHERE id = ?').bind('disabled_by_admin', p.id).run();
+              
+              // Send mail notification
+              const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2,7)}`;
+              const content = `We're sorry, but the voucher "${item.name}" from ${storeName} has been disabled because the merchant has closed their account. Your ${item.price} Eco-Coins have been refunded to your account.`;
+              await notificationService.createMailAndNotify(c.env, {
+                id: mailId,
+                title: 'Voucher Disabled & Refunded',
+                content: content,
+                sender: 'System Admin',
+                recipient_type: 'user',
+                recipient_id: p.user_id,
+                notification_type: 'mailbox',
+                notification_priority: 'high'
+              });
+            }
+          }
         }
       }
+      
+      // 4. Delete the merchant records and their pending applications
+      await c.env.DB.prepare('DELETE FROM merchants WHERE owner_id = ?').bind(id).run();
+      await c.env.DB.prepare('DELETE FROM applications WHERE owner_id = ?').bind(id).run();
     }
-    
-    // 4. Delete the merchant record and their pending applications
-    await c.env.DB.prepare('DELETE FROM merchants WHERE owner_id = ?').bind(id).run();
-    await c.env.DB.prepare('DELETE FROM applications WHERE owner_id = ?').bind(id).run();
-  }
 
   // Delete from related tables first
   await c.env.DB.prepare('DELETE FROM activity_history WHERE user_id = ?').bind(id).run();
@@ -861,6 +899,76 @@ app.post('/api/admin/invite-authority', async (c) => {
 });
 
 
+app.post('/api/walks/start', async (c) => {
+  const user = c.get('user');
+  if (!user || !user.uid) return c.json({ error: 'Unauthorized' }, 401);
+
+  // BUG 4 FIX: Auto-close any existing active walk for this user
+  const existing = await c.env.DB.prepare(
+    'SELECT id FROM walk_sessions WHERE user_id = ? AND status = ?'
+  ).bind(user.uid, 'active').first();
+
+  if (existing) {
+    await c.env.DB.prepare(
+      'UPDATE walk_sessions SET status = ?, ended_at = ?, updated_at = ? WHERE id = ?'
+    ).bind('completed', new Date().toISOString(), new Date().toISOString(), existing.id).run();
+  }
+
+  const walkId = `walk-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  const startedAt = new Date().toISOString();
+
+  await c.env.DB.prepare(
+    'INSERT INTO walk_sessions (id, user_id, started_at, status) VALUES (?, ?, ?, ?)'
+  ).bind(walkId, user.uid, startedAt, 'active').run();
+
+  return c.json({ walkId, startedAt });
+});
+
+app.post('/api/walks/:walkId/end', async (c) => {
+  const user = c.get('user');
+  if (!user || !user.uid) return c.json({ error: 'Unauthorized' }, 401);
+  const walkId = c.req.param('walkId');
+  const body = await c.req.json();
+  const reportedDistance = body.distance_km || 0;
+
+  const walkRecord = await c.env.DB.prepare('SELECT * FROM walk_sessions WHERE id = ?').bind(walkId).first();
+  
+  if (!walkRecord) return c.json({ error: 'Walk session not found' }, 404);
+  if (walkRecord.user_id !== user.uid) return c.json({ error: 'Unauthorized' }, 401);
+  if (walkRecord.status !== 'active') return c.json({ error: 'Walk session already completed' }, 400);
+
+  const startedAt = new Date(walkRecord.started_at as string);
+  const endedAt = new Date();
+  const elapsedHours = (endedAt.getTime() - startedAt.getTime()) / (1000 * 60 * 60);
+
+  // Validate distance (speed <= 15 km/h)
+  let validatedDistance = reportedDistance;
+  if (elapsedHours > 0) {
+    const avgSpeed = reportedDistance / elapsedHours;
+    if (avgSpeed > 15) {
+      console.warn(`Cheating detected: Speed ${avgSpeed} km/h for user ${user.uid}`);
+      // Cap the distance or reject. Here we'll cap it to max plausible for the duration.
+      // But user requirements said: "Validate distance (e.g. <= 15 km/h)... verify backend rejects it"
+      return c.json({ error: 'Invalid or impossible distance reported' }, 400);
+    }
+  } else if (reportedDistance > 0) {
+     return c.json({ error: 'Invalid or impossible distance reported' }, 400);
+  }
+
+  // Example Coin Logic: 1 coin per 0.1 km (10 coins per km)
+  const coinsAwarded = Math.floor(validatedDistance * 10);
+
+  await c.env.DB.prepare(
+    'UPDATE walk_sessions SET ended_at = ?, distance_km = ?, status = ?, coins_awarded = ?, updated_at = ? WHERE id = ?'
+  ).bind(endedAt.toISOString(), validatedDistance, 'completed', coinsAwarded, endedAt.toISOString(), walkId).run();
+
+  if (coinsAwarded > 0) {
+    await c.env.DB.prepare('UPDATE users SET coins = coins + ? WHERE id = ?')
+      .bind(coinsAwarded, user.uid).run();
+  }
+
+  return c.json({ success: true, distance_km: validatedDistance, coinsAwarded });
+});
 
 app.get('/api/map-data', async (c) => {
   // Ensure columns exist (fail silently if they already exist)
@@ -1514,7 +1622,6 @@ app.get('/api/mail', async (c) => {
   });
 app.post('/api/mail', async (c) => {
   const body = await c.req.json();
-  const id = `mail-${Date.now()}`;
 
   let finalRecipientId = body.recipientId || null;
   let finalRecipientName = null;
@@ -1535,9 +1642,48 @@ app.post('/api/mail', async (c) => {
     finalRecipientName = guild.name;
   }
 
+  // 1. Insert the mail record (broadcasts go to 'all' with no specific recipient_id)
+  const mailId = `mail-${Date.now()}`;
+  const now = Date.now();
   await c.env.DB.prepare(
-    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, recipient_name, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(id, body.title, body.content, body.sender, body.recipientType, finalRecipientId, finalRecipientName, body.expiresForNewUsers ? 1 : 0, Date.now()).run();
+    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, recipient_name, expires_for_new_users, created_at, notification_type, notification_priority, notification_sent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)'
+  ).bind(mailId, body.title, body.content, body.sender, body.recipientType, finalRecipientId, finalRecipientName, body.expiresForNewUsers ? 1 : 0, now, 'mailbox', 'high').run();
+
+  // 2. Send push notifications
+  if (body.recipientType === 'user' && finalRecipientId) {
+    // Targeted: send push to a single user
+    await notificationService.sendGroupedPush(c.env, finalRecipientId, 'mailbox', mailId, 0, body.title, body.content);
+  } else if (body.recipientType === 'all' || !body.recipientType || body.recipientType === 'everyone') {
+    // Broadcast: fan out push to ALL registered devices
+    try {
+      const accessToken = await notificationService.getFcmAccessToken(c.env);
+      if (accessToken) {
+        const allDevices = await c.env.DB.prepare('SELECT DISTINCT fcm_token FROM user_devices WHERE active = 1').all();
+        for (const device of (allDevices.results || [])) {
+          try {
+            const response = await fetch(`https://fcm.googleapis.com/v1/projects/${c.env.FIREBASE_PROJECT_ID}/messages:send`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                message: {
+                  token: (device as any).fcm_token,
+                  notification: { title: body.title, body: body.content },
+                  data: { type: 'mailbox', mailId }
+                }
+              })
+            });
+            if (!response.ok) {
+              const err = await response.json() as any;
+              if (err.error?.status === 'NOT_FOUND' || err.error?.status === 'UNREGISTERED') {
+                await c.env.DB.prepare('UPDATE user_devices SET active = 0 WHERE fcm_token = ?').bind((device as any).fcm_token).run();
+              }
+            }
+          } catch (e) { console.error('Failed to send push to device', e); }
+        }
+      }
+    } catch (e) { console.error('Broadcast push failed', e); }
+  }
+
   return c.json({ success: true });
 });
   app.delete('/api/mail/:id', async (c) => {
@@ -1640,6 +1786,51 @@ app.delete('/api/demo_requests/:id', async (c) => {
   return c.json({ success: true });
 });
 
+// Centralized Merchant Resolution & Authorization Helper
+async function resolveAndAuthorizeMerchant(
+  c: any, 
+  merchantSelector: string, 
+  requireOwnership: boolean = true
+): Promise<{ error?: string; status?: number; merchant?: any }> {
+  const jwtUser = c.get('user') as any;
+  if (!jwtUser || !jwtUser.sub) {
+    return { error: 'Unauthorized: Authentication required', status: 401 };
+  }
+  
+  if (!merchantSelector || typeof merchantSelector !== 'string') {
+    return { error: 'Invalid merchant ID', status: 400 };
+  }
+
+  const cleanId = merchantSelector.trim();
+
+  // 1. Primary lookup by canonical merchants.id
+  let merchant: any = await c.env.DB.prepare('SELECT * FROM merchants WHERE id = ?').bind(cleanId).first();
+  
+  // 2. Legacy fallback lookup by owner_id ONLY if not found by canonical ID
+  if (!merchant) {
+    const matchingMerchants = await c.env.DB.prepare('SELECT * FROM merchants WHERE owner_id = ?').bind(cleanId).all();
+    if (matchingMerchants.results.length === 1) {
+      merchant = matchingMerchants.results[0];
+    } else if (matchingMerchants.results.length > 1) {
+      return { error: 'Ambiguous merchant selector. Please specify the canonical merchant ID.', status: 400 };
+    }
+  }
+
+  if (!merchant) {
+    return { error: 'Merchant shop not found', status: 404 };
+  }
+
+  if (requireOwnership) {
+    const isOwner = merchant.owner_id === jwtUser.sub;
+    const isAdmin = jwtUser.role === 'admin';
+    if (!isOwner && !isAdmin) {
+      return { error: 'Forbidden: You do not have permission to manage this merchant shop', status: 403 };
+    }
+  }
+
+  return { merchant };
+}
+
 // Merchants
 app.get('/api/merchants', async (c) => {
   const merchants = await c.env.DB.prepare('SELECT * FROM merchants').all();
@@ -1651,7 +1842,7 @@ app.post('/api/merchants', async (c) => {
   await c.env.DB.prepare(
     'INSERT INTO merchants (id, owner_id, store_name, menu_link, location, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
   ).bind(id, body.ownerId, body.storeName, body.menuLink || '', body.location ? JSON.stringify(body.location) : null, body.status || 'pending', Date.now()).run();
-  return c.json({ success: true });
+  return c.json({ success: true, merchantId: id });
 });
 app.put('/api/merchants/:id', async (c) => {
   const id = c.req.param('id');
@@ -1667,19 +1858,23 @@ app.delete('/api/merchants/:id', async (c) => {
   try {
     const id = c.req.param('id');
     
-    // Find the merchant to get their owner_id
-    const merchant: any = await c.env.DB.prepare('SELECT owner_id, store_name FROM merchants WHERE id = ?').bind(id).first();
+    // Find the merchant to get their owner_id and store_name
+    const merchant: any = await c.env.DB.prepare('SELECT id, owner_id, store_name FROM merchants WHERE id = ?').bind(id).first();
     if (merchant && merchant.owner_id) {
       const storeName = merchant.store_name;
       
-      // Find all items owned by this merchant
-      const items = await c.env.DB.prepare('SELECT id, name, price FROM point_store WHERE merchant_id = ?').bind(merchant.owner_id).all();
+      // Find all items owned by this specific merchant shop
+      const items = await c.env.DB.prepare('SELECT id, name, price FROM point_store WHERE merchant_id = ? OR (merchant_id = ? AND NOT EXISTS (SELECT 1 FROM merchants WHERE owner_id = ? AND id != ?))').bind(merchant.id, merchant.owner_id, merchant.owner_id, merchant.id).all();
       const itemIds = items.results.map((i: any) => i.id);
       
-      // Soft delete their items from point_store
-      await c.env.DB.prepare('UPDATE point_store SET status = ? WHERE merchant_id = ?').bind('disabled', merchant.owner_id).run();
+      // Soft delete items from point_store
+      if (itemIds.length > 0) {
+        for (const itemId of itemIds) {
+          await c.env.DB.prepare('UPDATE point_store SET status = ? WHERE id = ?').bind('disabled', itemId).run();
+        }
+      }
       
-      // Process purchases
+      // Process purchases and refunds
       if (itemIds.length > 0) {
         for (const itemId of itemIds) {
           const item = items.results.find((i: any) => i.id === itemId);
@@ -1696,23 +1891,28 @@ app.delete('/api/merchants/:id', async (c) => {
             // Send mail
             const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2,7)}`;
             const content = `We're sorry, but the voucher "${item.name}" from ${storeName} has been disabled because the shop was taken down. Your ${item.price} Eco-Coins have been refunded to your account.`;
-            await c.env.DB.prepare(
-              'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-            ).bind(mailId, 'Voucher Disabled & Refunded', content, 'System Admin', 'user', p.user_id, 0, Date.now()).run();
+            await notificationService.createMailAndNotify(c.env, {
+              id: mailId,
+              title: 'Voucher Disabled & Refunded',
+              content: content,
+              sender: 'System Admin',
+              recipient_type: 'user',
+              recipient_id: p.user_id,
+              notification_type: 'mailbox',
+              notification_priority: 'high'
+            });
           }
         }
       }
       
-      // Delete pending applications
-      await c.env.DB.prepare('DELETE FROM applications WHERE owner_id = ?').bind(merchant.owner_id).run();
-      
-      // Email merchant
+      // Email merchant owner
       const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2,7)}`;
       const content = `Your shop "${storeName}" has been taken down by the administrator due to policy violations. All your active vouchers have been disabled.`;
       await c.env.DB.prepare(
         'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
       ).bind(mailId, 'Shop Taken Down', content, 'System Admin', 'user', merchant.owner_id, 0, Date.now()).run();
-      // Hard delete merchant record so it disappears from Admin Dashboard and Map
+      
+      // Hard delete merchant record
       await c.env.DB.prepare('DELETE FROM merchants WHERE id = ?').bind(id).run();
     }
     
@@ -1783,23 +1983,28 @@ app.put('/api/applications/:id', async (c) => {
               const itemId = `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
               await c.env.DB.prepare(
                 'INSERT INTO point_store (id, merchant_id, category, name, desc, price, stock, icon) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-              ).bind(itemId, app.owner_id, 'Vouchers', v.name, v.desc, v.price, v.stock, v.icon).run();
+              ).bind(itemId, merchantId, 'Vouchers', v.name, v.desc, v.price, v.stock, v.icon).run();
             }
           }
         } else if (app.type === 'modification') {
+          const targetMerchantId = details.merchantId || (await c.env.DB.prepare('SELECT id FROM merchants WHERE owner_id = ? LIMIT 1').bind(app.owner_id).first() as any)?.id;
+          if (!targetMerchantId) {
+            return c.json({ error: 'No merchant found for this modification' }, 400);
+          }
+          
           if (details.location) {
             await c.env.DB.prepare(
-              'UPDATE merchants SET store_name = ?, menu_link = ?, location = ? WHERE owner_id = ?'
-            ).bind(details.storeName || '', details.menuLink || '', JSON.stringify(details.location), app.owner_id).run();
+              'UPDATE merchants SET store_name = ?, menu_link = ?, location = ? WHERE id = ?'
+            ).bind(details.storeName || '', details.menuLink || '', JSON.stringify(details.location), targetMerchantId).run();
           } else {
             await c.env.DB.prepare(
-              'UPDATE merchants SET store_name = ?, menu_link = ? WHERE owner_id = ?'
-            ).bind(details.storeName || '', details.menuLink || '', app.owner_id).run();
+              'UPDATE merchants SET store_name = ?, menu_link = ? WHERE id = ?'
+            ).bind(details.storeName || '', details.menuLink || '', targetMerchantId).run();
           }
           
           if (details.vouchers && Array.isArray(details.vouchers)) {
             const keepIds = details.vouchers.filter((v: any) => v.originalId).map((v: any) => v.originalId);
-            const currentVouchers = await c.env.DB.prepare("SELECT id, name, price FROM point_store WHERE merchant_id = ? AND (status != 'disabled' OR status IS NULL)").bind(app.owner_id).all();
+            const currentVouchers = await c.env.DB.prepare("SELECT id, name, price FROM point_store WHERE merchant_id = ? AND (status != 'disabled' OR status IS NULL)").bind(targetMerchantId).all();
             
             for (const cv of currentVouchers.results as any[]) {
               if (!keepIds.includes(cv.id)) {
@@ -1812,9 +2017,16 @@ app.put('/api/applications/:id', async (c) => {
                   
                   const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2,7)}`;
                   const content = `We're sorry, but the voucher "${cv.name}" has been removed by the merchant. Your ${cv.price} Eco-Coins have been refunded to your account.`;
-                  await c.env.DB.prepare(
-                    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-                  ).bind(mailId, 'Voucher Removed & Refunded', content, 'System Admin', 'user', p.user_id, 0, Date.now()).run();
+                  await notificationService.createMailAndNotify(c.env, {
+                    id: mailId,
+                    title: 'Voucher Removed & Refunded',
+                    content: content,
+                    sender: 'System Admin',
+                    recipient_type: 'user',
+                    recipient_id: p.user_id,
+                    notification_type: 'mailbox',
+                    notification_priority: 'high'
+                  });
                 }
               }
             }
@@ -1824,12 +2036,12 @@ app.put('/api/applications/:id', async (c) => {
               if (v.originalId) {
                 await c.env.DB.prepare(
                   'UPDATE point_store SET name = ?, desc = ?, price = ?, stock = ?, icon = ? WHERE id = ? AND merchant_id = ?'
-                ).bind(v.name, safeDesc, v.price, v.stock, v.icon, v.originalId, app.owner_id).run();
+                ).bind(v.name, safeDesc, v.price, v.stock, v.icon, v.originalId, targetMerchantId).run();
               } else {
                 const itemId = `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
                 await c.env.DB.prepare(
                   'INSERT INTO point_store (id, merchant_id, category, name, desc, price, stock, icon) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-                ).bind(itemId, app.owner_id, 'Vouchers', v.name, safeDesc, v.price, v.stock, v.icon).run();
+                ).bind(itemId, targetMerchantId, 'Vouchers', v.name, safeDesc, v.price, v.stock, v.icon).run();
               }
             }
           }
@@ -1893,9 +2105,16 @@ app.delete('/api/store/:id', async (c) => {
         // Send email
         const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2,7)}`;
         const content = `We're sorry, but the voucher "${item.name}" has been disabled due to certain reason. Your ${item.price} Eco-Coins have been refunded to your account.`;
-        await c.env.DB.prepare(
-          'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-        ).bind(mailId, 'Voucher Disabled & Refunded', content, 'System Admin', 'user', p.user_id, 0, Date.now()).run();
+        await notificationService.createMailAndNotify(c.env, {
+          id: mailId,
+          title: 'Voucher Disabled & Refunded',
+          content: content,
+          sender: 'System Admin',
+          recipient_type: 'user',
+          recipient_id: p.user_id,
+          notification_type: 'mailbox',
+          notification_priority: 'high'
+        });
       }
     }
     
@@ -1908,17 +2127,32 @@ app.delete('/api/store/:id', async (c) => {
 // Merchant Sales and Redemption
 
 
-app.get('/api/merchants/sales/:ownerId', async (c) => {
-  const ownerId = c.req.param('ownerId');
-  const purchases = await c.env.DB.prepare('SELECT purchases.*, users.username as buyerUsername, users.player_id as buyerUid FROM purchases LEFT JOIN users ON purchases.user_id = users.id WHERE merchant_id = ? ORDER BY purchased_at DESC').bind(ownerId).all();
+app.get('/api/merchants/:merchantId/sales', async (c) => {
+  const merchantId = c.req.param('merchantId');
+  const auth = await resolveAndAuthorizeMerchant(c, merchantId, true);
+  if (auth.error) return c.json({ error: auth.error }, auth.status as any);
+  const merchant = auth.merchant;
+
+  const purchases = await c.env.DB.prepare(
+    'SELECT purchases.*, users.username as buyerUsername, users.player_id as buyerUid FROM purchases LEFT JOIN users ON purchases.user_id = users.id WHERE purchases.merchant_id = ? OR purchases.merchant_id = ? ORDER BY purchases.purchased_at DESC'
+  ).bind(merchant.id, merchant.owner_id).all();
   return c.json({ purchases: purchases.results });
 });
 
 app.post('/api/merchants/redeem/:purchaseId', async (c) => {
   const purchaseId = c.req.param('purchaseId');
   const body = await c.req.json();
-  await c.env.DB.prepare('UPDATE purchases SET status = ?, redeemed_at = ? WHERE id = ? AND merchant_id = ?')
-    .bind('redeemed', Date.now(), purchaseId, body.ownerId).run();
+  const auth = await resolveAndAuthorizeMerchant(c, body.merchantId, true);
+  if (auth.error) return c.json({ error: auth.error }, auth.status as any);
+  const merchant = auth.merchant;
+
+  const res = await c.env.DB.prepare(
+    'UPDATE purchases SET status = ?, redeemed_at = ? WHERE id = ? AND (merchant_id = ? OR merchant_id = ?) AND status = ?'
+  ).bind('redeemed', Date.now(), purchaseId, merchant.id, merchant.owner_id, 'active').run();
+  
+  if (res.meta.changes === 0) {
+    return c.json({ error: 'Failed to redeem voucher. It may have already been redeemed, expired, or does not belong to this merchant shop.' }, 400);
+  }
   return c.json({ success: true });
 });
 
@@ -1933,7 +2167,7 @@ app.get('/api/users/:id/vouchers', async (c) => {
   try {
     const id = c.req.param('id');
     const vouchers = await c.env.DB.prepare(
-      'SELECT purchases.*, point_store.name as item_name, point_store.desc as item_desc, point_store.icon, merchants.store_name FROM purchases LEFT JOIN point_store ON purchases.item_id = point_store.id LEFT JOIN merchants ON purchases.merchant_id = merchants.owner_id WHERE purchases.user_id = ? ORDER BY purchases.purchased_at DESC'
+      'SELECT purchases.*, point_store.name as item_name, point_store.desc as item_desc, point_store.icon, merchants.store_name FROM purchases LEFT JOIN point_store ON purchases.item_id = point_store.id LEFT JOIN merchants ON (purchases.merchant_id = merchants.id OR purchases.merchant_id = merchants.owner_id) WHERE purchases.user_id = ? ORDER BY purchases.purchased_at DESC'
     ).bind(id).all();
     return c.json({ vouchers: vouchers.results });
   } catch (err: any) {
@@ -1957,29 +2191,46 @@ app.put('/api/purchases/:id/redeem-start', async (c) => {
 app.post('/api/merchants/scan', async (c) => {
   try {
     const body = await c.req.json();
-    const purchaseId = body.purchaseId;
-    const merchantId = body.merchantId; // owner_id
-    
+    const purchaseId = (body.purchaseId || '').trim();
+    const merchantSelector = (body.merchantId || '').trim();
+
+    if (!purchaseId || !merchantSelector) {
+      return c.json({ error: 'Missing purchaseId or merchantId' }, 400);
+    }
+
+    const auth = await resolveAndAuthorizeMerchant(c, merchantSelector, true);
+    if (auth.error) return c.json({ error: auth.error }, auth.status as any);
+    const canonicalMerchant = auth.merchant;
+
     const purchase: any = await c.env.DB.prepare('SELECT * FROM purchases WHERE id = ?').bind(purchaseId).first();
     if (!purchase) return c.json({ error: 'Voucher not found' }, 404);
     
-    if (purchase.merchant_id !== merchantId) {
-      return c.json({ error: 'Invalid voucher for this shop' }, 400);
+    // Strict Merchant Isolation: Verify this voucher belongs to this specific merchant shop
+    const belongsToThisStore = purchase.merchant_id === canonicalMerchant.id || purchase.merchant_id === canonicalMerchant.owner_id;
+    if (!belongsToThisStore || !purchase.merchant_id) {
+      return c.json({ error: 'Invalid voucher for this shop. This voucher belongs to a different merchant.' }, 400);
     }
     if (purchase.status === 'redeemed') {
       return c.json({ error: 'Voucher has already been redeemed' }, 400);
     }
     if (purchase.status !== 'active') {
-      return c.json({ error: `Voucher is ${purchase.status}` }, 400);
+      return c.json({ error: `Voucher cannot be redeemed because it is ${purchase.status}` }, 400);
     }
     if (purchase.expires_at && Date.now() > purchase.expires_at) {
       await c.env.DB.prepare('UPDATE purchases SET status = ? WHERE id = ?').bind('expired', purchaseId).run();
-      return c.json({ error: 'Voucher redemption has expired' }, 400);
+      return c.json({ error: 'Voucher 15-minute redemption window has expired. Customer must re-initiate redeem.' }, 400);
     }
     
-    // Valid! Redeem it.
-    await c.env.DB.prepare('UPDATE purchases SET status = ?, redeemed_at = ? WHERE id = ?').bind('redeemed', Date.now(), purchaseId).run();
-    return c.json({ success: true });
+    // Valid! Atomically redeem with strict status and merchant match check
+    const updateRes = await c.env.DB.prepare(
+      'UPDATE purchases SET status = ?, redeemed_at = ? WHERE id = ? AND (merchant_id = ? OR merchant_id = ?) AND status = ?'
+    ).bind('redeemed', Date.now(), purchaseId, canonicalMerchant.id, canonicalMerchant.owner_id, 'active').run();
+
+    if (updateRes.meta.changes === 0) {
+       return c.json({ error: 'Failed to redeem voucher. It may have just been redeemed.' }, 400);
+    }
+    
+    return c.json({ success: true, message: 'Voucher successfully redeemed!' });
   } catch (err: any) {
     return c.json({ error: err.message }, 500);
   }
@@ -2205,20 +2456,18 @@ app.post('/api/guilds/:id/request_join', async (c) => {
   }
 
   const mailId = crypto.randomUUID();
-  await c.env.DB.prepare(
-    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, action_type, action_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(
-    mailId,
-    'New Join Request',
-    `${username} wants to join ${guild.name}.`,
-    'System',
-    'user',
-    guild.admin_id,
-    0,
-    'guild_join_request',
-    JSON.stringify({ guildId: guild.id, userId: user.sub, username, guildName: guild.name }),
-    Date.now()
-  ).run();
+  await notificationService.createMailAndNotify(c.env, {
+    id: mailId,
+    title: 'New Join Request',
+    content: `${username} wants to join ${guild.name}.`,
+    sender: 'System',
+    recipient_type: 'user',
+    recipient_id: guild.admin_id as string,
+    action_type: 'guild_join_request',
+    action_data: JSON.stringify({ guildId: guild.id, userId: user.sub, username, guildName: guild.name }),
+    notification_type: 'social',
+    notification_priority: 'high'
+  });
 
   return c.json({ success: true });
 });
@@ -2284,9 +2533,16 @@ app.post('/api/mail/:id/action', async (c) => {
           .bind(`You accepted ${username} into the community.`, mailId).run();
           
         // Notify user
-        await c.env.DB.prepare(
-          'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-        ).bind(crypto.randomUUID(), 'Join Request Approved', `The admin approved your request to join ${guildName}.`, 'System', 'user', userId, 0, Date.now()).run();
+        await notificationService.createMailAndNotify(c.env, {
+          id: crypto.randomUUID(),
+          title: 'Join Request Approved',
+          content: `The admin approved your request to join ${guildName}.`,
+          sender: 'System',
+          recipient_type: 'user',
+          recipient_id: userId,
+          notification_type: 'social',
+          notification_priority: 'high'
+        });
         
         await checkAndAwardBadges(c, userId);
       }
@@ -2295,9 +2551,16 @@ app.post('/api/mail/:id/action', async (c) => {
         .bind(`You rejected ${username} to join the community.`, mailId).run();
         
       // Notify user
-      await c.env.DB.prepare(
-        'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-      ).bind(crypto.randomUUID(), 'Join Request Rejected', `The admin rejected your request to join ${guildName}.`, 'System', 'user', userId, 0, Date.now()).run();
+      await notificationService.createMailAndNotify(c.env, {
+        id: crypto.randomUUID(),
+        title: 'Join Request Rejected',
+        content: `The admin rejected your request to join ${guildName}.`,
+        sender: 'System',
+        recipient_type: 'user',
+        recipient_id: userId,
+        notification_type: 'social',
+        notification_priority: 'high'
+      });
     }
   } else if (mail.action_type === 'friend_request') {
     const data = JSON.parse(mail.action_data as string);
@@ -2514,9 +2777,18 @@ app.post('/api/friends/:id', async (c) => {
     const content = `${me?.username || 'Someone'} has sent you a friend request.`;
     const actionData = JSON.stringify({ requester_id: id, requester_username: me?.username });
     
-    await c.env.DB.prepare(
-      'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, action_type, action_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).bind(mailId, 'Friend Request', content, 'System', 'user', body.friendId, 0, 'friend_request', actionData, now).run();
+    await notificationService.createMailAndNotify(c.env, {
+      id: mailId,
+      title: 'Friend Request',
+      content: content,
+      sender: 'System',
+      recipient_type: 'user',
+      recipient_id: body.friendId,
+      action_type: 'friend_request',
+      action_data: actionData,
+      notification_type: 'social',
+      notification_priority: 'high'
+    });
 
     // Send Mail to requester
     const senderMailId = `mail-${Date.now()}-snd-${Math.random().toString(36).substring(2,7)}`;
@@ -2739,7 +3011,36 @@ app.delete('/api/guilds/:id', async (c) => {
 });
 
 // ==========================================
+
+app.get('/api/merchants/dashboard/:uid', async (c) => {
+  const uid = c.req.param('uid');
+  const jwtUser = c.get('user') as any;
+  if (!jwtUser || jwtUser.sub !== uid) return c.json({ error: 'Unauthorized' }, 401);
+  
+  const merchants = await c.env.DB.prepare('SELECT * FROM merchants WHERE owner_id = ?').bind(uid).all();
+  const apps = await c.env.DB.prepare('SELECT * FROM applications WHERE owner_id = ?').bind(uid).all();
+  
+  return c.json({
+    merchants: merchants.results,
+    applications: apps.results,
+    storeItems: [] // Deprecated at this level, fetched per-merchant now
+  });
+});
+
+app.get('/api/merchants/:merchantId/store', async (c) => {
+  const merchantId = c.req.param('merchantId');
+  const auth = await resolveAndAuthorizeMerchant(c, merchantId, true);
+  if (auth.error) return c.json({ error: auth.error }, auth.status as any);
+  const merchant = auth.merchant;
+  
+  const storeItems = await c.env.DB.prepare(
+    'SELECT * FROM point_store WHERE merchant_id = ? OR merchant_id = ?'
+  ).bind(merchant.id, merchant.owner_id).all();
+  return c.json({ storeItems: storeItems.results });
+});
+
 // Admin Dashboard & System Management Endpoints
+
 // ==========================================
 
 // GET /api/admin/dashboard
@@ -2864,6 +3165,43 @@ app.delete('/api/messages/:id', async (c) => {
   return c.json({ success: true, message: 'Message recalled successfully' });
 });
 
+// POST /api/users/:id/devices
+app.post('/api/users/:id/devices', async (c) => {
+  const id = c.req.param('id');
+  const jwtUser = c.get('user') as any;
+  if (!jwtUser || jwtUser.sub !== id) return c.json({ error: 'Unauthorized' }, 401);
+  
+  const body = await c.req.json();
+  const token = body.token;
+  const platform = body.platform || 'android';
+  if (!token) return c.json({ error: 'Token required' }, 400);
+
+  const deviceId = crypto.randomUUID();
+  const now = Date.now();
+  
+  await c.env.DB.prepare(`
+    INSERT INTO user_devices (id, user_id, fcm_token, platform, active, last_seen_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+    ON CONFLICT(fcm_token) DO UPDATE SET
+    user_id = excluded.user_id,
+    active = 1,
+    last_seen_at = excluded.last_seen_at,
+    updated_at = excluded.updated_at
+  `).bind(deviceId, id, token, platform, now, now, now).run();
+  
+  return c.json({ success: true });
+});
+
+app.delete('/api/users/:id/devices/:token', async (c) => {
+  const id = c.req.param('id');
+  const token = c.req.param('token');
+  const jwtUser = c.get('user') as any;
+  if (!jwtUser || jwtUser.sub !== id) return c.json({ error: 'Unauthorized' }, 401);
+  
+  await c.env.DB.prepare('DELETE FROM user_devices WHERE user_id = ? AND fcm_token = ?').bind(id, token).run();
+  return c.json({ success: true });
+});
+
 // POST /api/admin/users/:id/coins
 app.post('/api/admin/users/:id/coins', async (c) => {
   const id = c.req.param('id');
@@ -2977,6 +3315,8 @@ export default {
         .bind(oneDayAgo)
         .run();
       console.log('Successfully ran unverified user cleanup cron job.');
+      
+      await notificationService.flushPendingNotifications(env);
     } catch (e) {
       console.error('Cron job error:', e);
     }

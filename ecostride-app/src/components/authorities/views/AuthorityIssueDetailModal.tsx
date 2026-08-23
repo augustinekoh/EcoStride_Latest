@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useAuthStore } from '../../../stores/useAuthStore';
 import { useMapStore } from '../../../stores/useMapStore';
 import { useNavigate } from 'react-router-dom';
-import { apiClient, getApiBaseUrl } from '../../../lib/api';
+import { apiClient, getApiBaseUrl, resolveImageUrl } from '../../../lib/api';
 import { formatLocation } from '../../../lib/locationData';
 import { X, Send, Camera, Clock, Info, RefreshCw, User, MapPin, ChevronLeft, ChevronRight, ImageOff, Plus, FileText, Loader2, Trash2, AlertTriangle } from 'lucide-react';
 import { compressImage } from '../../../lib/imageUtils';
@@ -393,11 +393,11 @@ export const AuthorityIssueDetailModal: React.FC<Props> = ({ isOpen, onClose, is
               <div className="w-full relative group bg-slate-100 rounded-[20px] aspect-video flex items-center justify-center border border-slate-200/60 overflow-hidden">
                 {!imageError ? (
                   <img
-                    src={photos[activePhotoIndex]}
+                    src={resolveImageUrl(photos[activePhotoIndex])}
                     alt="Report attachment"
                     onError={() => setImageError(true)}
                     className="w-full h-full object-cover cursor-pointer"
-                    onClick={() => window.open(photos[activePhotoIndex], '_blank')}
+                    onClick={() => window.open(resolveImageUrl(photos[activePhotoIndex]), '_blank')}
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center text-slate-400 gap-2">
@@ -664,10 +664,10 @@ export const AuthorityIssueDetailModal: React.FC<Props> = ({ isOpen, onClose, is
                           }`}>
                           {msg.image_url && (
                             <img
-                              src={msg.image_url}
+                              src={resolveImageUrl(msg.image_url)}
                               alt="Attached"
                               className="max-w-full max-h-56 rounded-xl mb-2 object-cover border border-black/10 cursor-pointer hover:opacity-95"
-                              onClick={() => window.open(msg.image_url, '_blank')}
+                              onClick={() => window.open(resolveImageUrl(msg.image_url), '_blank')}
                             />
                           )}
                           {msg.content && <p>{msg.content}</p>}

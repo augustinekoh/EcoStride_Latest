@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { MessageCircle, ArrowLeft, Send, User, Camera, Loader2, X } from 'lucide-react';
 import { useCommunityChat } from '../../hooks/useCommunityChat';
 import { auth } from '../../firebase';
@@ -113,31 +114,18 @@ export function PrivateChatRoom() {
     try {
       setIsUploading(true);
       
-      const extension = selectedImage.name.split('.').pop() || 'webp';
+      const formData = new FormData();
+      formData.append('image', selectedImage);
 
-      // 1. Get Presigned URL
-      const data = await apiClient(`/chat/presigned-url?ext=${extension}`, {
-        method: 'GET'
+      const data = await apiClient('/chat/upload', {
+        method: 'POST',
+        body: formData
       });
 
-      if (!data.success || !data.uploadUrl || !data.publicUrl) {
-        throw new Error(data.error || 'Failed to get upload URL');
+      if (!data.success || !data.publicUrl) {
+        throw new Error(data.error || 'Failed to upload image');
       }
 
-      // 2. Upload directly to R2
-      const uploadResponse = await fetch(data.uploadUrl, {
-        method: 'PUT',
-        body: selectedImage,
-        headers: {
-          'Content-Type': selectedImage.type || 'application/octet-stream',
-        }
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error('Failed to upload image to storage');
-      }
-
-      // 3. Send message
       sendMessage(`[IMAGE:${data.publicUrl}]`, data.objectKey);
       
       setSelectedImage(null);
@@ -276,7 +264,10 @@ export function PrivateChatRoom() {
                         <div className="text-[15px] font-medium leading-relaxed whitespace-pre-wrap break-words">
                           {msg.content.split(/(\[IMAGE:.*?\]|\[SIGNPOST:.*?\]|\[ISSUE:.*?\])/g).map((part, i) => {
                             if (part.startsWith('[IMAGE:')) {
-                              const url = part.replace('[IMAGE:', '').replace(']', '');
+                              let url = part.replace('[IMAGE:', '').replace(']', '');
+                                if (Capacitor.isNativePlatform() && url.includes('localhost')) {
+                                  url = url.replace('localhost', '192.168.0.194');
+                                }
                               return <img 
                                 key={i} 
                                 src={url} 
@@ -493,3 +484,5 @@ export function PrivateChatRoom() {
     </div>
   );
 }
+
+

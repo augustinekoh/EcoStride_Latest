@@ -4,6 +4,7 @@ import { useDemoStore } from '../../stores/useDemoStore';
 import { apiClient } from '../../lib/api';
 import { ArrowLeft, ClipboardList, AlertCircle, Clock, CheckCircle, ChevronRight, ImageOff, X } from 'lucide-react';
 import { CaseDetailModal } from './CaseDetailModal';
+import { useAppRefresh } from '../../hooks/useAppRefresh';
 
 export const CaseReportsView: React.FC = () => {
   const { user } = useAuthStore();
@@ -26,6 +27,8 @@ export const CaseReportsView: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  useAppRefresh(fetchMyIssues);
 
   useEffect(() => {
     fetchMyIssues();

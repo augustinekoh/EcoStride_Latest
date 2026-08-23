@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useMapStore } from '../../stores/useMapStore';
 import { useDemoStore } from '../../stores/useDemoStore';
-import { apiClient, getApiBaseUrl } from '../../lib/api';
+import { apiClient, getApiBaseUrl, resolveImageUrl } from '../../lib/api';
 import { formatLocation } from '../../lib/locationData';
 import { X, Send, Camera, Clock, Info, ChevronLeft, ChevronRight, MessageSquare, User, MapPin, CheckCircle, ShieldCheck, ImagePlus, Loader2 } from 'lucide-react';
 import { compressImage } from '../../lib/imageUtils';
@@ -34,7 +34,9 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue, onUpd
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isLoadingTimeline, setIsLoadingTimeline] = useState(true);
   const [isTakingDown, setIsTakingDown] = useState(false);
-  
+  const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+  const [reconnectTrigger, setReconnectTrigger] = useState(0);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -45,6 +47,17 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue, onUpd
   } catch(e) {}
 
   const isReadOnly = issue.status === 'resolved' || issue.takedown_status === 'taken-down';
+
+  // Listen for App Resume to reconnect WebSocket if we are actively chatting
+  useEffect(() => {
+    if (!showChat) return;
+    const onResume = () => {
+      console.log('[CaseDetailModal] App resumed, reconnecting websocket...');
+      setReconnectTrigger(prev => prev + 1);
+    };
+    document.addEventListener('appResumed', onResume);
+    return () => document.removeEventListener('appResumed', onResume);
+  }, [showChat]);
 
   // Fetch Timeline
   useEffect(() => {
@@ -134,7 +147,7 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue, onUpd
         wsRef.current = null;
       }
     };
-  }, [showChat, issue.id, user]);
+  }, [showChat, issue.id, user, reconnectTrigger]);
 
   const handleSendMessage = async (e?: React.FormEvent, uploadedImageUrl?: string) => {
     if (e) e.preventDefault();
@@ -296,7 +309,7 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue, onUpd
                 <div className="bg-white/80 dark:bg-slate-800/80 rounded-2xl p-2 border border-slate-200/80 dark:border-slate-700/80 shadow-sm overflow-hidden relative">
                   <div className="aspect-[16/10] sm:aspect-[16/9] w-full rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-950 relative shadow-inner">
                     <img 
-                      src={photos[activePhotoIndex]} 
+                      src={resolveImageUrl(photos[activePhotoIndex])} 
                       alt={`Photo ${activePhotoIndex + 1}`} 
                       className="w-full h-full object-cover"
                     />
@@ -491,10 +504,10 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue, onUpd
                       }`}>
                         {msg.image_url && (
                           <img 
-                            src={msg.image_url} 
+                            src={resolveImageUrl(msg.image_url)} 
                             alt="Attached" 
                             className="max-w-full max-h-56 rounded-xl mb-2 object-cover border border-black/10 cursor-pointer hover:opacity-95" 
-                            onClick={() => window.open(msg.image_url, '_blank')} 
+                            onClick={() => setFullScreenImage(msg.image_url)} 
                           />
                         )}
                         {msg.content && <p className="whitespace-pre-wrap font-medium">{msg.content}</p>}
@@ -541,6 +554,25 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue, onUpd
           </div>
         )}
       </div>
+
+      {fullScreenImage && (
+        <div 
+          className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={() => setFullScreenImage(null)}
+        >
+          <button 
+            className="absolute top-4 sm:top-8 right-4 sm:right-8 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white backdrop-blur-md transition-all active:scale-95"
+            onClick={(e) => { e.stopPropagation(); setFullScreenImage(null); }}
+          >
+            <X size={24} />
+          </button>
+          <img 
+            src={resolveImageUrl(fullScreenImage)} 
+            alt="Fullscreen View" 
+            className="max-w-full max-h-[90vh] object-contain rounded-xl shadow-2xl"
+          />
+        </div>
+      )}
     </div>
   );
 };

@@ -5,6 +5,7 @@ import { useDemoStore } from '../../stores/useDemoStore';
 import { apiClient, resolveAvatarUrl } from '../../lib/api';
 import { auth } from '../../firebase';
 import { UserProfileModal } from '../modals/UserProfileModal';
+import { useAppRefresh } from '../../hooks/useAppRefresh';
 
 export function FriendsTab() {
   const { setActivePrivateChat } = useDemoStore();
@@ -17,25 +18,6 @@ export function FriendsTab() {
   const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
   
   const userId = auth.currentUser?.uid;
-
-  useEffect(() => {
-    fetchFriends();
-    
-    // Background polling for real-time unread messages
-    const interval = setInterval(() => {
-      if (userId) {
-        apiClient(`/friends/${userId}`)
-          .then(data => {
-            if (data.friends) {
-              setFriends(data.friends);
-            }
-          })
-          .catch(console.error);
-      }
-    }, 10000); // Check every 10 seconds
-
-    return () => clearInterval(interval);
-  }, [userId]);
 
   const fetchFriends = async () => {
     if (!userId) return;
@@ -51,6 +33,27 @@ export function FriendsTab() {
       setLoadingFriends(false);
     }
   };
+
+  useAppRefresh(fetchFriends);
+
+  useEffect(() => {
+    fetchFriends();
+
+    // Background polling for real-time unread messages
+    const interval = setInterval(() => {
+      if (userId) {
+        apiClient(`/friends/${userId}`)
+          .then(data => {
+            if (data.friends) {
+              setFriends(data.friends);
+            }
+          })
+          .catch(console.error);
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [userId]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {

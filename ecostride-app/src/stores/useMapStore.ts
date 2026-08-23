@@ -40,6 +40,9 @@ interface MapState {
 
   mapDisplayMode: 'normal' | 'guild' | 'my_guild'
   setMapDisplayMode: (mode: 'normal' | 'guild' | 'my_guild') => void
+
+  isWalkModeActive: boolean
+  setIsWalkModeActive: (active: boolean) => void
 }
 
 export const useMapStore = create<MapState>((set) => ({
@@ -81,4 +84,7 @@ export const useMapStore = create<MapState>((set) => ({
 
   mapDisplayMode: 'normal',
   setMapDisplayMode: (mapDisplayMode) => set({ mapDisplayMode }),
+
+  isWalkModeActive: false,
+  setIsWalkModeActive: (isWalkModeActive) => set({ isWalkModeActive }),
 }))

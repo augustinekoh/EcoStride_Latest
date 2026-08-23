@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import * as turf from '@turf/turf';
+import { Geolocation } from '@capacitor/geolocation';
+import { Capacitor } from '@capacitor/core';
 import { useMapStore } from '../../stores/useMapStore';
 import { useDemoStore } from '../../stores/useDemoStore';
 
@@ -7,7 +9,8 @@ export const useMapGeolocation = () => {
   const { currentMode, demoProgress, setActiveView } = useDemoStore();
   const { 
     liveLocation, setLiveLocation, 
-    activeRouteGeoJSON, distanceToTarget 
+    activeRouteGeoJSON, distanceToTarget,
+    isWalkModeActive
   } = useMapStore();
 
   const [walkedDistanceKm, setWalkedDistanceKm] = useState(0);
@@ -16,23 +19,46 @@ export const useMapGeolocation = () => {
 
   // 1. Real-time GPS Tracking
   useEffect(() => {
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        setLiveLocation([pos.coords.longitude, pos.coords.latitude]);
-      },
-      (err) => {
-        console.log('GPS Error:', err);
-        if (!window.isSecureContext) {
-          alert("⚠️ Note: Your mobile browser blocks real GPS over HTTP. Using a mock location for testing.");
-          setLiveLocation([103.6400, 1.5600]);
-        } else {
-          alert('GPS location permission is required to access the map. Please allow location access and try again.');
-          setActiveView('landing');
+    let watchIdPromise: Promise<string>;
+
+    const setupGeolocation = async () => {
+      try {
+        if (Capacitor.isNativePlatform()) {
+          const perm = await Geolocation.checkPermissions();
+          if (perm.location !== 'granted') {
+            await Geolocation.requestPermissions();
+          }
         }
-      },
-      { enableHighAccuracy: true }
-    );
-    return () => navigator.geolocation.clearWatch(watchId);
+        
+        watchIdPromise = Geolocation.watchPosition(
+          { enableHighAccuracy: true },
+          (pos, err) => {
+            if (err) {
+              console.log('GPS Error:', err);
+              alert('GPS location permission is required to access the map. Please allow location access and try again.');
+              setActiveView('landing');
+              return;
+            }
+            if (pos) {
+              setLiveLocation([pos.coords.longitude, pos.coords.latitude]);
+            }
+          }
+        );
+      } catch (err) {
+        console.error('Geolocation init error:', err);
+        alert('Could not start GPS tracking.');
+      }
+    };
+
+    setupGeolocation();
+
+    return () => {
+      if (watchIdPromise) {
+        watchIdPromise.then(id => {
+          if (id) Geolocation.clearWatch({ id });
+        });
+      }
+    };
   }, [setLiveLocation, setActiveView]);
 
   // 2. Determine the current coordinate (Live GPS vs Demo Interpolation)
@@ -73,14 +99,14 @@ export const useMapGeolocation = () => {
       }
       prevCoordRef.current = currentCoordinate as [number, number];
 
-      if (additionalDistance > 0) {
+      if (additionalDistance > 0 && !isWalkModeActive) {
         setWalkedDistanceKm(prev => prev + additionalDistance);
       }
       if (calculatedBearing !== null) {
         setBearing(calculatedBearing);
       }
     }
-  }, [currentCoordinate, currentMode, distanceToTarget, activeRouteGeoJSON, isFreeWalk]);
+  }, [currentCoordinate, currentMode, distanceToTarget, activeRouteGeoJSON, isFreeWalk, isWalkModeActive]);
 
   return {
     currentCoordinate,

@@ -8,9 +8,17 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "npm run build && wrangler dev",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "build:android": "tsc -b && vite build --base=./ && npx cap sync android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/geolocation": "^8.2.2",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/push-notifications": "^8.1.2",
+    "@capgo/background-geolocation": "^8.4.3",
     "@tailwindcss/vite": "^4.3.3",
     "@turf/turf": "^7.3.5",
     "@yudiel/react-qr-scanner": "^2.6.0",
@@ -32,6 +40,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.0",
     "@cloudflare/vite-plugin": "^1.51.2",
     "@types/canvas-confetti": "^1.9.0",
     "@types/mapbox-gl": "^3.4.1",
