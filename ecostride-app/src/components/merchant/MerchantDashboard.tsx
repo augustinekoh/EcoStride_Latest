@@ -18,7 +18,7 @@ import { useAppRefresh } from '../../hooks/useAppRefresh';
 export const MerchantDashboard: React.FC = () => {
   const { user } = useAuthStore();
   const { username } = useUserStore();
-  const { setActiveView } = useDemoStore();
+  const { setActiveView, goBack } = useDemoStore();
   
   const [ownedMerchants, setOwnedMerchants] = useState<any[]>([]);
   const [currentMerchantId, setCurrentMerchantId] = useState<string | null>(null);
@@ -138,8 +138,14 @@ export const MerchantDashboard: React.FC = () => {
           setSales(salesRes.purchases || []);
         }
       } else {
-        const latest = apps[0];
-        setLatestApp(latest || null);
+        const latestNewApp = apps.find((a: any) => a.type === 'new_merchant' || !a.type);
+        if (latestNewApp) {
+          let parsedDetails = {};
+          try { parsedDetails = JSON.parse(latestNewApp.details); } catch(e){}
+          setLatestApp({ ...latestNewApp, ...parsedDetails });
+        } else {
+          setLatestApp(null);
+        }
         setMerchantData(null);
       }
     } catch (err) {
@@ -264,7 +270,7 @@ export const MerchantDashboard: React.FC = () => {
     );
   }
 
-  if (!merchantData && !latestApp) {
+  if (!merchantData && (!latestApp || latestApp.status !== 'pending')) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#FFF6D8]/40 via-[#faf9f6]/80 to-[#CCE3C5]/40 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 p-4 sm:p-8 text-center">
         <div className="glass-card backdrop-blur-xl bg-white/70 dark:bg-slate-900/70 border border-white/80 dark:border-slate-800 p-8 sm:p-12 rounded-3xl shadow-2xl max-w-lg w-full">
@@ -275,7 +281,7 @@ export const MerchantDashboard: React.FC = () => {
           <p className="text-slate-600 dark:text-slate-300 font-bold mb-8 text-base">You haven't applied to be a merchant yet.</p>
           <div className="flex flex-col sm:flex-row gap-3">
             <button 
-              onClick={() => setActiveView('profile')} 
+              onClick={goBack} 
               className="flex-1 bg-white/80 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 font-black px-6 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-700 transition-all text-sm"
             >
               Back
@@ -292,59 +298,24 @@ export const MerchantDashboard: React.FC = () => {
     );
   }
 
-  if (!merchantData && latestApp) {
+  if (!merchantData && latestApp && latestApp.status === 'pending') {
     return (
       <div className="w-full h-full flex flex-col p-4 sm:p-8 pt-8 md:pt-12 bg-gradient-to-br from-[#FFF6D8]/40 via-[#faf9f6]/80 to-[#CCE3C5]/40 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 overflow-y-auto">
         <button 
-          onClick={() => setActiveView('landing')} 
+          onClick={goBack} 
           className="flex items-center gap-2 text-[#1d3539] dark:text-emerald-300 font-bold mb-6 hover:bg-white/50 dark:hover:bg-slate-800/50 px-4 py-2 rounded-2xl transition-colors w-fit backdrop-blur-md border border-white/60 dark:border-slate-700/60"
         >
           <ChevronLeft size={20} /> Back to Home
         </button>
         
         <div className="max-w-2xl mx-auto w-full glass-card backdrop-blur-xl bg-white/70 dark:bg-slate-900/70 rounded-3xl border border-white/80 dark:border-slate-800 p-6 sm:p-10 text-center animate-in zoom-in-95 duration-500 shadow-2xl">
-          {latestApp.status === 'pending' ? (
-            <>
-              <div className="bg-amber-500/10 dark:bg-amber-500/20 border border-amber-500/20 p-6 rounded-3xl w-24 h-24 flex items-center justify-center mx-auto mb-6 shadow-inner">
-                <Clock size={48} className="text-amber-500 animate-pulse" />
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-black text-[#1d3539] dark:text-white mb-3 uppercase tracking-tight">Application Under Review</h2>
-              <p className="text-slate-600 dark:text-slate-300 font-bold text-base leading-relaxed mb-6">
-                Your application for <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">{latestApp.storeName}</span> is currently being reviewed by platform admins.
-              </p>
-            </>
-          ) : latestApp.status === 'rejected' ? (
-            <>
-              <div className="bg-rose-500/10 dark:bg-rose-500/20 border border-rose-500/20 p-6 rounded-3xl w-24 h-24 flex items-center justify-center mx-auto mb-6 shadow-inner">
-                <AlertCircle size={48} className="text-rose-500" />
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-black text-[#1d3539] dark:text-white mb-3 uppercase tracking-tight">Application Rejected</h2>
-              <div className="bg-rose-500/10 dark:bg-rose-500/15 p-5 rounded-2xl border border-rose-500/20 mb-8 text-left backdrop-blur-md">
-                <p className="text-xs font-black text-rose-600 dark:text-rose-400 uppercase tracking-wider mb-1">Reason for Rejection</p>
-                <p className="text-slate-800 dark:text-slate-200 font-bold text-base">{latestApp.rejectReason || 'No specific reason provided.'}</p>
-              </div>
-              <button 
-                onClick={() => setActiveView('merchant_onboarding')} 
-                className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black px-8 py-3.5 rounded-2xl shadow-lg shadow-emerald-900/20 active:scale-95 transition-all uppercase text-sm"
-              >
-                Re-apply
-              </button>
-            </>
-          ) : latestApp.status === 'approved' ? (
-            <>
-              <div className="bg-slate-500/10 dark:bg-slate-500/20 border border-slate-500/20 p-6 rounded-3xl w-24 h-24 flex items-center justify-center mx-auto mb-6">
-                <Store size={48} className="text-slate-500 dark:text-slate-400" />
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-black text-[#1d3539] dark:text-white mb-3 uppercase tracking-tight">Shop Inactive</h2>
-              <p className="text-slate-600 dark:text-slate-300 font-bold mb-8 text-base">Your previous shop was taken down. You can submit a new application to become a merchant again.</p>
-              <button 
-                onClick={() => setActiveView('merchant_onboarding')} 
-                className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black px-8 py-3.5 rounded-2xl shadow-lg shadow-emerald-900/20 active:scale-95 transition-all uppercase text-sm"
-              >
-                Apply Now
-              </button>
-            </>
-          ) : null}
+          <div className="bg-amber-500/10 dark:bg-amber-500/20 border border-amber-500/20 p-6 rounded-3xl w-24 h-24 flex items-center justify-center mx-auto mb-6 shadow-inner">
+            <Clock size={48} className="text-amber-500 animate-pulse" />
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-black text-[#1d3539] dark:text-white mb-3 uppercase tracking-tight">Application Under Review</h2>
+          <p className="text-slate-600 dark:text-slate-300 font-bold text-base leading-relaxed mb-6">
+            Your application for <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">{latestApp.storeName}</span> is currently being reviewed by platform admins.
+          </p>
         </div>
       </div>
     );
@@ -355,7 +326,7 @@ export const MerchantDashboard: React.FC = () => {
     const confirm = window.confirm("Are you sure you want to take down your shop? This will delete your shop and all live vouchers immediately. This action cannot be undone.");
     if (!confirm) return;
     try {
-      await apiClient(`/merchants/${merchantData.id}`, { method: 'DELETE' });
+      await apiClient(`/merchants/${merchantData.id}?actor=merchant`, { method: 'DELETE' });
       alert('Shop taken down successfully.');
       window.location.reload();
     } catch (err) {
@@ -371,7 +342,7 @@ export const MerchantDashboard: React.FC = () => {
       <div className="glass-card backdrop-blur-xl bg-white/70 dark:bg-slate-900/70 border border-white/80 dark:border-slate-800/80 p-4 sm:p-6 rounded-3xl shadow-xl shadow-teal-900/5 dark:shadow-black/40 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex items-center gap-3 w-full md:w-auto">
           <button 
-            onClick={() => setActiveView('profile')} 
+            onClick={goBack} 
             className="p-2.5 rounded-2xl bg-white/80 dark:bg-slate-800/80 hover:bg-white dark:hover:bg-slate-700 text-[#1d3539] dark:text-emerald-400 border border-white/90 dark:border-slate-700 shadow-sm transition-all active:scale-95 flex items-center justify-center shrink-0"
             title="Back to Profile"
           >
@@ -529,7 +500,7 @@ export const MerchantDashboard: React.FC = () => {
                         </div>
                         <div className="sm:text-right bg-white/80 dark:bg-slate-900/80 px-3.5 py-1.5 rounded-xl border border-white/90 dark:border-slate-700/80 w-full sm:w-auto flex justify-between sm:block shadow-sm">
                           <p className="font-black text-amber-500 dark:text-amber-400 text-base flex items-center justify-end gap-1">
-                            <Sparkles size={14}/> {item.price}
+                            🪙 {item.price}
                           </p>
                           <p className={`text-[10px] font-black uppercase mt-0.5 ${item.stock > 10 ? 'text-emerald-500' : 'text-rose-500'}`}>Stock: {item.stock}</p>
                         </div>

@@ -276,7 +276,15 @@ export const AuthorityRegistration: React.FC = () => {
               <input
                 type="text"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '' || /^[a-zA-Z0-9@_-]*$/.test(val)) {
+                    setUsername(val);
+                    setError(''); // Clear general error if any
+                  } else {
+                    setError('Username can only contain English letters, numbers, @, _, and -. Spaces and Chinese characters are not allowed.');
+                  }
+                }}
                 placeholder="e.g. CityPlanner2026"
                 className={`w-full bg-slate-900 border ${usernameStatus === 'taken' ? 'border-red-500' : usernameStatus === 'available' ? 'border-emerald-500' : 'border-slate-700'} rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors outline-none`}
                 required

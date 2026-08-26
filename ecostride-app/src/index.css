@@ -96,3 +96,8 @@ html.dark, .dark {
   -ms-overflow-style: none;  /* IE and Edge */
   scrollbar-width: none;  /* Firefox */
 }
+
+body {
+  overscroll-behavior-y: none;
+  overscroll-behavior-x: none;
+}

@@ -43,10 +43,18 @@ export const VerificationPending: React.FC = () => {
         const uid = auth.currentUser.uid;
         // 1. Delete from D1 Database
         await apiClient(`/users/${uid}`, { method: 'DELETE' });
-        // 2. Delete from Firebase Auth
-        await auth.currentUser.delete();
+        
+        // 2. Delete from Firebase Auth (might fail if session is too old, but that's okay, we still free the DB username)
+        try {
+          await auth.currentUser.delete();
+        } catch (fbError) {
+          console.warn("Firebase Auth deletion failed (likely requires recent login), but DB record was cleared.", fbError);
+        }
+        
+        await auth.signOut();
         window.location.reload();
       } catch (e: any) {
+        console.error(e);
         alert("Failed to cancel registration. Please try again later.");
       }
     }

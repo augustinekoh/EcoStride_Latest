@@ -269,12 +269,6 @@ export const AdminDashboard: React.FC = () => {
   const handleApprove = async (app: any) => {
     try {
       await apiClient(`/applications/${app.id}`, { method: 'PUT', body: JSON.stringify({ status: 'approved' }) });
-      
-      // Send mail
-      await apiClient('/mail', { method: 'POST', body: JSON.stringify({
-        title: 'Application Approved 🎉', content: `Your application for ${app.storeName} was approved.`, sender: 'System', recipientType: 'user', recipientId: app.ownerId
-      })});
-      
       fetchDashboardData();
     } catch (e) { console.error(e); }
   };
@@ -284,15 +278,6 @@ export const AdminDashboard: React.FC = () => {
     if (reason === null) return; // User cancelled
     try {
       await apiClient(`/applications/${app.id}`, { method: 'PUT', body: JSON.stringify({ status: 'rejected', rejectReason: reason || 'No specific reason provided.' }) });
-      
-      await apiClient('/mail', { method: 'POST', body: JSON.stringify({
-        title: 'Application Rejected ❌', 
-        content: `Your merchant application for ${app.storeName} was rejected. Reason: ${reason || 'No reason provided.'}`, 
-        sender: 'System Admin', 
-        recipientType: 'user', 
-        recipientId: app.ownerId
-      })});
-      
       fetchDashboardData();
     } catch (e) { console.error(e); }
   };
@@ -430,16 +415,9 @@ export const AdminDashboard: React.FC = () => {
     const reason = window.prompt("Reason for taking down this merchant's shop:");
     if (reason === null) return; // User cancelled
     try {
-      // 1. Delete the merchant
-      await apiClient(`/merchants/${merchantId}`, { method: 'DELETE' });
-      // 2. Send mail to the merchant
-      await apiClient('/mail', { method: 'POST', body: JSON.stringify({
-        title: 'Merchant Shop Taken Down', 
-        content: `Your merchant shop has been taken down by the administrator. Reason: ${reason || 'No reason provided.'}`, 
-        sender: 'System Admin', 
-        recipientType: 'user', 
-        recipientId: ownerId
-      })});
+      // 1. Delete the merchant and notify via backend
+      const queryReason = encodeURIComponent(reason || 'No reason provided.');
+      await apiClient(`/merchants/${merchantId}?actor=admin&reason=${queryReason}`, { method: 'DELETE' });
       // Role demotion removed per user request: merchants keep their role to apply for a new shop.
       alert('Merchant deleted and notified successfully.');
       fetchDashboardData();
@@ -468,13 +446,17 @@ export const AdminDashboard: React.FC = () => {
       if (newItemMerchant) {
         const reason = window.prompt("Reason for modifying this voucher:");
         if (reason === null) return; // User cancelled
+        
+        const targetMerchant = merchants.find(m => m.id === newItemMerchant || m.ownerId === newItemMerchant);
+        const recipientUid = targetMerchant ? targetMerchant.ownerId : newItemMerchant;
+        
         await apiClient(`/store/${editingItemId}`, { method: 'PUT', body: JSON.stringify(data) });
         await apiClient('/mail', { method: 'POST', body: JSON.stringify({
           title: 'Voucher Modified 🛠️', 
           content: `Your voucher "${newItemName}" was modified by the administrator. Reason: ${reason || 'No reason provided.'}`, 
           sender: 'System Admin', 
           recipientType: 'user', 
-          recipientId: newItemMerchant
+          recipientId: recipientUid
         })});
       } else {
         await apiClient(`/store/${editingItemId}`, { method: 'PUT', body: JSON.stringify(data) });
@@ -1852,7 +1834,10 @@ export const AdminDashboard: React.FC = () => {
       {/* Edit Store Item Modal */}
       {editingItemId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => setEditingItemId(null)}>
-          <div className="bg-white p-6 rounded-3xl w-[calc(100%-8px)] sm:w-full max-w-lg border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] relative animate-in zoom-in-95 duration-200">
+          <div 
+            className="bg-white p-6 rounded-3xl w-[calc(100%-8px)] sm:w-full max-w-lg border-4 border-[#1d3539] shadow-[8px_8px_0px_0px_#1d3539] relative animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button onClick={() => setEditingItemId(null)} className="absolute top-4 right-4 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full w-8 h-8 flex items-center justify-center font-bold active:scale-95 transition-all">✕</button>
             <h3 className="text-xl font-black text-[#1d3539] uppercase mb-4">Edit Item</h3>
             <form onSubmit={handleAddStoreItem} className="flex flex-col gap-4">

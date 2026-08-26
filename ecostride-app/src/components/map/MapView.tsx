@@ -54,12 +54,15 @@ export const MapView: React.FC = () => {
     mapDisplayMode, setMapDisplayMode,
     issues, setIssues,
     activeIssue, setActiveIssue,
-    isWalkModeActive, setIsWalkModeActive,
+    isFreeWalk, setIsFreeWalk,
   } = useMapStore();
   
   const { userCoins, deductCoins, addCoins, guildName, guildId, activityHistory, hasSeenTutorial, setHasSeenTutorial } = useUserStore();
 
   const mapRef = useRef(null);
+  const fullRouteGeoJSONRef = useRef<any>(null);
+  const lastRouteFetchTimeRef = useRef<number>(0);
+  const prevLiveLocationRef = useRef<[number, number] | null>(null);
   const location = useLocation();
   const [trees, setTrees] = useState<any[]>([]);
   const [mapFilter, setMapFilter] = useState<'all' | 'issues' | 'trees' | 'signposts'>('all');
@@ -72,15 +75,26 @@ export const MapView: React.FC = () => {
   const [isTakingDownIssue, setIsTakingDownIssue] = useState(false);
   
   const [backgroundDistance, setBackgroundDistance] = useState(0);
+  const [backgroundCheatDistance, setBackgroundCheatDistance] = useState(0);
+  const [backgroundSpeed, setBackgroundSpeed] = useState(0);
+  
+  const [needsRouteRestore, setNeedsRouteRestore] = useState(false);
 
   // BUG 3 FIX: On mount, check if a walk was active before the app was killed/refreshed
   useEffect(() => {
     const checkActiveWalk = async () => {
       try {
-        const { isWalkTrackingActive } = await import('../../lib/backgroundTracking');
+        const { isWalkTrackingActive, getNavTarget, resumeWalkSession } = await import('../../lib/backgroundTracking');
         const active = await isWalkTrackingActive();
-        if (active && !isWalkModeActive) {
-          setIsWalkModeActive(true);
+        if (active) {
+          await resumeWalkSession(); // BUG FIX: Actually restart the native background listener!
+          const navTarget = await getNavTarget();
+          if (navTarget) {
+            setSelectedMerchant(navTarget);
+            setNeedsRouteRestore(true);
+          } else if (!isFreeWalk) {
+            setIsFreeWalk(true);
+          }
         }
       } catch (err) {
         console.error('Failed to check active walk on startup:', err);
@@ -89,29 +103,156 @@ export const MapView: React.FC = () => {
     checkActiveWalk();
   }, []); // Run once on mount
 
+  // BUG FIX: Delay fetching restored route until GPS is available
+  useEffect(() => {
+    if (needsRouteRestore && liveLocation && selectedMerchant && !fullRouteGeoJSONRef.current) {
+      setNeedsRouteRestore(false);
+      (async () => {
+        try {
+          const { getWalkingRoute } = await import('../../lib/mapboxAPI');
+          const targetCoords: [number, number] = selectedMerchant.location;
+          const res = await getWalkingRoute(liveLocation, targetCoords);
+          if (res) {
+            const routeFeature = { type: 'Feature', properties: {}, geometry: res.geoJson };
+            fullRouteGeoJSONRef.current = routeFeature;
+            lastRouteFetchTimeRef.current = Date.now();
+            setActiveRouteGeoJSON(routeFeature);
+            setDistanceToTarget(parseFloat(res.distanceKm));
+          }
+        } catch (e) {
+          console.error("Failed to restore route:", e);
+        }
+      })();
+    }
+  }, [needsRouteRestore, liveLocation, selectedMerchant]);
+
   useEffect(() => {
     let interval: any;
-    if (isWalkModeActive) {
+    if (isFreeWalk || mapboxRouteGeoJSON) {
       // Immediately fetch once, then poll
       (async () => {
         try {
-          const { getCurrentWalkDistance } = await import('../../lib/backgroundTracking');
+          const { getCurrentWalkDistance, getCurrentCheatDistance, getCurrentSpeedKmh } = await import('../../lib/backgroundTracking');
           const dist = await getCurrentWalkDistance();
+          const cheatDist = await getCurrentCheatDistance();
+          const speed = await getCurrentSpeedKmh();
           setBackgroundDistance(dist);
+          setBackgroundCheatDistance(cheatDist);
+          setBackgroundSpeed(speed);
         } catch (e) { /* ignore */ }
       })();
       interval = setInterval(async () => {
         try {
-          const { getCurrentWalkDistance } = await import('../../lib/backgroundTracking');
+          const { getCurrentWalkDistance, getCurrentCheatDistance, getCurrentSpeedKmh } = await import('../../lib/backgroundTracking');
           const dist = await getCurrentWalkDistance();
+          const cheatDist = await getCurrentCheatDistance();
+          const speed = await getCurrentSpeedKmh();
           setBackgroundDistance(dist);
+          setBackgroundCheatDistance(cheatDist);
+          setBackgroundSpeed(speed);
         } catch (e) { /* ignore */ }
-      }, 5000);
+      }, 2000);
     } else {
       setBackgroundDistance(0);
+      setBackgroundCheatDistance(0);
+      setBackgroundSpeed(0);
     }
     return () => clearInterval(interval);
-  }, [isWalkModeActive]);
+  }, [isFreeWalk, mapboxRouteGeoJSON]);
+
+  // BUG FIX: Dynamic Route Refresh via Local Trimming (Turf.js)
+  useEffect(() => {
+    const isAuthorityRole = useAuthStore.getState().role === 'authority';
+    const isNavigating = selectedMerchant && distanceToTarget !== null && !isAuthorityRole;
+    
+    if (isNavigating && liveLocation && fullRouteGeoJSONRef.current) {
+      try {
+        const targetCoords: [number, number] = selectedMerchant.location;
+        const currentLocPoint = turf.point(liveLocation);
+        const routeLine = turf.lineString(fullRouteGeoJSONRef.current.geometry.coordinates);
+        
+        // 1. Auto-complete if within 30 meters OR tunneled through 30 meters
+        import('../../lib/mapboxAPI').then(async ({ getDistanceMeters, getWalkingRoute }) => {
+          const distMeters = getDistanceMeters(liveLocation, targetCoords);
+          let didTunnel = false;
+
+          // Anti-Tunneling Math: check if the path between previous location and current location intersected the 30m target circle
+          if (distMeters > 30 && prevLiveLocationRef.current) {
+            const destPoint = turf.point(targetCoords);
+            const pathLine = turf.lineString([prevLiveLocationRef.current, liveLocation]);
+            const minDistanceToPath = turf.pointToLineDistance(destPoint, pathLine, { units: 'meters' });
+            if (minDistanceToPath <= 30) {
+              console.log('Anti-Tunneling: Fast bike detected passing through the target zone!');
+              didTunnel = true;
+            }
+          }
+
+          if (distMeters <= 30 || didTunnel) {
+            const { stopWalkSession } = await import('../../lib/backgroundTracking');
+            const result = await stopWalkSession();
+            if (result) {
+              const { setCompletedDistanceKm, setCompletedCheatDistanceKm, setCompletedCoins, setPenaltyStatus, setPenaltyReason } = useDemoStore.getState();
+              setCompletedDistanceKm(result.distance);
+              setCompletedCheatDistanceKm(result.cheatDistance || 0);
+              setPenaltyStatus(result.penaltyStatus || 'NORMAL');
+              setPenaltyReason(result.penaltyReason || '');
+              
+              if (result.distance > 0 || (result.cheatDistance && result.cheatDistance > 0)) {
+                setShowReportModal(true);
+              } else {
+                showToast('Walk session ended. No distance was recorded.');
+              }
+            } else {
+              setShowReportModal(true);
+            }
+            setActiveRouteGeoJSON(null);
+            setDistanceToTarget(null);
+            fullRouteGeoJSONRef.current = null;
+            return;
+          }
+
+          // 2. Local Route Trimming
+          // Find distance from current location to the route line
+          const distToRoute = turf.pointToLineDistance(currentLocPoint, routeLine, { units: 'meters' });
+
+          if (distToRoute <= 50) {
+            // User is on the route (<= 50 meters). Trim the line locally!
+            const nearest = turf.nearestPointOnLine(routeLine, currentLocPoint);
+            const destinationPoint = turf.point(targetCoords);
+            const sliced = turf.lineSlice(nearest, destinationPoint, routeLine);
+            
+            // Set the active sliced route for rendering
+            setActiveRouteGeoJSON({ type: 'Feature', properties: {}, geometry: sliced.geometry });
+            
+            // Instantly update remaining distance in UI
+            const remainingKm = turf.length(sliced, { units: 'kilometers' });
+            setDistanceToTarget(parseFloat(remainingKm.toFixed(2)));
+          } else {
+            // User went off-route (> 50 meters). Fetch a new route from Mapbox API.
+            // Throttle network requests to at most once every 10 seconds to save API quota
+            const now = Date.now();
+            if (now - lastRouteFetchTimeRef.current > 10000) {
+              const res = await getWalkingRoute(liveLocation, targetCoords);
+              if (res) {
+                const newRouteFeature = { type: 'Feature', properties: {}, geometry: res.geoJson };
+                fullRouteGeoJSONRef.current = newRouteFeature;
+                lastRouteFetchTimeRef.current = now;
+                setActiveRouteGeoJSON(newRouteFeature);
+                setDistanceToTarget(parseFloat(res.distanceKm));
+              }
+            }
+          }
+        });
+      } catch (e) {
+        console.error('Failed to trim route locally:', e);
+      }
+    }
+    
+    // Always update previous location at the end of the effect
+    if (liveLocation) {
+      prevLiveLocationRef.current = liveLocation;
+    }
+  }, [liveLocation, selectedMerchant]);
 
   useEffect(() => {
     setActiveIssueImageIndex(0);
@@ -153,12 +294,17 @@ export const MapView: React.FC = () => {
     };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
 
-    longPressTimerRef.current = setTimeout(() => {
+    longPressTimerRef.current = setTimeout(async () => {
       if ((currentMode === 'explore' || currentMode === 'demo') && !mapboxRouteGeoJSON && !isFreeWalk && !selectedMerchant && !isPlantingMode) {
         hasLongPressedRef.current = true;
         setIsFreeWalk(true);
         setWalkedDistanceKm(0);
         setShowNavPrompt(false);
+        if (currentMode !== 'demo') {
+          const { startWalkSession } = await import('../../lib/backgroundTracking');
+          await startWalkSession();
+          showToast('Free Walk Anti-Cheat Tracking Started');
+        }
       }
     }, 600);
   };
@@ -255,8 +401,6 @@ export const MapView: React.FC = () => {
     currentCoordinate,
     walkedDistanceKm,
     setWalkedDistanceKm,
-    isFreeWalk,
-    setIsFreeWalk,
     bearing
   } = useMapGeolocation();
 
@@ -425,6 +569,7 @@ export const MapView: React.FC = () => {
     setSelectedMerchant(m);
     setActiveRouteGeoJSON(null);
     setDistanceToTarget(null);
+    fullRouteGeoJSONRef.current = null;
   };
 
   const handleStartNavigation = async () => {
@@ -433,7 +578,10 @@ export const MapView: React.FC = () => {
       const targetCoords: [number, number] = selectedMerchant.location;
       const res = await getWalkingRoute(startLoc, targetCoords);
       if (res) {
-        setActiveRouteGeoJSON({ type: 'Feature', properties: {}, geometry: res.geoJson });
+        const routeFeature = { type: 'Feature', properties: {}, geometry: res.geoJson };
+        fullRouteGeoJSONRef.current = routeFeature;
+        lastRouteFetchTimeRef.current = Date.now();
+        setActiveRouteGeoJSON(routeFeature);
         setDistanceToTarget(parseFloat(res.distanceKm));
         
         if (currentMode === 'demo') {
@@ -444,6 +592,10 @@ export const MapView: React.FC = () => {
           const distMeters = getDistanceMeters(startLoc, targetCoords);
           if (distMeters < 50 && selectedMerchant.offers) {
             setShowReportModal(true);
+          } else {
+            const { startWalkSession } = await import('../../lib/backgroundTracking');
+            await startWalkSession(selectedMerchant);
+            showToast('Navigation Anti-Cheat Tracking Started');
           }
         }
       }
@@ -635,6 +787,27 @@ export const MapView: React.FC = () => {
       window.history.replaceState({}, document.title);
     }
   }, [location.state?.flyToSignpost, signposts]);
+
+  // Loading Screen for GPS Acquisition
+  if (!liveLocation && currentMode !== 'demo' && !isAuthority) {
+    return (
+      <div className="fixed inset-0 z-[9999] bg-[#0f172a] text-white flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
+        <div className="w-16 h-16 border-4 border-white/20 border-t-white rounded-full animate-spin mb-8"></div>
+        <h2 className="text-2xl font-black mb-4">Acquiring GPS Signal...</h2>
+        <p className="text-slate-400 font-bold mb-10 max-w-[280px]">
+          Please ensure your location services are enabled. This may take a few seconds...
+        </p>
+        <button 
+          onClick={() => {
+            setActiveView('landing');
+          }}
+          className="bg-slate-800 hover:bg-slate-700 text-white font-black py-4 px-10 rounded-2xl transition-colors shadow-lg shadow-black/20"
+        >
+          Go Back
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-slate-100">
@@ -1231,30 +1404,6 @@ export const MapView: React.FC = () => {
             </div>
           </div>
 
-          {/* Walk Mode Option */}
-          <div className="relative group">
-            <button 
-              onClick={async () => {
-                setIsFabOpen(false);
-                if (!isWalkModeActive) {
-                  const { startWalkSession } = await import('../../lib/backgroundTracking');
-                  const walkId = await startWalkSession();
-                  if (walkId) {
-                    setIsWalkModeActive(true);
-                    showToast('Background Walk Mode started');
-                  } else {
-                    showToast('Failed to start Walk Mode');
-                  }
-                }
-              }}
-              className={`w-14 h-14 ${isWalkModeActive ? 'bg-brand-green text-white shadow-lg' : 'glass-pill text-2xl'} flex items-center justify-center hover:scale-110 hover:-translate-y-1 transition-all active:scale-95`}
-            >
-              🚶
-            </button>
-            <div className="absolute right-16 top-1/2 -translate-y-1/2 whitespace-nowrap bg-slate-900 text-white text-xs font-bold px-2 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
-              {isWalkModeActive ? 'Walk Active' : 'Start Walk'}
-            </div>
-          </div>
         </div>
 
         {/* Main Dreamy Leaf FAB */}
@@ -1363,11 +1512,27 @@ export const MapView: React.FC = () => {
             🚶
           </div>
           <button 
-            onClick={() => {
-              setCompletedDistanceKm(walkedDistanceKm);
-              setShowReportModal(true);
+            onClick={async () => {
+              const { stopWalkSession } = await import('../../lib/backgroundTracking');
+              const result = await stopWalkSession();
+              if (result) {
+                const { setCompletedDistanceKm, setCompletedCheatDistanceKm, setCompletedCoins, setPenaltyStatus, setPenaltyReason } = useDemoStore.getState();
+                setCompletedDistanceKm(result.distance);
+                setCompletedCheatDistanceKm(result.cheatDistance || 0);
+                setPenaltyStatus(result.penaltyStatus || 'NORMAL');
+                setPenaltyReason(result.penaltyReason || '');
+                
+                if (result.distance > 0 || (result.cheatDistance && result.cheatDistance > 0)) {
+                  setShowReportModal(true);
+                } else {
+                  showToast('Walk session ended. No distance was recorded.');
+                }
+              } else {
+                setShowReportModal(true);
+              }
               setActiveRouteGeoJSON(null); 
               setDistanceToTarget(null);
+              fullRouteGeoJSONRef.current = null;
               setWalkedDistanceKm(0);
             }} 
             className="ml-1 sm:ml-2 text-xs sm:text-sm font-black text-red-500 hover:text-red-700 underline shrink-0 bg-red-50 px-2 py-1.5 rounded-lg border border-red-200"
@@ -1379,25 +1544,64 @@ export const MapView: React.FC = () => {
 
       {/* Free Walk Active Overlay */}
       {!isAuthority && isFreeWalk && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[calc(100vw-2rem)] sm:w-auto bg-white border-2 border-[#1d3539] shadow-[4px_4px_0px_0px_#1d3539] px-4 sm:px-6 py-3 rounded-2xl sm:rounded-3xl flex items-center gap-3 sm:gap-6 z-[90] animate-in slide-in-from-bottom-10 fade-in duration-300">
-          <div className="flex-1 min-w-0 flex gap-4 sm:gap-8 justify-between">
-            <div>
-              <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase leading-tight truncate">Distance</p>
-              <p className="text-sm sm:text-lg font-black text-[#1d3539] truncate leading-tight">{walkedDistanceKm.toFixed(2)} <span className="text-xs">km</span></p>
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[calc(100vw-2rem)] sm:w-auto bg-white border-2 border-[#1d3539] shadow-[4px_4px_0px_0px_#1d3539] px-4 py-3 rounded-2xl sm:rounded-3xl flex items-center gap-3 sm:gap-6 z-[90] animate-in slide-in-from-bottom-10 fade-in duration-300">
+          <div className="flex-1 min-w-0 flex gap-2 sm:gap-8 justify-between items-center w-full">
+
+
+            <div className="flex flex-col flex-1 items-start">
+              <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Valid Dist</p>
+              <div className="flex items-baseline gap-1">
+                <span className="text-xl sm:text-2xl font-black text-[#1d3539] tabular-nums">{backgroundDistance.toFixed(2)}</span>
+                <span className="text-xs sm:text-sm font-bold text-slate-500">km</span>
+              </div>
             </div>
-            <div>
-              <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase leading-tight truncate">Saved</p>
-              <p className="text-sm sm:text-lg font-black text-[#5496a2] truncate leading-tight">{(walkedDistanceKm / 5.88).toFixed(2)} <span className="text-xs">kg CO2</span></p>
+
+            {/* Splitter */}
+            <div className="w-[1px] bg-slate-200 h-8 shrink-0" />
+
+            <div className="flex flex-col flex-1 items-start">
+              <p className="text-[10px] sm:text-xs font-bold text-red-500 uppercase tracking-wider mb-1">Cheat</p>
+              <div className="flex items-baseline gap-1">
+                <span className="text-xl sm:text-2xl font-black text-red-500 tabular-nums">{backgroundCheatDistance.toFixed(2)}</span>
+                <span className="text-xs sm:text-sm font-bold text-red-500">km</span>
+              </div>
             </div>
-            <div>
-              <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase leading-tight truncate">Energy</p>
-              <p className="text-sm sm:text-lg font-black text-brand-pink truncate leading-tight">{Math.floor((walkedDistanceKm / 5.88) * 100)} <span className="text-xs">🪙</span></p>
+
+            {/* Splitter */}
+            <div className="w-[1px] bg-slate-200 h-8 shrink-0" />
+
+            <div className="flex flex-col flex-1 items-start">
+              <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Saved</p>
+              <div className="flex items-baseline gap-1">
+                <span className="text-xl sm:text-2xl font-black text-[#5496a2] tabular-nums">{(backgroundDistance / 5.88).toFixed(1)}</span>
+                <span className="text-xs sm:text-sm font-bold text-slate-500">kg</span>
+              </div>
             </div>
           </div>
           <button 
-            onClick={() => { 
-              setCompletedDistanceKm(walkedDistanceKm);
-              setShowReportModal(true);
+            onClick={async () => { 
+              if (currentMode !== 'demo') {
+                const { stopWalkSession } = await import('../../lib/backgroundTracking');
+                const result = await stopWalkSession();
+                if (result) {
+                  const { setCompletedDistanceKm, setCompletedCheatDistanceKm, setCompletedCoins, setPenaltyStatus, setPenaltyReason } = useDemoStore.getState();
+                  setCompletedDistanceKm(result.distance);
+                  setCompletedCheatDistanceKm(result.cheatDistance || 0);
+                  setPenaltyStatus(result.penaltyStatus || 'NORMAL');
+                  setPenaltyReason(result.penaltyReason || '');
+
+                  if (result.distance > 0 || (result.cheatDistance && result.cheatDistance > 0)) {
+                    setShowReportModal(true);
+                  } else {
+                    showToast('Walk session ended. No distance was recorded.');
+                  }
+                } else {
+                  setShowReportModal(true);
+                }
+              } else {
+                setCompletedDistanceKm(walkedDistanceKm);
+                setShowReportModal(true);
+              }
               setIsFreeWalk(false);
               setWalkedDistanceKm(0);
               // reset demo mode state if needed
@@ -1413,39 +1617,6 @@ export const MapView: React.FC = () => {
         </div>
       )}
 
-      {/* Background Walk Mode Active Overlay */}
-      {!isAuthority && isWalkModeActive && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[calc(100vw-2rem)] sm:w-auto bg-white border-2 border-brand-green shadow-[4px_4px_0px_0px_#10b981] px-4 sm:px-6 py-3 rounded-2xl sm:rounded-3xl flex items-center gap-3 sm:gap-6 z-[90] animate-in slide-in-from-bottom-10 fade-in duration-300">
-          <div className="flex-1 min-w-0 flex gap-4 sm:gap-8 justify-between">
-            <div>
-              <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase leading-tight truncate">Walk Mode</p>
-              <p className="text-sm sm:text-lg font-black text-brand-green truncate leading-tight">{backgroundDistance.toFixed(2)} <span className="text-xs">km</span></p>
-            </div>
-            <div>
-              <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase leading-tight truncate">Saved</p>
-              <p className="text-sm sm:text-lg font-black text-[#5496a2] truncate leading-tight">{(backgroundDistance / 5.88).toFixed(2)} <span className="text-xs">kg CO2</span></p>
-            </div>
-          </div>
-          <button 
-            onClick={async () => {
-              const { stopWalkSession } = await import('../../lib/backgroundTracking');
-              try {
-                const res = await stopWalkSession();
-                setIsWalkModeActive(false);
-                if (res) {
-                  setCompletedDistanceKm(res.distance);
-                  setShowReportModal(true); // Assuming this works for Walk Mode too
-                }
-              } catch (e) {
-                showToast('Failed to stop walk. Network error?');
-              }
-            }} 
-            className="ml-1 sm:ml-2 text-xs sm:text-sm font-black text-red-500 hover:text-red-700 uppercase px-4 py-2 rounded-2xl border-2 border-red-500 bg-red-50 hover:bg-red-100 transition-colors shrink-0 shadow-[2px_2px_0px_0px_rgba(239,68,68,1)] active:translate-y-0.5 active:shadow-none"
-          >
-            End Walk
-          </button>
-        </div>
-      )}
 
       {showSignpostModal && (
         <CreateSignpostModal 
@@ -1484,8 +1655,8 @@ export const MapView: React.FC = () => {
 
       {/* Toast Notification */}
       {toastMsg && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[500] animate-in fade-in slide-in-from-bottom-5">
-          <div className="bg-slate-900/90 dark:bg-white/90 text-white dark:text-slate-900 px-4 py-2 rounded-full shadow-lg text-sm font-bold backdrop-blur-sm">
+        <div className="fixed bottom-40 left-1/2 -translate-x-1/2 z-[500] animate-in fade-in slide-in-from-bottom-5 w-[90%] max-w-sm pointer-events-none">
+          <div className="bg-[#1C2033]/95 text-white px-5 py-3 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] text-sm font-semibold backdrop-blur-md text-center border border-white/10 mx-auto flex items-center justify-center">
             {toastMsg}
           </div>
         </div>

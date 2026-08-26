@@ -24,6 +24,7 @@ export function parseFirebaseJwt(token: string): any | null {
 
 type Bindings = {
   DB: D1Database;
+  AI: any;
   FIREBASE_PROJECT_ID: string;
   RESEND_API_KEY?: string;
   FIREBASE_SERVICE_ACCOUNT?: string;
@@ -48,7 +49,7 @@ export async function deleteFirebaseAuthUser(env: Bindings, uid: string) {
     throw new Error('FIREBASE_SERVICE_ACCOUNT not configured');
   }
   const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
-  
+
   const privateKey = await importPKCS8(sa.private_key, 'RS256');
   const jwt = await new SignJWT({
     iss: sa.client_email,
@@ -66,7 +67,7 @@ export async function deleteFirebaseAuthUser(env: Bindings, uid: string) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`
   });
-  
+
   if (!tokenRes.ok) throw new Error('Failed to get Google OAuth token');
   const tokenData = await tokenRes.json() as any;
   const accessToken = tokenData.access_token;
@@ -97,10 +98,10 @@ app.use('/api/*', async (c, next) => {
   if (c.req.method === 'OPTIONS') {
     return next();
   }
-  
+
   // Public routes
   if (
-    c.req.path === '/api/check-username' || 
+    c.req.path === '/api/check-username' ||
     c.req.path.startsWith('/api/authorities/verify-token') ||
     c.req.path.startsWith('/api/chat/community/') ||
     (c.req.path.startsWith('/api/guilds') && c.req.method === 'GET')
@@ -112,7 +113,7 @@ app.use('/api/*', async (c, next) => {
   const authHeader = c.req.header('Authorization');
   const wsProtocol = c.req.header('Sec-WebSocket-Protocol');
   const tokenFromQuery = c.req.query('wsToken');
-  
+
   if (authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.split(' ')[1];
   } else if (tokenFromQuery) {
@@ -154,8 +155,8 @@ app.get('/api/authorities/verify-token/:token', async (c) => {
   if (invitation.used === 1) return c.json({ error: 'Token has already been used' }, 400);
   if (invitation.expires_at < Date.now()) return c.json({ error: 'Token has expired' }, 400);
 
-  return c.json({ 
-    success: true, 
+  return c.json({
+    success: true,
     email: invitation.email,
     country: invitation.country,
     state: invitation.state,
@@ -194,7 +195,7 @@ app.post('/api/authorities/register', async (c) => {
   ).bind(tokenHash, Date.now()).first();
 
   if (!invitation) return c.json({ error: 'Invalid, used, or expired token' }, 400);
-  
+
   if (invitation.email.toLowerCase() !== jwtUser.email.toLowerCase()) {
     return c.json({ error: 'Authenticated email does not match invitation email' }, 403);
   }
@@ -218,17 +219,21 @@ app.post('/api/authorities/register', async (c) => {
   }
 
   // Ensure columns exist (auto-migration) to prevent 500 errors
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN position TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN bio TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN country TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN state TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN city TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN position TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN bio TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN country TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN state TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN city TEXT').run(); } catch (e) { }
 
   // Upsert user as authority (match by id or email)
   const userExists = await c.env.DB.prepare('SELECT id FROM users WHERE id = ? OR email = ?').bind(jwtUser.sub, jwtUser.email).first() as any;
 
-  // Ensure username uniqueness
+  // Ensure username uniqueness and validity
+  if (!/^[a-zA-Z0-9@_-]+$/.test(name)) {
+    return c.json({ error: 'Username contains invalid characters. Only letters, numbers, @, _, and - are allowed.' }, 400);
+  }
+
   const existingName = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(name).first();
   if (existingName) {
     return c.json({ error: 'This username is already taken. Please choose another one.' }, 400);
@@ -261,14 +266,14 @@ app.post('/api/chat/upload', async (c) => {
   try {
     const formData = await c.req.formData();
     const file = formData.get('image') as File | null;
-    
+
     if (!file) {
       return c.json({ error: 'No image provided' }, 400);
     }
 
     const extension = file.name.split('.').pop() || 'webp';
     const objectKey = `chat-images/${jwtUser.sub}-${Date.now()}.${extension}`;
-    
+
     await c.env.AVATARS_BUCKET.put(objectKey, await file.arrayBuffer(), {
       httpMetadata: { contentType: file.type }
     });
@@ -289,7 +294,7 @@ app.post('/api/chat/upload', async (c) => {
 app.get('/api/check-username', async (c) => {
   const username = c.req.query('username');
   if (!username) return c.json({ error: 'Username is required' }, 400);
-  
+
   const existing = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
   return c.json({ available: !existing });
 });
@@ -312,13 +317,13 @@ app.get('/api/chat/unread/:guildId', async (c) => {
   const guildId = c.req.param('guildId');
   const jwtUser = c.get('user') as any;
   if (!jwtUser) return c.json({ error: 'Unauthorized' }, 401);
-  
+
   const readRecord = await c.env.DB.prepare('SELECT last_read_at FROM user_chat_reads WHERE user_id = ? AND guild_id = ?').bind(jwtUser.sub, guildId).first() as any;
   const lastReadAt = readRecord ? readRecord.last_read_at : 0;
-  
+
   const unreadCountQuery = await c.env.DB.prepare('SELECT COUNT(*) as count FROM chat_messages WHERE guild_id = ? AND timestamp > ?').bind(guildId, lastReadAt).first() as any;
   const unreadCount = unreadCountQuery ? unreadCountQuery.count : 0;
-  
+
   return c.json({ unread_count: unreadCount });
 });
 
@@ -327,17 +332,17 @@ app.post('/api/chat/read/:roomId', async (c) => {
   const roomId = c.req.param('roomId');
   const jwtUser = c.get('user') as any;
   if (!jwtUser) return c.json({ error: 'Unauthorized' }, 401);
-  
+
   const userId = jwtUser.sub;
   const now = Date.now();
-  
+
   await c.env.DB.prepare(
     'INSERT INTO user_chat_reads (user_id, guild_id, last_read_at) VALUES (?, ?, ?) ON CONFLICT(user_id, guild_id) DO UPDATE SET last_read_at = ?'
   ).bind(userId, roomId, now, now).run();
-  
 
 
-    return c.json({ success: true });
+
+  return c.json({ success: true });
 });
 
 // GET /api/guilds/recommended
@@ -363,34 +368,34 @@ app.get('/r2/*', async (c) => {
   // Extract key after /r2/
   const url = new URL(c.req.url);
   const key = url.pathname.replace('/r2/', '');
-  
+
   const object = await c.env.AVATARS_BUCKET.get(key);
   if (!object) return c.json({ error: 'Not found' }, 404);
-  
+
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   headers.set('etag', object.httpEtag);
   // Add browser caching (1 year) since the filename has a unique timestamp
   headers.set('Cache-Control', 'public, max-age=31536000, immutable');
-  
+
   return new Response(object.body as any, { headers });
 });
 
 // GET user
 app.get('/api/users/:id', async (c) => {
   const id = c.req.param('id');
-  
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN player_id TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN country TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN state TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN city TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN bio TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN unlocked_badges TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN read_mails TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE purchases ADD COLUMN expires_at INTEGER').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN showcased_badges TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN banned_until INTEGER DEFAULT 0').run(); } catch(e) {}
+
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN player_id TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN country TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN state TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN city TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN bio TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN unlocked_badges TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN read_mails TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE purchases ADD COLUMN expires_at INTEGER').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN showcased_badges TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN banned_until INTEGER DEFAULT 0').run(); } catch (e) { }
 
   // Ensure badges are up to date (retroactive awards for existing users)
   await checkAndAwardBadges(c, id);
@@ -435,7 +440,7 @@ app.get('/api/users/:id', async (c) => {
   if (user) {
     const history = await c.env.DB.prepare('SELECT date, distance FROM activity_history WHERE user_id = ? ORDER BY date ASC').bind(user.id).all();
     user.activityHistory = history.results;
-    
+
     const prefs = await c.env.DB.prepare('SELECT * FROM user_notification_preferences WHERE user_id = ?').bind(user.id).first();
     user.preferences = prefs || {
       push_enabled: 1, mailbox_enabled: 1, social_enabled: 1, news_enabled: 0, daily_reminder_enabled: 1, new_follower_enabled: 1
@@ -449,22 +454,22 @@ app.post('/api/users/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json();
   const jwtUser = c.get('user') as any;
-  
+
   // Verify identity OR allow if the requesting user is an admin
   if (!jwtUser) return c.json({ error: 'Unauthorized' }, 401);
   const requestingDbUser = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(jwtUser.sub).first();
   const isAdmin = requestingDbUser && requestingDbUser.role === 'admin';
-  
+
   if (jwtUser.sub !== id && !isAdmin) {
     return c.json({ error: 'Forbidden: Cannot modify other user data' }, 403);
   }
-  
+
   // Basic upsert or update
   const user = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(id).first();
   if (!user) {
     if (!body.username) return c.json({ error: 'Username is required for new users' }, 400);
-    if (!/^[a-zA-Z0-9@_-]+$/.test(body.username)) return c.json({ error: 'Username contains invalid characters' }, 400);
-    
+    if (!/^[a-zA-Z0-9@_-]+$/.test(body.username)) return c.json({ error: 'Username can only contain English letters, numbers, @, _, and -. Spaces and Chinese characters are not allowed.' }, 400);
+
     // Check if username is already taken
     const existingUsername = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(body.username).first();
     if (existingUsername) return c.json({ error: 'Username is already taken' }, 400);
@@ -485,22 +490,22 @@ app.post('/api/users/:id', async (c) => {
     // Dynamic update
     const updates: string[] = [];
     const values: any[] = [];
-    
+
     if (body.email !== undefined) { updates.push('email = ?'); values.push(body.email); }
-    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN player_id TEXT').run(); } catch(e) {}
-    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN country TEXT').run(); } catch(e) {}
-    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN state TEXT').run(); } catch(e) {}
-    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN city TEXT').run(); } catch(e) {}
-    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch(e) {}
-    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN read_mails TEXT').run(); } catch(e) {}
-    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN showcased_badges TEXT').run(); } catch(e) {}
-    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN banned_until INTEGER DEFAULT 0').run(); } catch(e) {}
-    
-    if (body.username !== undefined) { 
+    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN player_id TEXT').run(); } catch (e) { }
+    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN country TEXT').run(); } catch (e) { }
+    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN state TEXT').run(); } catch (e) { }
+    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN city TEXT').run(); } catch (e) { }
+    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch (e) { }
+    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN read_mails TEXT').run(); } catch (e) { }
+    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN showcased_badges TEXT').run(); } catch (e) { }
+    try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN banned_until INTEGER DEFAULT 0').run(); } catch (e) { }
+
+    if (body.username !== undefined) {
       if (!/^[a-zA-Z0-9@_-]+$/.test(body.username)) return c.json({ error: 'Username contains invalid characters' }, 400);
       const existingUsername = await c.env.DB.prepare('SELECT id FROM users WHERE username = ? AND id != ?').bind(body.username, id).first();
       if (existingUsername) return c.json({ error: 'Username is already taken' }, 400);
-      updates.push('username = ?'); values.push(body.username); 
+      updates.push('username = ?'); values.push(body.username);
     }
     if (body.role !== undefined) { updates.push('role = ?'); values.push(body.role); }
     if (body.coins !== undefined) { updates.push('coins = ?'); values.push(body.coins); }
@@ -513,15 +518,15 @@ app.post('/api/users/:id', async (c) => {
     if (body.unlockedBadges !== undefined) { updates.push('unlocked_badges = ?'); values.push(JSON.stringify(body.unlockedBadges)); }
     if (body.showcasedBadges !== undefined) { updates.push('showcased_badges = ?'); values.push(JSON.stringify(body.showcasedBadges)); }
     if (body.readMails !== undefined) { updates.push('read_mails = ?'); values.push(JSON.stringify(body.readMails)); }
-    
+
     if (updates.length > 0) {
       values.push(id);
       await c.env.DB.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
-      
+
       await checkAndAwardBadges(c, id);
     }
   }
-  
+
   if (body.preferences !== undefined) {
     const p = body.preferences;
     await c.env.DB.prepare(`
@@ -535,16 +540,16 @@ app.post('/api/users/:id', async (c) => {
         daily_reminder_enabled = excluded.daily_reminder_enabled,
         new_follower_enabled = excluded.new_follower_enabled
     `).bind(
-        id, 
-        p.push_enabled ? 1 : 0, 
-        p.mailbox_enabled ? 1 : 0, 
-        p.social_enabled ? 1 : 0, 
-        p.news_enabled ? 1 : 0, 
-        p.daily_reminder_enabled ? 1 : 0, 
-        p.new_follower_enabled ? 1 : 0
+      id,
+      p.push_enabled ? 1 : 0,
+      p.mailbox_enabled ? 1 : 0,
+      p.social_enabled ? 1 : 0,
+      p.news_enabled ? 1 : 0,
+      p.daily_reminder_enabled ? 1 : 0,
+      p.new_follower_enabled ? 1 : 0
     ).run();
   }
-  
+
   return c.json({ success: true });
 });
 
@@ -562,14 +567,14 @@ app.get('/api/users/:id/issues', async (c) => {
     WHERE r.author_id = ? AND r.deleted_at IS NULL 
     ORDER BY r.created_at DESC
   `).bind(id).all();
-  
+
   const issuesWithUnread = await Promise.all(issues.results.map(async (issue: any) => {
     const guildId = `issue_${issue.id}`;
     const lastReadRecord = await c.env.DB.prepare('SELECT last_read_at FROM user_chat_reads WHERE user_id = ? AND guild_id = ?').bind(id, guildId).first() as any;
     const lastReadAt = lastReadRecord ? lastReadRecord.last_read_at : 0;
-    
+
     const unreadRecord = await c.env.DB.prepare('SELECT COUNT(*) as unread_count FROM issue_messages WHERE issue_id = ? AND created_at > ? AND sender_id != ?').bind(issue.id, lastReadAt, id).first() as any;
-    
+
     return {
       ...issue,
       unread_count: unreadRecord ? unreadRecord.unread_count : 0
@@ -583,7 +588,7 @@ app.get('/api/users/:id/issues', async (c) => {
 app.post('/api/users/:id/avatar', async (c) => {
   const id = c.req.param('id');
   const jwtUser = c.get('user') as any;
-  
+
   if (!jwtUser || jwtUser.sub !== id) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
@@ -598,7 +603,7 @@ app.post('/api/users/:id/avatar', async (c) => {
   // File should already be compressed WebP/JPEG by the frontend
   const extension = file.name.split('.').pop() || 'webp';
   const objectKey = `avatars/${id}-${Date.now()}.${extension}`;
-  
+
   // Try to delete old avatar to save space
   try {
     const user = await c.env.DB.prepare('SELECT avatar FROM users WHERE id = ?').bind(id).first() as any;
@@ -610,10 +615,10 @@ app.post('/api/users/:id/avatar', async (c) => {
   } catch (err) {
     console.warn("Failed to delete old avatar:", err);
   }
-  
+
   // Convert File to ArrayBuffer for R2
   const arrayBuffer = await file.arrayBuffer();
-  
+
   // Upload to R2 Bucket
   await c.env.AVATARS_BUCKET.put(objectKey, arrayBuffer, {
     httpMetadata: { contentType: file.type }
@@ -624,7 +629,7 @@ app.post('/api/users/:id/avatar', async (c) => {
   const publicUrl = `${url.origin}/r2/${objectKey}`;
 
   // Update Database
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN avatar TEXT').run(); } catch (e) { }
   await c.env.DB.prepare('UPDATE users SET avatar = ? WHERE id = ?').bind(publicUrl, id).run();
 
   return c.json({ success: true, avatarUrl: publicUrl });
@@ -638,13 +643,13 @@ app.get('/api/chat/presigned-url', async (c) => {
   }
 
   const extension = c.req.query('ext') || 'webp';
-  
+
   if (!c.env.R2_ACCOUNT_ID || !c.env.R2_ACCESS_KEY_ID || !c.env.R2_SECRET_ACCESS_KEY) {
     return c.json({ error: 'R2 API Credentials not configured' }, 500);
   }
 
   const objectKey = `chat-images/${jwtUser.sub}-${Date.now()}.${extension}`;
-  
+
   const aws = new AwsClient({
     accessKeyId: c.env.R2_ACCESS_KEY_ID,
     secretAccessKey: c.env.R2_SECRET_ACCESS_KEY,
@@ -662,8 +667,8 @@ app.get('/api/chat/presigned-url', async (c) => {
     const url = new URL(c.req.url);
     const publicUrl = `${url.origin}/r2/${objectKey}`;
 
-    return c.json({ 
-      success: true, 
+    return c.json({
+      success: true,
       uploadUrl: signed.url,
       publicUrl: publicUrl,
       objectKey: objectKey
@@ -678,15 +683,15 @@ app.get('/api/chat/presigned-url', async (c) => {
 app.delete('/api/users/:id', async (c) => {
   const id = c.req.param('id');
   const jwtUser = c.get('user') as any;
-  
+
   if (!jwtUser) return c.json({ error: 'Unauthorized' }, 401);
   const requestingDbUser = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(jwtUser.sub).first();
   const isAdmin = requestingDbUser && requestingDbUser.role === 'admin';
-  
+
   if (jwtUser.sub !== id && !isAdmin) {
     return c.json({ error: 'Forbidden: Cannot delete other user data' }, 403);
   }
-  
+
   try {
     // Check if the user is a merchant
     const userRoleCheck: any = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(id).first();
@@ -697,26 +702,26 @@ app.delete('/api/users/:id', async (c) => {
         // 1. Find all items owned by this specific merchant shop
         const items = await c.env.DB.prepare('SELECT id, name, price FROM point_store WHERE merchant_id = ? OR merchant_id = ?').bind(m.id, id).all();
         const itemIds = items.results.map((i: any) => i.id);
-        
+
         // 2. Soft delete items from point_store
         await c.env.DB.prepare('UPDATE point_store SET status = ? WHERE merchant_id = ? OR merchant_id = ?').bind('disabled', m.id, id).run();
-        
+
         // 3. Process active purchases and refund users
         if (itemIds.length > 0) {
           for (const itemId of itemIds) {
             const item = items.results.find((i: any) => i.id === itemId);
             if (!item) continue;
             const purchases = await c.env.DB.prepare('SELECT id, user_id FROM purchases WHERE item_id = ? AND status = ?').bind(itemId, 'active').all();
-            
+
             for (const p of purchases.results as any[]) {
               // Refund user
               await c.env.DB.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(item.price, p.user_id).run();
-              
+
               // Disable purchase
               await c.env.DB.prepare('UPDATE purchases SET status = ? WHERE id = ?').bind('disabled_by_admin', p.id).run();
-              
+
               // Send mail notification
-              const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2,7)}`;
+              const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
               const content = `We're sorry, but the voucher "${item.name}" from ${storeName} has been disabled because the merchant has closed their account. Your ${item.price} Eco-Coins have been refunded to your account.`;
               await notificationService.createMailAndNotify(c.env, {
                 id: mailId,
@@ -732,50 +737,50 @@ app.delete('/api/users/:id', async (c) => {
           }
         }
       }
-      
+
       // 4. Delete the merchant records and their pending applications
       await c.env.DB.prepare('DELETE FROM merchants WHERE owner_id = ?').bind(id).run();
       await c.env.DB.prepare('DELETE FROM applications WHERE owner_id = ?').bind(id).run();
     }
 
-  // Delete from related tables first
-  await c.env.DB.prepare('DELETE FROM activity_history WHERE user_id = ?').bind(id).run();
-  
-  // To avoid SQLite FOREIGN KEY constraint violations, we must reassign trees and signposts 
-  // rather than just leaving them pointing to a deleted user ID.
-  await c.env.DB.prepare(`
+    // Delete from related tables first
+    await c.env.DB.prepare('DELETE FROM activity_history WHERE user_id = ?').bind(id).run();
+
+    // To avoid SQLite FOREIGN KEY constraint violations, we must reassign trees and signposts 
+    // rather than just leaving them pointing to a deleted user ID.
+    await c.env.DB.prepare(`
     INSERT OR IGNORE INTO users (id, email, username, player_id, role, created_at, coins, total_distance_km) 
     VALUES ('deleted_user', 'deleted@ecostride.app', 'Unknown Player', '00000000', 'user', 0, 0, 0)
   `).run();
-  
-  await c.env.DB.prepare('UPDATE trees SET author_id = ? WHERE author_id = ?').bind('deleted_user', id).run();
-  await c.env.DB.prepare('UPDATE signposts SET author_id = ? WHERE author_id = ?').bind('deleted_user', id).run();
-  
-  // ONLY delete purchases from the system point store. 
-  // Purchases from a merchant store (merchant_id IS NOT NULL) are retained so the merchant can still see their sales history.
-  // Reassign retained purchases to 'deleted_user' to avoid FK violation
-  await c.env.DB.prepare('UPDATE purchases SET user_id = ? WHERE user_id = ? AND merchant_id IS NOT NULL').bind('deleted_user', id).run();
-  await c.env.DB.prepare('DELETE FROM purchases WHERE user_id = ? AND merchant_id IS NULL').bind(id).run();
-  
-  // Reassign authority-related tables to 'deleted_user' to avoid FK violations
-  await c.env.DB.prepare('UPDATE infrastructure_reports SET author_id = ? WHERE author_id = ?').bind('deleted_user', id).run();
-  await c.env.DB.prepare("UPDATE infrastructure_reports SET authority_id = NULL, status = CASE WHEN status = 'in-progress' THEN 'pending' ELSE status END WHERE authority_id = ?").bind(id).run();
-  await c.env.DB.prepare('UPDATE authority_tasks SET created_by = ? WHERE created_by = ?').bind('deleted_user', id).run();
-  await c.env.DB.prepare('UPDATE issue_messages SET sender_id = ? WHERE sender_id = ?').bind('deleted_user', id).run();
-  await c.env.DB.prepare('UPDATE report_activity SET actor_id = ? WHERE actor_id = ?').bind('deleted_user', id).run();
-  await c.env.DB.prepare('UPDATE authority_invitations SET created_by = ? WHERE created_by = ?').bind('deleted_user', id).run();
 
-  // Try to delete Firebase Auth user. (If not configured or errors, we log it but don't fail the DB deletion)
-  try {
-    await deleteFirebaseAuthUser(c.env, id);
-  } catch (authErr) {
-    console.error("Failed to delete Firebase Auth user (could be local dev or already deleted):", authErr);
-  }
+    await c.env.DB.prepare('UPDATE trees SET author_id = ? WHERE author_id = ?').bind('deleted_user', id).run();
+    await c.env.DB.prepare('UPDATE signposts SET author_id = ? WHERE author_id = ?').bind('deleted_user', id).run();
 
-  // Then delete user from D1
-  await c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(id).run();
-  
-  return c.json({ success: true });
+    // ONLY delete purchases from the system point store. 
+    // Purchases from a merchant store (merchant_id IS NOT NULL) are retained so the merchant can still see their sales history.
+    // Reassign retained purchases to 'deleted_user' to avoid FK violation
+    await c.env.DB.prepare('UPDATE purchases SET user_id = ? WHERE user_id = ? AND merchant_id IS NOT NULL').bind('deleted_user', id).run();
+    await c.env.DB.prepare('DELETE FROM purchases WHERE user_id = ? AND merchant_id IS NULL').bind(id).run();
+
+    // Reassign authority-related tables to 'deleted_user' to avoid FK violations
+    await c.env.DB.prepare('UPDATE infrastructure_reports SET author_id = ? WHERE author_id = ?').bind('deleted_user', id).run();
+    await c.env.DB.prepare("UPDATE infrastructure_reports SET authority_id = NULL, status = CASE WHEN status = 'in-progress' THEN 'pending' ELSE status END WHERE authority_id = ?").bind(id).run();
+    await c.env.DB.prepare('UPDATE authority_tasks SET created_by = ? WHERE created_by = ?').bind('deleted_user', id).run();
+    await c.env.DB.prepare('UPDATE issue_messages SET sender_id = ? WHERE sender_id = ?').bind('deleted_user', id).run();
+    await c.env.DB.prepare('UPDATE report_activity SET actor_id = ? WHERE actor_id = ?').bind('deleted_user', id).run();
+    await c.env.DB.prepare('UPDATE authority_invitations SET created_by = ? WHERE created_by = ?').bind('deleted_user', id).run();
+
+    // Try to delete Firebase Auth user. (If not configured or errors, we log it but don't fail the DB deletion)
+    try {
+      await deleteFirebaseAuthUser(c.env, id);
+    } catch (authErr) {
+      console.error("Failed to delete Firebase Auth user (could be local dev or already deleted):", authErr);
+    }
+
+    // Then delete user from D1
+    await c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(id).run();
+
+    return c.json({ success: true });
   } catch (err: any) {
     console.error("DELETE user error:", err);
     return c.json({ error: err.message }, 500);
@@ -787,7 +792,7 @@ app.post('/api/admin/users/:id/ban', async (c) => {
   const id = c.req.param('id');
   const jwtUser = c.get('user') as any;
   if (!jwtUser) return c.json({ error: 'Unauthorized' }, 401);
-  
+
   const requestingDbUser = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(jwtUser.sub).first();
   const isAdmin = requestingDbUser && requestingDbUser.role === 'admin';
   if (!isAdmin) return c.json({ error: 'Forbidden' }, 403);
@@ -795,7 +800,7 @@ app.post('/api/admin/users/:id/ban', async (c) => {
   const body = await c.req.json();
   const bannedUntil = body.bannedUntil || 0;
 
-  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN banned_until INTEGER DEFAULT 0').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE users ADD COLUMN banned_until INTEGER DEFAULT 0').run(); } catch (e) { }
   await c.env.DB.prepare('UPDATE users SET banned_until = ? WHERE id = ?').bind(bannedUntil, id).run();
 
   return c.json({ success: true, bannedUntil });
@@ -805,7 +810,7 @@ app.post('/api/admin/users/:id/ban', async (c) => {
 app.post('/api/admin/invite-authority', async (c) => {
   const jwtUser = c.get('user') as any;
   if (!jwtUser) return c.json({ error: 'Unauthorized' }, 401);
-  
+
   const requestingDbUser = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(jwtUser.sub).first();
   const isAdmin = requestingDbUser && (requestingDbUser as any).role === 'admin';
   if (!isAdmin) return c.json({ error: 'Forbidden' }, 403);
@@ -815,14 +820,14 @@ app.post('/api/admin/invite-authority', async (c) => {
   const country = body.country || null;
   const state = body.state || null;
   const city = body.city || null;
-  
+
   const locationParts = [city, state, country].filter(Boolean);
   const location = locationParts.length > 0 ? locationParts.join(', ') : null;
 
   if (!email || typeof email !== 'string') return c.json({ error: 'Valid email is required' }, 400);
 
   const rawToken = crypto.randomUUID() + crypto.randomUUID().replace(/-/g, '');
-  
+
   const encoder = new TextEncoder();
   const data = encoder.encode(rawToken);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -882,7 +887,7 @@ app.post('/api/admin/invite-authority', async (c) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          from: 'EcoStride <onboarding@resend.dev>',
+          from: 'EcoStride <admin@ecostride.cc>',
           to: [email],
           subject: 'You are invited to join EcoStride as an Authority',
           html: emailHtml
@@ -901,12 +906,12 @@ app.post('/api/admin/invite-authority', async (c) => {
 
 app.post('/api/walks/start', async (c) => {
   const user = c.get('user');
-  if (!user || !user.uid) return c.json({ error: 'Unauthorized' }, 401);
+  if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
 
   // BUG 4 FIX: Auto-close any existing active walk for this user
   const existing = await c.env.DB.prepare(
     'SELECT id FROM walk_sessions WHERE user_id = ? AND status = ?'
-  ).bind(user.uid, 'active').first();
+  ).bind(user.sub, 'active').first();
 
   if (existing) {
     await c.env.DB.prepare(
@@ -919,62 +924,124 @@ app.post('/api/walks/start', async (c) => {
 
   await c.env.DB.prepare(
     'INSERT INTO walk_sessions (id, user_id, started_at, status) VALUES (?, ?, ?, ?)'
-  ).bind(walkId, user.uid, startedAt, 'active').run();
+  ).bind(walkId, user.sub, startedAt, 'active').run();
 
   return c.json({ walkId, startedAt });
 });
 
 app.post('/api/walks/:walkId/end', async (c) => {
   const user = c.get('user');
-  if (!user || !user.uid) return c.json({ error: 'Unauthorized' }, 401);
+  if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
   const walkId = c.req.param('walkId');
   const body = await c.req.json();
   const reportedDistance = body.distance_km || 0;
+  const cheatDistance = body.cheat_distance_km || 0;
+  const spoofedCount = body.spoofed_count || 0;
+
+  const activityTime = body.activity_time_minutes || {};
+
+  try { await c.env.DB.prepare('ALTER TABLE walk_sessions ADD COLUMN cheat_distance_km REAL DEFAULT 0').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE walk_sessions ADD COLUMN spoofed_count INTEGER DEFAULT 0').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE walk_sessions ADD COLUMN activity_time_minutes TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE walk_sessions ADD COLUMN penalty_status TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE walk_sessions ADD COLUMN steps INTEGER DEFAULT 0').run(); } catch (e) { }
 
   const walkRecord = await c.env.DB.prepare('SELECT * FROM walk_sessions WHERE id = ?').bind(walkId).first();
-  
+
   if (!walkRecord) return c.json({ error: 'Walk session not found' }, 404);
-  if (walkRecord.user_id !== user.uid) return c.json({ error: 'Unauthorized' }, 401);
+  if (walkRecord.user_id !== user.sub) return c.json({ error: 'Unauthorized' }, 401);
   if (walkRecord.status !== 'active') return c.json({ error: 'Walk session already completed' }, 400);
 
   const startedAt = new Date(walkRecord.started_at as string);
   const endedAt = new Date();
-  const elapsedHours = (endedAt.getTime() - startedAt.getTime()) / (1000 * 60 * 60);
+  const durationSec = (endedAt.getTime() - startedAt.getTime()) / 1000;
+  const durationMinutes = Math.round(durationSec / 60);
 
-  // Validate distance (speed <= 15 km/h)
+  let coinsAwarded = 0;
+  let penaltyStatus = 'NORMAL';
+  let penaltyReason = '';
+  
+  // Total physical distance moved
+  const totalDistanceKm = reportedDistance + cheatDistance;
+  const distanceMeters = totalDistanceKm * 1000;
+
+  // Multi-Sensor Deterministic Classification
+  const speedKmh = durationSec > 0 ? (totalDistanceKm) / (durationSec / 3600) : 0;
+
   let validatedDistance = reportedDistance;
-  if (elapsedHours > 0) {
-    const avgSpeed = reportedDistance / elapsedHours;
-    if (avgSpeed > 15) {
-      console.warn(`Cheating detected: Speed ${avgSpeed} km/h for user ${user.uid}`);
-      // Cap the distance or reject. Here we'll cap it to max plausible for the duration.
-      // But user requirements said: "Validate distance (e.g. <= 15 km/h)... verify backend rejects it"
-      return c.json({ error: 'Invalid or impossible distance reported' }, 400);
+
+  // 1. Zero Tolerance: Mock Location / Spoofing
+  if (spoofedCount > 0) {
+    penaltyStatus = 'CHEATER_SPOOFING';
+    penaltyReason = 'Mock location provider or developer simulation detected.';
+    validatedDistance = 0;
+    coinsAwarded = 0;
+  } 
+  // 2. Zero Tolerance: Phone Shaker
+  // Removed CHEATER_SHAKER due to pedometer removal.
+  const totalDistance = validatedDistance + cheatDistance;
+  
+  if (cheatDistance <= 0) {
+    // Normal session
+    penaltyStatus = 'NORMAL';
+    penaltyReason = '';
+    coinsAwarded = Math.floor(validatedDistance * 17);
+  } else if (validatedDistance <= 0) {
+    // 100% Cheat
+    penaltyStatus = 'VEHICLE_ONLY';
+    penaltyReason = '100% vehicle usage detected.';
+    validatedDistance = 0;
+    coinsAwarded = 0;
+  } else {
+    // Mixed: cheatDistance > 0 && validatedDistance > 0
+    const cheatRatio = cheatDistance / totalDistance;
+    if (cheatRatio >= 0.95) {
+      penaltyStatus = 'VEHICLE_ONLY';
+      penaltyReason = 'Excessive vehicle usage detected (>95%).';
+      validatedDistance = 0;
+      coinsAwarded = 0;
+    } else {
+      penaltyStatus = 'MIXED_COMMUTE';
+      penaltyReason = 'Vehicle usage detected and deducted.';
+      coinsAwarded = Math.floor(validatedDistance * 17);
     }
-  } else if (reportedDistance > 0) {
-     return c.json({ error: 'Invalid or impossible distance reported' }, 400);
   }
 
-  // Example Coin Logic: 1 coin per 0.1 km (10 coins per km)
-  const coinsAwarded = Math.floor(validatedDistance * 10);
-
   await c.env.DB.prepare(
-    'UPDATE walk_sessions SET ended_at = ?, distance_km = ?, status = ?, coins_awarded = ?, updated_at = ? WHERE id = ?'
-  ).bind(endedAt.toISOString(), validatedDistance, 'completed', coinsAwarded, endedAt.toISOString(), walkId).run();
+    'UPDATE walk_sessions SET ended_at = ?, distance_km = ?, cheat_distance_km = ?, spoofed_count = ?, activity_time_minutes = ?, penalty_status = ?, status = ?, coins_awarded = ?, updated_at = ? WHERE id = ?'
+  ).bind(
+    endedAt.toISOString(),
+    validatedDistance,
+    cheatDistance,
+    spoofedCount,
+    JSON.stringify(activityTime),
+    penaltyStatus,
+    'completed',
+    coinsAwarded,
+    endedAt.toISOString(),
+    walkId
+  ).run();
 
   if (coinsAwarded > 0) {
     await c.env.DB.prepare('UPDATE users SET coins = coins + ? WHERE id = ?')
-      .bind(coinsAwarded, user.uid).run();
+      .bind(coinsAwarded, user.sub).run();
   }
 
-  return c.json({ success: true, distance_km: validatedDistance, coinsAwarded });
+  return c.json({
+    success: true,
+    distance_km: validatedDistance,
+    cheat_distance_km: cheatDistance,
+    coinsAwarded,
+    penaltyStatus,
+    penaltyReason
+  });
 });
 
 app.get('/api/map-data', async (c) => {
   // Ensure columns exist (fail silently if they already exist)
-  try { await c.env.DB.prepare('ALTER TABLE signposts ADD COLUMN likes INTEGER DEFAULT 0').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE signposts ADD COLUMN liked_by TEXT DEFAULT "[]"').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE signposts ADD COLUMN images TEXT DEFAULT "[]"').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE signposts ADD COLUMN likes INTEGER DEFAULT 0').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE signposts ADD COLUMN liked_by TEXT DEFAULT "[]"').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE signposts ADD COLUMN images TEXT DEFAULT "[]"').run(); } catch (e) { }
 
   const trees = await c.env.DB.prepare('SELECT trees.*, users.username as authorUsername, users.email as authorEmail, guilds.name as guildName FROM trees LEFT JOIN users ON trees.author_id = users.id LEFT JOIN guilds ON trees.guild_id = guilds.id').all();
   const signposts = await c.env.DB.prepare('SELECT signposts.*, users.username as authorUsername, users.email as authorEmail FROM signposts LEFT JOIN users ON signposts.author_id = users.id').all();
@@ -987,12 +1054,12 @@ app.post('/api/trees', async (c) => {
   await c.env.DB.prepare(
     'INSERT INTO trees (id, author_id, lng, lat, guild_id, planted_at) VALUES (?, ?, ?, ?, ?, ?)'
   ).bind(id, body.authorId, body.lng, body.lat, body.guildId, Date.now()).run();
-  
+
   // Only increment total_trees_planted, frontend handles coin deduction
   await c.env.DB.prepare('UPDATE users SET total_trees_planted = total_trees_planted + 1 WHERE id = ?').bind(body.authorId).run();
-  
+
   await checkAndAwardBadges(c, body.authorId);
-  
+
   return c.json({ success: true, id });
 });
 
@@ -1010,13 +1077,13 @@ app.delete('/api/trees/:id', async (c) => {
 app.post('/api/signposts', async (c) => {
   const body = await c.req.json();
   const id = `sp-${Date.now()}`;
-  
-  try { await c.env.DB.prepare('ALTER TABLE signposts ADD COLUMN images TEXT DEFAULT "[]"').run(); } catch(e) {}
+
+  try { await c.env.DB.prepare('ALTER TABLE signposts ADD COLUMN images TEXT DEFAULT "[]"').run(); } catch (e) { }
 
   await c.env.DB.prepare(
     'INSERT INTO signposts (id, author_id, lng, lat, message, emoji, category, created_at, expires_at, images) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(id, body.authorId, body.lng, body.lat, body.message, body.emoji, body.category, Date.now(), Date.now() + 24*60*60*1000, JSON.stringify(body.images || [])).run();
-  
+  ).bind(id, body.authorId, body.lng, body.lat, body.message, body.emoji, body.category, Date.now(), Date.now() + 24 * 60 * 60 * 1000, JSON.stringify(body.images || [])).run();
+
   return c.json({ success: true, id });
 });
 
@@ -1030,7 +1097,7 @@ app.post('/api/signposts/images', async (c) => {
 
   const extension = file.name.split('.').pop() || 'webp';
   const objectKey = `signposts/${jwtUser.sub}-${Date.now()}.${extension}`;
-  
+
   const arrayBuffer = await file.arrayBuffer();
   await c.env.AVATARS_BUCKET.put(objectKey, arrayBuffer, {
     httpMetadata: { contentType: file.type }
@@ -1115,14 +1182,14 @@ app.post('/api/signposts/:id/like', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json();
   const userId = body.userId;
-  
+
   if (!userId) return c.json({ error: 'User ID required' }, 400);
 
   const signpost: any = await c.env.DB.prepare('SELECT likes, liked_by, author_id FROM signposts WHERE id = ?').bind(id).first();
   if (!signpost) return c.json({ error: 'Signpost not found' }, 404);
 
   let likedBy = [];
-  try { likedBy = JSON.parse(signpost.liked_by || '[]'); } catch (e) {}
+  try { likedBy = JSON.parse(signpost.liked_by || '[]'); } catch (e) { }
 
   if (likedBy.includes(userId)) {
     return c.json({ error: 'Already liked' }, 400);
@@ -1150,7 +1217,7 @@ app.post('/api/issues/images', async (c) => {
 
   const extension = file.name.split('.').pop() || 'webp';
   const objectKey = `issues/${jwtUser.sub}-${Date.now()}.${extension}`;
-  
+
   const arrayBuffer = await file.arrayBuffer();
   await c.env.AVATARS_BUCKET.put(objectKey, arrayBuffer, {
     httpMetadata: { contentType: file.type || 'image/webp' }
@@ -1167,7 +1234,7 @@ app.post('/api/issues', async (c) => {
   const jwtUser = c.get('user') as any;
   if (!jwtUser) return c.json({ error: 'Unauthorized' }, 401);
   const body = await c.req.json();
-  
+
   if (!body.title || !body.lat || !body.lng) return c.json({ error: 'Missing fields' }, 400);
 
   const country = body.country || null;
@@ -1178,32 +1245,32 @@ app.post('/api/issues', async (c) => {
     return c.json({ error: 'Valid country, state, and city jurisdiction are required' }, 400);
   }
 
-  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN country TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN state TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN city TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN takedown_status TEXT').run(); } catch(e) {}
-  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN takedown_reason TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN country TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN state TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN city TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN takedown_status TEXT').run(); } catch (e) { }
+  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN takedown_reason TEXT').run(); } catch (e) { }
 
   const now = Date.now();
-  
+
   // Calculate start of today in UTC+8
   const dateObj = new Date(now);
   const offsetMs = 8 * 60 * 60 * 1000;
   const localNow = new Date(dateObj.getTime() + offsetMs);
-  
+
   const yy = String(localNow.getUTCFullYear()).slice(-2);
   const m = String(localNow.getUTCMonth() + 1);
   const d = String(localNow.getUTCDate());
   const dateStr = `${yy}${m}${d}`;
-  
+
   const startOfDayUTC = new Date(Date.UTC(localNow.getUTCFullYear(), localNow.getUTCMonth(), localNow.getUTCDate())).getTime() - offsetMs;
-  
+
   const { results: countResults } = await c.env.DB.prepare('SELECT COUNT(*) as c FROM infrastructure_reports WHERE created_at >= ?').bind(startOfDayUTC).all();
   const todayCount = (countResults[0]?.c as number) || 0;
   const sequence = todayCount;
-  
+
   const id = `ISSUE-${sequence}-${dateStr}`;
-  
+
   const insertIssue = c.env.DB.prepare(`
     INSERT INTO infrastructure_reports 
     (id, author_id, title, description, lat, lng, photos, specific_location, country, state, city, status, created_at, updated_at) 
@@ -1238,7 +1305,7 @@ app.get('/api/issues/:id/timeline', async (c) => {
     (userRoleQuery.country === issue.country && userRoleQuery.state === issue.state && userRoleQuery.city === issue.city) ||
     issue.authority_id === jwtUser.sub
   );
-  
+
   if (!isAuthority && issue.author_id !== jwtUser.sub) {
     return c.json({ error: 'Forbidden' }, 403);
   }
@@ -1282,7 +1349,7 @@ app.post('/api/issues/:id/take-down', async (c) => {
       INSERT INTO report_activity (id, report_id, actor_id, actor_type, activity_type, title, description, created_at) 
       VALUES (?, ?, ?, 'user', 'TAKEDOWN_REQUESTED', 'Takedown Requested', ?, ?)
     `).bind(activityId, id, jwtUser.sub, `User requested to take down the report. Reason: ${reason}`, now);
-    
+
     await c.env.DB.batch([updateIssue, insertActivity]);
     return c.json({ success: true, message: 'Takedown request sent for approval', takedown_status: 'requested' });
   } else {
@@ -1293,7 +1360,7 @@ app.post('/api/issues/:id/take-down', async (c) => {
       INSERT INTO report_activity (id, report_id, actor_id, actor_type, activity_type, title, description, created_at) 
       VALUES (?, ?, ?, 'user', 'ISSUE_TAKEN_DOWN', 'Issue Taken Down', ?, ?)
     `).bind(activityId, id, jwtUser.sub, `User took down the report. Reason: ${reason}`, now);
-    
+
     await c.env.DB.batch([updateIssue, insertActivity]);
     return c.json({ success: true, message: 'Issue taken down successfully', takedown_status: 'taken-down' });
   }
@@ -1339,13 +1406,13 @@ app.get('/api/issues/:id/messages', async (c) => {
     (userRoleQuery.country === issue.country && userRoleQuery.state === issue.state && userRoleQuery.city === issue.city) ||
     issue.authority_id === jwtUser.sub
   );
-  
+
   if (!isAuthority && issue.author_id !== jwtUser.sub) {
     return c.json({ error: 'Forbidden' }, 403);
   }
-  
+
   if (isAuthority && !isJurisdictionOrAssigned && issue.author_id !== jwtUser.sub) {
-     return c.json({ error: 'Forbidden' }, 403);
+    return c.json({ error: 'Forbidden' }, 403);
   }
 
   const messages = await c.env.DB.prepare('SELECT m.*, u.username as sender_name, u.role as sender_role FROM issue_messages m LEFT JOIN users u ON m.sender_id = u.id WHERE issue_id = ? ORDER BY created_at ASC').bind(id).all();
@@ -1359,7 +1426,7 @@ app.post('/api/issues/:id/read', async (c) => {
   if (!jwtUser) return c.json({ error: 'Unauthorized' }, 401);
 
   const guildId = `issue_${id}`;
-  
+
   await c.env.DB.prepare(`
     INSERT INTO user_chat_reads (user_id, guild_id, last_read_at)
     VALUES (?, ?, ?)
@@ -1385,22 +1452,22 @@ app.get('/api/issues/:id/chat', async (c) => {
     (userRoleQuery.country === issue.country && userRoleQuery.state === issue.state && userRoleQuery.city === issue.city) ||
     issue.authority_id === jwtUser.sub
   );
-  
+
   if (!isAuthority && issue.author_id !== jwtUser.sub) {
     return c.json({ error: 'Forbidden' }, 403);
   }
   if (isAuthority && !isJurisdictionOrAssigned && issue.author_id !== jwtUser.sub) {
-     return c.json({ error: 'Forbidden' }, 403);
+    return c.json({ error: 'Forbidden' }, 403);
   }
 
   const doId = c.env.ISSUE_CHAT.idFromName(id);
   const stub = c.env.ISSUE_CHAT.get(doId);
-  
+
   const url = new URL(c.req.url);
   url.searchParams.set('userId', jwtUser.sub);
   // Remove the wsToken before forwarding to the DO - auth is already done
   url.searchParams.delete('wsToken');
-  
+
   const modifiedRequest = new Request(url.toString(), c.req.raw);
   return stub.fetch(modifiedRequest);
 });
@@ -1468,7 +1535,7 @@ app.post('/api/issues/:id/share', async (c) => {
       body: JSON.stringify(payload)
     });
   }
-  
+
   return c.json({ success: true, messageId: msgId });
 });
 
@@ -1502,11 +1569,11 @@ app.post('/api/settings', async (c) => {
 app.get('/api/leaderboard', async (c) => {
   const userId = c.req.query('userId');
 
-  try { await c.env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_users_distance ON users(total_distance_km DESC)').run(); } catch(e) {}
-  try { await c.env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_users_coins ON users(coins DESC)').run(); } catch(e) {}
+  try { await c.env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_users_distance ON users(total_distance_km DESC)').run(); } catch (e) { }
+  try { await c.env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_users_coins ON users(coins DESC)').run(); } catch (e) { }
 
   const baseSelect = "SELECT users.id, users.username, users.guild_id, guilds.name as guildName, users.coins, users.total_distance_km, users.total_trees_planted, users.avatar, users.player_id FROM users LEFT JOIN guilds ON users.guild_id = guilds.id WHERE users.role NOT IN ('admin', 'authority')";
-  
+
   const topDistance = await c.env.DB.prepare(`${baseSelect} ORDER BY users.total_distance_km DESC, users.id ASC LIMIT 50`).all();
   const topCoins = await c.env.DB.prepare(`${baseSelect} ORDER BY users.coins DESC, users.id ASC LIMIT 50`).all();
 
@@ -1559,10 +1626,10 @@ app.post('/api/store/buy', async (c) => {
 
   // Frontend handles the coin deduction via syncToAPI, so we only update the stock
   await c.env.DB.prepare('UPDATE point_store SET stock = stock - 1 WHERE id = ? AND stock > 0').bind(itemId).run();
-  
+
   // Merchant earned coins are kept separate from standard user coins for future use (e.g. subscription discounts)
   // They are calculated dynamically from the purchases table on the merchant dashboard.
-  
+
   const purchaseId = `purchase-${Date.now()}`;
   await c.env.DB.prepare(
     'INSERT INTO purchases (id, user_id, merchant_id, item_id, item_name, price, status, purchased_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -1584,15 +1651,15 @@ app.post('/api/activity', async (c) => {
   await c.env.DB.prepare(
     'INSERT INTO activity_history (id, user_id, date, distance) VALUES (?, ?, ?, ?)'
   ).bind(id, body.userId, body.date, body.distance).run();
-  
+
   return c.json({ success: true, id });
 });
 
 // Mail
 app.get('/api/mail', async (c) => {
-  try { await c.env.DB.prepare('CREATE TABLE IF NOT EXISTS user_deleted_mail (user_id TEXT, mail_id TEXT, deleted_at INTEGER, PRIMARY KEY (user_id, mail_id))').run(); } catch(e) {}
-  try { await c.env.DB.prepare('CREATE TABLE IF NOT EXISTS user_read_mail (user_id TEXT, mail_id TEXT, read_at INTEGER, PRIMARY KEY (user_id, mail_id))').run(); } catch(e) {}
-  
+  try { await c.env.DB.prepare('CREATE TABLE IF NOT EXISTS user_deleted_mail (user_id TEXT, mail_id TEXT, deleted_at INTEGER, PRIMARY KEY (user_id, mail_id))').run(); } catch (e) { }
+  try { await c.env.DB.prepare('CREATE TABLE IF NOT EXISTS user_read_mail (user_id TEXT, mail_id TEXT, read_at INTEGER, PRIMARY KEY (user_id, mail_id))').run(); } catch (e) { }
+
   let deletedMailIds: string[] = [];
   let readMailIds: string[] = [];
   const jwtUser = c.get('user') as any;
@@ -1602,24 +1669,24 @@ app.get('/api/mail', async (c) => {
     const read = await c.env.DB.prepare('SELECT mail_id FROM user_read_mail WHERE user_id = ?').bind(jwtUser.sub).all();
     readMailIds = read.results.map((r: any) => r.mail_id);
   }
-    
-    const mail = await c.env.DB.prepare('SELECT * FROM mail ORDER BY created_at DESC').all();
-    let filteredMail = mail.results;
-    if (deletedMailIds.length > 0) {
-      filteredMail = filteredMail.filter(m => !deletedMailIds.includes(m.id as string));
-    }
-    
-    const socialTitles = [
-      'Friend Request', 'Friend Request Accepted', 'Friend Request Rejected', 'Friend Request Sent', 'Friend Removed',
-      'New Join Request', 'Join Request Approved', 'Join Request Rejected', 'Kicked from Community', 'Promoted to Admin'
-    ];
-    filteredMail = filteredMail.map((m: any) => {
-      m.category = (m.action_type === 'guild_join_request' || m.action_type === 'friend_request' || socialTitles.includes(m.title)) ? 'social' : 'mail';
-      return m;
-    });
-    
-    return c.json({ mail: filteredMail, read_mail_ids: readMailIds });
+
+  const mail = await c.env.DB.prepare('SELECT * FROM mail ORDER BY created_at DESC').all();
+  let filteredMail = mail.results;
+  if (deletedMailIds.length > 0) {
+    filteredMail = filteredMail.filter(m => !deletedMailIds.includes(m.id as string));
+  }
+
+  const socialTitles = [
+    'Friend Request', 'Friend Request Accepted', 'Friend Request Rejected', 'Friend Request Sent', 'Friend Removed',
+    'New Join Request', 'Join Request Approved', 'Join Request Rejected', 'Kicked from Community', 'Promoted to Admin'
+  ];
+  filteredMail = filteredMail.map((m: any) => {
+    m.category = (m.action_type === 'guild_join_request' || m.action_type === 'friend_request' || socialTitles.includes(m.title)) ? 'social' : 'mail';
+    return m;
   });
+
+  return c.json({ mail: filteredMail, read_mail_ids: readMailIds });
+});
 app.post('/api/mail', async (c) => {
   const body = await c.req.json();
 
@@ -1686,59 +1753,59 @@ app.post('/api/mail', async (c) => {
 
   return c.json({ success: true });
 });
-  app.delete('/api/mail/:id', async (c) => {
-    const id = c.req.param('id');
-    await c.env.DB.prepare('DELETE FROM mail WHERE id = ?').bind(id).run();
-    return c.json({ success: true });
-  });
+app.delete('/api/mail/:id', async (c) => {
+  const id = c.req.param('id');
+  await c.env.DB.prepare('DELETE FROM mail WHERE id = ?').bind(id).run();
+  return c.json({ success: true });
+});
 
-  app.delete('/api/mail/user/:id', async (c) => {
-    const user = c.get('user') as any;
-    if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
-    const id = c.req.param('id');
-    
-    await c.env.DB.prepare('INSERT OR IGNORE INTO user_deleted_mail (user_id, mail_id, deleted_at) VALUES (?, ?, ?)').bind(user.sub, id, Date.now()).run();
-    return c.json({ success: true });
-  });
+app.delete('/api/mail/user/:id', async (c) => {
+  const user = c.get('user') as any;
+  if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
+  const id = c.req.param('id');
 
-  app.post('/api/mail/user/batch-delete', async (c) => {
-    const user = c.get('user') as any;
-    if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
-    
-    const body = await c.req.json();
-    if (!body.ids || !Array.isArray(body.ids)) return c.json({ error: 'Invalid input' }, 400);
-    
-    const now = Date.now();
-    for (const mailId of body.ids) {
-      await c.env.DB.prepare('INSERT OR IGNORE INTO user_deleted_mail (user_id, mail_id, deleted_at) VALUES (?, ?, ?)').bind(user.sub, mailId, now).run();
-    }
-    
-    return c.json({ success: true });
-  });
+  await c.env.DB.prepare('INSERT OR IGNORE INTO user_deleted_mail (user_id, mail_id, deleted_at) VALUES (?, ?, ?)').bind(user.sub, id, Date.now()).run();
+  return c.json({ success: true });
+});
 
-  app.post('/api/mail/user/:id/read', async (c) => {
-    const user = c.get('user') as any;
-    if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
-    const id = c.req.param('id');
-    
-    await c.env.DB.prepare('INSERT OR IGNORE INTO user_read_mail (user_id, mail_id, read_at) VALUES (?, ?, ?)').bind(user.sub, id, Date.now()).run();
-    return c.json({ success: true });
-  });
+app.post('/api/mail/user/batch-delete', async (c) => {
+  const user = c.get('user') as any;
+  if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
 
-  app.post('/api/mail/user/batch-read', async (c) => {
-    const user = c.get('user') as any;
-    if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
-    
-    const body = await c.req.json();
-    if (!body.ids || !Array.isArray(body.ids)) return c.json({ error: 'Invalid input' }, 400);
-    
-    const now = Date.now();
-    for (const mailId of body.ids) {
-      await c.env.DB.prepare('INSERT OR IGNORE INTO user_read_mail (user_id, mail_id, read_at) VALUES (?, ?, ?)').bind(user.sub, mailId, now).run();
-    }
-    
-    return c.json({ success: true });
-  });
+  const body = await c.req.json();
+  if (!body.ids || !Array.isArray(body.ids)) return c.json({ error: 'Invalid input' }, 400);
+
+  const now = Date.now();
+  for (const mailId of body.ids) {
+    await c.env.DB.prepare('INSERT OR IGNORE INTO user_deleted_mail (user_id, mail_id, deleted_at) VALUES (?, ?, ?)').bind(user.sub, mailId, now).run();
+  }
+
+  return c.json({ success: true });
+});
+
+app.post('/api/mail/user/:id/read', async (c) => {
+  const user = c.get('user') as any;
+  if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
+  const id = c.req.param('id');
+
+  await c.env.DB.prepare('INSERT OR IGNORE INTO user_read_mail (user_id, mail_id, read_at) VALUES (?, ?, ?)').bind(user.sub, id, Date.now()).run();
+  return c.json({ success: true });
+});
+
+app.post('/api/mail/user/batch-read', async (c) => {
+  const user = c.get('user') as any;
+  if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
+
+  const body = await c.req.json();
+  if (!body.ids || !Array.isArray(body.ids)) return c.json({ error: 'Invalid input' }, 400);
+
+  const now = Date.now();
+  for (const mailId of body.ids) {
+    await c.env.DB.prepare('INSERT OR IGNORE INTO user_read_mail (user_id, mail_id, read_at) VALUES (?, ?, ?)').bind(user.sub, mailId, now).run();
+  }
+
+  return c.json({ success: true });
+});
 
 app.delete('/api/trees', async (c) => {
   await c.env.DB.prepare('DELETE FROM trees').run();
@@ -1747,14 +1814,14 @@ app.delete('/api/trees', async (c) => {
 app.post('/api/mail/batch-delete', async (c) => {
   const body = await c.req.json();
   if (!body.ids || !Array.isArray(body.ids)) return c.json({ error: 'Invalid input' }, 400);
-  
+
   // D1 batch delete is best done via individual deletes in a batch or using IN clause.
   // SQLite max variables is usually 999, so for small batches IN clause is fine.
   if (body.ids.length === 0) return c.json({ success: true });
-  
+
   const placeholders = body.ids.map(() => '?').join(',');
   await c.env.DB.prepare(`DELETE FROM mail WHERE id IN (${placeholders})`).bind(...body.ids).run();
-  
+
   return c.json({ success: true });
 });
 
@@ -1768,7 +1835,7 @@ app.get('/api/demo_requests/:id', async (c) => {
 app.post('/api/demo_requests', async (c) => {
   const body = await c.req.json();
   const { id, email, ipAddress } = body;
-  try { await c.env.DB.prepare('CREATE TABLE IF NOT EXISTS demo_requests (id TEXT PRIMARY KEY, email TEXT, ip_address TEXT, status TEXT, requested_at INTEGER)').run(); } catch(e) {}
+  try { await c.env.DB.prepare('CREATE TABLE IF NOT EXISTS demo_requests (id TEXT PRIMARY KEY, email TEXT, ip_address TEXT, status TEXT, requested_at INTEGER)').run(); } catch (e) { }
   await c.env.DB.prepare(
     'REPLACE INTO demo_requests (id, email, ip_address, status, requested_at) VALUES (?, ?, ?, ?, ?)'
   ).bind(id, email, ipAddress || 'Unknown', 'pending', Date.now()).run();
@@ -1788,15 +1855,15 @@ app.delete('/api/demo_requests/:id', async (c) => {
 
 // Centralized Merchant Resolution & Authorization Helper
 async function resolveAndAuthorizeMerchant(
-  c: any, 
-  merchantSelector: string, 
+  c: any,
+  merchantSelector: string,
   requireOwnership: boolean = true
 ): Promise<{ error?: string; status?: number; merchant?: any }> {
   const jwtUser = c.get('user') as any;
   if (!jwtUser || !jwtUser.sub) {
     return { error: 'Unauthorized: Authentication required', status: 401 };
   }
-  
+
   if (!merchantSelector || typeof merchantSelector !== 'string') {
     return { error: 'Invalid merchant ID', status: 400 };
   }
@@ -1805,7 +1872,7 @@ async function resolveAndAuthorizeMerchant(
 
   // 1. Primary lookup by canonical merchants.id
   let merchant: any = await c.env.DB.prepare('SELECT * FROM merchants WHERE id = ?').bind(cleanId).first();
-  
+
   // 2. Legacy fallback lookup by owner_id ONLY if not found by canonical ID
   if (!merchant) {
     const matchingMerchants = await c.env.DB.prepare('SELECT * FROM merchants WHERE owner_id = ?').bind(cleanId).all();
@@ -1857,39 +1924,39 @@ app.put('/api/merchants/:id', async (c) => {
 app.delete('/api/merchants/:id', async (c) => {
   try {
     const id = c.req.param('id');
-    
+
     // Find the merchant to get their owner_id and store_name
     const merchant: any = await c.env.DB.prepare('SELECT id, owner_id, store_name FROM merchants WHERE id = ?').bind(id).first();
     if (merchant && merchant.owner_id) {
       const storeName = merchant.store_name;
-      
+
       // Find all items owned by this specific merchant shop
       const items = await c.env.DB.prepare('SELECT id, name, price FROM point_store WHERE merchant_id = ? OR (merchant_id = ? AND NOT EXISTS (SELECT 1 FROM merchants WHERE owner_id = ? AND id != ?))').bind(merchant.id, merchant.owner_id, merchant.owner_id, merchant.id).all();
       const itemIds = items.results.map((i: any) => i.id);
-      
+
       // Soft delete items from point_store
       if (itemIds.length > 0) {
         for (const itemId of itemIds) {
           await c.env.DB.prepare('UPDATE point_store SET status = ? WHERE id = ?').bind('disabled', itemId).run();
         }
       }
-      
+
       // Process purchases and refunds
       if (itemIds.length > 0) {
         for (const itemId of itemIds) {
           const item = items.results.find((i: any) => i.id === itemId);
           if (!item) continue;
           const purchases = await c.env.DB.prepare('SELECT id, user_id FROM purchases WHERE item_id = ? AND status = ?').bind(itemId, 'active').all();
-          
+
           for (const p of purchases.results as any[]) {
             // Refund user
             await c.env.DB.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(item.price, p.user_id).run();
-            
+
             // Disable purchase
             await c.env.DB.prepare('UPDATE purchases SET status = ? WHERE id = ?').bind('disabled_by_admin', p.id).run();
-            
+
             // Send mail
-            const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2,7)}`;
+            const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
             const content = `We're sorry, but the voucher "${item.name}" from ${storeName} has been disabled because the shop was taken down. Your ${item.price} Eco-Coins have been refunded to your account.`;
             await notificationService.createMailAndNotify(c.env, {
               id: mailId,
@@ -1904,18 +1971,36 @@ app.delete('/api/merchants/:id', async (c) => {
           }
         }
       }
-      
+
       // Email merchant owner
-      const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2,7)}`;
-      const content = `Your shop "${storeName}" has been taken down by the administrator due to policy violations. All your active vouchers have been disabled.`;
-      await c.env.DB.prepare(
-        'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-      ).bind(mailId, 'Shop Taken Down', content, 'System Admin', 'user', merchant.owner_id, 0, Date.now()).run();
-      
+      const mailId = crypto.randomUUID();
+      const isMerchant = c.req.query('actor') === 'merchant';
+      const reason = c.req.query('reason');
+
+      const title = isMerchant ? 'Shop Successfully Taken Down' : 'Shop Taken Down';
+      let content = isMerchant
+        ? `You have successfully taken down your shop "${storeName}". All your active vouchers have been disabled.`
+        : `Your shop "${storeName}" has been taken down by the administrator.`;
+
+      if (!isMerchant && reason) {
+        content += `\n\nReason: ${reason}`;
+      }
+
+      await notificationService.createMailAndNotify(c.env, {
+        id: mailId,
+        title: title,
+        content: content,
+        sender: isMerchant ? 'System' : 'System Admin',
+        recipient_type: 'user',
+        recipient_id: merchant.owner_id,
+        notification_type: 'mailbox',
+        notification_priority: 'high'
+      });
+
       // Hard delete merchant record
       await c.env.DB.prepare('DELETE FROM merchants WHERE id = ?').bind(id).run();
     }
-    
+
     return c.json({ success: true });
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500);
@@ -1927,7 +2012,7 @@ app.post('/api/applications', async (c) => {
   try {
     const body = await c.req.json();
     const id = `app-${Date.now()}`;
-    
+
     // Fallback: Ensure user exists in case of DB wipe
     const user = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(body.ownerId).first();
     if (!user) {
@@ -1948,12 +2033,12 @@ app.put('/api/applications/:id', async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json();
-    
+
     if (body.status === 'rejected' && body.rejectReason) {
       const app: any = await c.env.DB.prepare('SELECT * FROM applications WHERE id = ?').bind(id).first();
       if (app) {
         let details: any = {};
-        try { details = JSON.parse(app.details); } catch(e) {}
+        try { details = JSON.parse(app.details); } catch (e) { }
         details.rejectReason = body.rejectReason;
         await c.env.DB.prepare('UPDATE applications SET status = ?, details = ? WHERE id = ?')
           .bind(body.status, JSON.stringify(details), id).run();
@@ -1963,21 +2048,21 @@ app.put('/api/applications/:id', async (c) => {
     } else {
       await c.env.DB.prepare('UPDATE applications SET status = ? WHERE id = ?').bind(body.status, id).run();
     }
-    
+
     if (body.status === 'approved') {
       const app: any = await c.env.DB.prepare('SELECT * FROM applications WHERE id = ?').bind(id).first();
       if (app) {
         let details: any = {};
-        try { details = JSON.parse(app.details); } catch(e) {}
-        
+        try { details = JSON.parse(app.details); } catch (e) { }
+
         if (app.type === 'new_merchant') {
           const merchantId = `merchant-${Date.now()}`;
           await c.env.DB.prepare(
             'INSERT INTO merchants (id, owner_id, store_name, menu_link, location, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
           ).bind(merchantId, app.owner_id, details.storeName || '', details.menuLink || '', details.location ? JSON.stringify(details.location) : null, 'approved', Date.now()).run();
-          
+
           await c.env.DB.prepare('UPDATE users SET role = ? WHERE id = ?').bind('merchant', app.owner_id).run();
-          
+
           if (details.vouchers && Array.isArray(details.vouchers)) {
             for (const v of details.vouchers) {
               const itemId = `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
@@ -1991,7 +2076,7 @@ app.put('/api/applications/:id', async (c) => {
           if (!targetMerchantId) {
             return c.json({ error: 'No merchant found for this modification' }, 400);
           }
-          
+
           if (details.location) {
             await c.env.DB.prepare(
               'UPDATE merchants SET store_name = ?, menu_link = ?, location = ? WHERE id = ?'
@@ -2001,21 +2086,21 @@ app.put('/api/applications/:id', async (c) => {
               'UPDATE merchants SET store_name = ?, menu_link = ? WHERE id = ?'
             ).bind(details.storeName || '', details.menuLink || '', targetMerchantId).run();
           }
-          
+
           if (details.vouchers && Array.isArray(details.vouchers)) {
             const keepIds = details.vouchers.filter((v: any) => v.originalId).map((v: any) => v.originalId);
             const currentVouchers = await c.env.DB.prepare("SELECT id, name, price FROM point_store WHERE merchant_id = ? AND (status != 'disabled' OR status IS NULL)").bind(targetMerchantId).all();
-            
+
             for (const cv of currentVouchers.results as any[]) {
               if (!keepIds.includes(cv.id)) {
                 await c.env.DB.prepare("UPDATE point_store SET status = 'disabled' WHERE id = ?").bind(cv.id).run();
-                
+
                 const purchases = await c.env.DB.prepare("SELECT id, user_id FROM purchases WHERE item_id = ? AND status = 'active'").bind(cv.id).all();
                 for (const p of purchases.results as any[]) {
                   await c.env.DB.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(cv.price, p.user_id).run();
                   await c.env.DB.prepare("UPDATE purchases SET status = 'disabled_by_admin' WHERE id = ?").bind(p.id).run();
-                  
-                  const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2,7)}`;
+
+                  const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
                   const content = `We're sorry, but the voucher "${cv.name}" has been removed by the merchant. Your ${cv.price} Eco-Coins have been refunded to your account.`;
                   await notificationService.createMailAndNotify(c.env, {
                     id: mailId,
@@ -2048,7 +2133,37 @@ app.put('/api/applications/:id', async (c) => {
         }
       }
     }
-    
+
+    // Send Notification
+    const updatedApp: any = await c.env.DB.prepare('SELECT owner_id, type, details FROM applications WHERE id = ?').bind(id).first();
+    if (updatedApp && (body.status === 'approved' || body.status === 'rejected')) {
+      let details: any = {};
+      try { details = JSON.parse(updatedApp.details); } catch (e) { }
+
+      const isMod = updatedApp.type === 'modification';
+      const storeName = details.storeName || 'your store';
+
+      let title = isMod ? `Modification ${body.status === 'approved' ? 'Approved' : 'Rejected'}`
+        : `Application ${body.status === 'approved' ? 'Approved' : 'Rejected'}`;
+      let content = isMod ? `Your information modification for ${storeName} was ${body.status}.`
+        : `Your merchant application for ${storeName} was ${body.status}.`;
+
+      if (body.status === 'rejected' && body.rejectReason) {
+        content += `\n\nReason: ${body.rejectReason}`;
+      }
+
+      await notificationService.createMailAndNotify(c.env, {
+        id: crypto.randomUUID(),
+        title: title,
+        content: content,
+        sender: 'System Admin',
+        recipient_type: 'user',
+        recipient_id: updatedApp.owner_id,
+        notification_type: 'mailbox',
+        notification_priority: 'high'
+      });
+    }
+
     return c.json({ success: true });
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500);
@@ -2069,7 +2184,7 @@ app.post('/api/store', async (c) => {
   const id = `item-${Date.now()}`;
   try {
     await c.env.DB.prepare("ALTER TABLE point_store ADD COLUMN link TEXT").run();
-  } catch(e) {}
+  } catch (e) { }
   await c.env.DB.prepare(
     'INSERT INTO point_store (id, merchant_id, category, name, desc, price, stock, icon, link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).bind(id, body.merchantId || null, body.category || '', body.itemName || 'Untitled', body.description || '', body.price || 0, body.stock || 0, body.icon || '🎟️', body.link || null).run();
@@ -2087,23 +2202,23 @@ app.delete('/api/store/:id', async (c) => {
   try {
     const id = c.req.param('id');
     const item: any = await c.env.DB.prepare('SELECT name, price FROM point_store WHERE id = ?').bind(id).first();
-    
+
     if (item) {
       // 1. Disable the item
       await c.env.DB.prepare('UPDATE point_store SET status = ? WHERE id = ?').bind('disabled', id).run();
-      
+
       // 2. Process purchases
       const purchases = await c.env.DB.prepare('SELECT id, user_id FROM purchases WHERE item_id = ? AND status = ?').bind(id, 'active').all();
-      
+
       for (const p of purchases.results as any[]) {
         // Refund user
         await c.env.DB.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(item.price, p.user_id).run();
-        
+
         // Disable purchase
         await c.env.DB.prepare('UPDATE purchases SET status = ? WHERE id = ?').bind('disabled_by_admin', p.id).run();
-        
+
         // Send email
-        const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2,7)}`;
+        const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
         const content = `We're sorry, but the voucher "${item.name}" has been disabled due to certain reason. Your ${item.price} Eco-Coins have been refunded to your account.`;
         await notificationService.createMailAndNotify(c.env, {
           id: mailId,
@@ -2117,7 +2232,7 @@ app.delete('/api/store/:id', async (c) => {
         });
       }
     }
-    
+
     return c.json({ success: true });
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500);
@@ -2134,8 +2249,8 @@ app.get('/api/merchants/:merchantId/sales', async (c) => {
   const merchant = auth.merchant;
 
   const purchases = await c.env.DB.prepare(
-    'SELECT purchases.*, users.username as buyerUsername, users.player_id as buyerUid FROM purchases LEFT JOIN users ON purchases.user_id = users.id WHERE purchases.merchant_id = ? OR purchases.merchant_id = ? ORDER BY purchases.purchased_at DESC'
-  ).bind(merchant.id, merchant.owner_id).all();
+    'SELECT purchases.*, users.username as buyerUsername, users.player_id as buyerUid FROM purchases LEFT JOIN users ON purchases.user_id = users.id WHERE purchases.merchant_id = ? ORDER BY purchases.purchased_at DESC'
+  ).bind(merchant.id).all();
   return c.json({ purchases: purchases.results });
 });
 
@@ -2149,7 +2264,7 @@ app.post('/api/merchants/redeem/:purchaseId', async (c) => {
   const res = await c.env.DB.prepare(
     'UPDATE purchases SET status = ?, redeemed_at = ? WHERE id = ? AND (merchant_id = ? OR merchant_id = ?) AND status = ?'
   ).bind('redeemed', Date.now(), purchaseId, merchant.id, merchant.owner_id, 'active').run();
-  
+
   if (res.meta.changes === 0) {
     return c.json({ error: 'Failed to redeem voucher. It may have already been redeemed, expired, or does not belong to this merchant shop.' }, 400);
   }
@@ -2204,7 +2319,7 @@ app.post('/api/merchants/scan', async (c) => {
 
     const purchase: any = await c.env.DB.prepare('SELECT * FROM purchases WHERE id = ?').bind(purchaseId).first();
     if (!purchase) return c.json({ error: 'Voucher not found' }, 404);
-    
+
     // Strict Merchant Isolation: Verify this voucher belongs to this specific merchant shop
     const belongsToThisStore = purchase.merchant_id === canonicalMerchant.id || purchase.merchant_id === canonicalMerchant.owner_id;
     if (!belongsToThisStore || !purchase.merchant_id) {
@@ -2220,16 +2335,16 @@ app.post('/api/merchants/scan', async (c) => {
       await c.env.DB.prepare('UPDATE purchases SET status = ? WHERE id = ?').bind('expired', purchaseId).run();
       return c.json({ error: 'Voucher 15-minute redemption window has expired. Customer must re-initiate redeem.' }, 400);
     }
-    
+
     // Valid! Atomically redeem with strict status and merchant match check
     const updateRes = await c.env.DB.prepare(
       'UPDATE purchases SET status = ?, redeemed_at = ? WHERE id = ? AND (merchant_id = ? OR merchant_id = ?) AND status = ?'
     ).bind('redeemed', Date.now(), purchaseId, canonicalMerchant.id, canonicalMerchant.owner_id, 'active').run();
 
     if (updateRes.meta.changes === 0) {
-       return c.json({ error: 'Failed to redeem voucher. It may have just been redeemed.' }, 400);
+      return c.json({ error: 'Failed to redeem voucher. It may have just been redeemed.' }, 400);
     }
-    
+
     return c.json({ success: true, message: 'Voucher successfully redeemed!' });
   } catch (err: any) {
     return c.json({ error: err.message }, 500);
@@ -2263,7 +2378,7 @@ app.post('/api/guilds', async (c) => {
     const existingId = await c.env.DB.prepare('SELECT id FROM guilds WHERE id = ?').bind(guildId).first();
     if (!existingId) isUnique = true;
   }
-  
+
   await c.env.DB.prepare(
     'INSERT INTO guilds (id, name, description, icon, nationality, require_approval, admin_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   ).bind(guildId, name, description || '', icon || '🌍', nationality || 'Global', require_approval ? 1 : 0, user.sub, Date.now()).run();
@@ -2271,7 +2386,7 @@ app.post('/api/guilds', async (c) => {
   // Automatically join the created guild
   await c.env.DB.prepare('UPDATE users SET guild_id = ? WHERE id = ?').bind(guildId, user.sub).run();
   await c.env.DB.prepare('UPDATE trees SET guild_id = ? WHERE author_id = ?').bind(guildId, user.sub).run();
-  
+
   // Add system message
   const joinedUser = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(user.sub).first() as any;
   if (joinedUser) {
@@ -2290,7 +2405,7 @@ app.post('/api/guilds', async (c) => {
           user_id: 'system',
           content: _msgContent,
           created_at: _ts
-          
+
         })
       }));
     }
@@ -2307,7 +2422,7 @@ app.put('/api/guilds/:id', async (c) => {
   const user = c.get('user');
   if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
   const guildId = c.req.param('id');
-  
+
   const { name, description, icon, nationality, require_approval } = await c.req.json();
   if (!name) return c.json({ error: 'Name is required' }, 400);
 
@@ -2347,7 +2462,7 @@ app.post('/api/guilds/:id/icon', async (c) => {
 
   const extension = file.name.split('.').pop();
   const objectKey = `guild_icons/${guildId}-${Date.now()}.${extension}`;
-  
+
   // Try to delete old icon to save space
   try {
     if (guild.icon && guild.icon.includes('/r2/')) {
@@ -2358,10 +2473,10 @@ app.post('/api/guilds/:id/icon', async (c) => {
   } catch (err) {
     console.warn("Failed to delete old guild icon:", err);
   }
-  
+
   // Convert File to ArrayBuffer for R2
   const arrayBuffer = await file.arrayBuffer();
-  
+
   // Upload to R2 Bucket
   await c.env.AVATARS_BUCKET.put(objectKey, arrayBuffer, {
     httpMetadata: { contentType: file.type }
@@ -2383,7 +2498,7 @@ app.post('/api/guilds/:id/join', async (c) => {
   const user = c.get('user');
   if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
   const guildId = c.req.param('id');
-  
+
   // Check if user is already in a community
   const dbUser = await c.env.DB.prepare('SELECT guild_id FROM users WHERE id = ?').bind(user.sub).first() as any;
   if (dbUser && dbUser.guild_id) {
@@ -2397,7 +2512,7 @@ app.post('/api/guilds/:id/join', async (c) => {
 
   await c.env.DB.prepare('UPDATE users SET guild_id = ? WHERE id = ?').bind(guildId, user.sub).run();
   await c.env.DB.prepare('UPDATE trees SET guild_id = ? WHERE author_id = ?').bind(guildId, user.sub).run();
-  
+
   // Add system message
   const joinedUser = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(user.sub).first() as any;
   if (joinedUser) {
@@ -2416,7 +2531,7 @@ app.post('/api/guilds/:id/join', async (c) => {
           user_id: 'system',
           content: _msgContent,
           created_at: _ts
-          
+
         })
       }));
     }
@@ -2433,7 +2548,7 @@ app.post('/api/guilds/:id/request_join', async (c) => {
   const user = c.get('user');
   if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
   const guildId = c.req.param('id');
-  
+
   // Check if user is already in a community
   const dbUser = await c.env.DB.prepare('SELECT guild_id FROM users WHERE id = ?').bind(user.sub).first() as any;
   if (dbUser && dbUser.guild_id) {
@@ -2482,11 +2597,11 @@ app.post('/api/mail/:id/action', async (c) => {
 
   const mail = await c.env.DB.prepare('SELECT * FROM mail WHERE id = ? AND recipient_id = ?').bind(mailId, user.sub).first();
   if (!mail) return c.json({ error: 'Mail not found' }, 404);
-  
+
   if (mail.action_type === 'guild_join_request') {
     const data = JSON.parse(mail.action_data as string);
     const { userId, guildId, username, guildName } = data;
-    
+
     if (action === 'accept') {
       // Check if user already joined a guild
       const targetUser = await c.env.DB.prepare('SELECT guild_id FROM users WHERE id = ?').bind(userId).first();
@@ -2507,31 +2622,31 @@ app.post('/api/mail/:id/action', async (c) => {
         // Accept them
         await c.env.DB.prepare('UPDATE users SET guild_id = ? WHERE id = ?').bind(guildId, userId).run();
         await c.env.DB.prepare('UPDATE trees SET guild_id = ? WHERE author_id = ?').bind(guildId, userId).run();
-        
+
         // Add system message
         {
-      const _msgId = crypto.randomUUID();
-      const _ts = Date.now();
-      const _msgContent = `${username} has joined the community.`;
-      await c.env.DB.prepare('INSERT INTO chat_messages (id, guild_id, sender_id, sender_name, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)').bind(_msgId, guildId, 'system', 'System', _msgContent, _ts).run();
-      const _stub = c.env.CHAT_ROOM.get(c.env.CHAT_ROOM.idFromName(guildId));
-      await _stub.fetch(new Request('http://internal/system_message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: _msgId,
-          guild_id: guildId,
-          user_id: 'system',
-          content: _msgContent,
-          created_at: _ts
-          
-        })
-      }));
-    }
+          const _msgId = crypto.randomUUID();
+          const _ts = Date.now();
+          const _msgContent = `${username} has joined the community.`;
+          await c.env.DB.prepare('INSERT INTO chat_messages (id, guild_id, sender_id, sender_name, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)').bind(_msgId, guildId, 'system', 'System', _msgContent, _ts).run();
+          const _stub = c.env.CHAT_ROOM.get(c.env.CHAT_ROOM.idFromName(guildId));
+          await _stub.fetch(new Request('http://internal/system_message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: _msgId,
+              guild_id: guildId,
+              user_id: 'system',
+              content: _msgContent,
+              created_at: _ts
+
+            })
+          }));
+        }
 
         await c.env.DB.prepare('UPDATE mail SET content = ?, action_type = NULL, action_data = NULL WHERE id = ?')
           .bind(`You accepted ${username} into the community.`, mailId).run();
-          
+
         // Notify user
         await notificationService.createMailAndNotify(c.env, {
           id: crypto.randomUUID(),
@@ -2543,13 +2658,13 @@ app.post('/api/mail/:id/action', async (c) => {
           notification_type: 'social',
           notification_priority: 'high'
         });
-        
+
         await checkAndAwardBadges(c, userId);
       }
     } else if (action === 'reject') {
       await c.env.DB.prepare('UPDATE mail SET content = ?, action_type = NULL, action_data = NULL WHERE id = ?')
         .bind(`You rejected ${username} to join the community.`, mailId).run();
-        
+
       // Notify user
       await notificationService.createMailAndNotify(c.env, {
         id: crypto.randomUUID(),
@@ -2574,20 +2689,20 @@ app.post('/api/mail/:id/action', async (c) => {
       await c.env.DB.prepare('UPDATE friends SET status = ? WHERE user_id = ? AND friend_id = ?').bind('accepted', requester_id, user.sub).run();
       // Create reciprocal accepted request
       await c.env.DB.prepare('INSERT OR IGNORE INTO friends (user_id, friend_id, status, created_at) VALUES (?, ?, ?, ?)').bind(user.sub, requester_id, 'accepted', now).run();
-      
+
       await c.env.DB.prepare('UPDATE mail SET content = ?, action_type = NULL, action_data = NULL WHERE id = ?')
         .bind(`You are now friends with ${requester_username || 'them'}! Say hi!`, mailId).run();
-        
+
       await c.env.DB.prepare(
         'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
       ).bind(crypto.randomUUID(), 'Friend Request Accepted', `Your friend request to ${myUsername} was accepted! Say hi!`, 'System', 'user', requester_id, 0, Date.now()).run();
     } else if (action === 'reject') {
       // Delete pending request
       await c.env.DB.prepare('DELETE FROM friends WHERE user_id = ? AND friend_id = ?').bind(requester_id, user.sub).run();
-      
+
       await c.env.DB.prepare('UPDATE mail SET content = ?, action_type = NULL, action_data = NULL WHERE id = ?')
         .bind(`You rejected the friend request from ${requester_username || 'them'}.`, mailId).run();
-        
+
       await c.env.DB.prepare(
         'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
       ).bind(crypto.randomUUID(), 'Friend Request Rejected', `Your friend request to ${myUsername} was rejected.`, 'System', 'user', requester_id, 0, Date.now()).run();
@@ -2601,14 +2716,14 @@ app.post('/api/guilds/leave', async (c) => {
   // @ts-ignore
   const user = c.get('user');
   if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
-  
+
   // Check if user is in a guild
   const dbUser = await c.env.DB.prepare('SELECT guild_id FROM users WHERE id = ?').bind(user.sub).first() as any;
   if (!dbUser || !dbUser.guild_id) return c.json({ error: 'Not in a community' }, 400);
-  
+
   const guildId = dbUser.guild_id;
   const guild = await c.env.DB.prepare('SELECT admin_id FROM guilds WHERE id = ?').bind(guildId).first() as any;
-  
+
   // If admin is trying to leave
   if (guild && guild.admin_id === user.sub) {
     const memberCount = await c.env.DB.prepare('SELECT COUNT(*) as count FROM users WHERE guild_id = ?').bind(guildId).first() as any;
@@ -2619,34 +2734,34 @@ app.post('/api/guilds/leave', async (c) => {
       await c.env.DB.prepare('DELETE FROM guilds WHERE id = ?').bind(guildId).run();
     }
   }
-  
+
   await c.env.DB.prepare('UPDATE users SET guild_id = NULL, muted_until = NULL WHERE id = ?').bind(user.sub).run();
   await c.env.DB.prepare('UPDATE trees SET guild_id = NULL WHERE author_id = ?').bind(user.sub).run();
-  
+
   // If guild still exists, add system message
   const remainingGuild = await c.env.DB.prepare('SELECT id FROM guilds WHERE id = ?').bind(guildId).first();
   if (remainingGuild) {
     const leftUser = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(user.sub).first() as any;
     if (leftUser) {
       {
-      const _msgId = crypto.randomUUID();
-      const _ts = Date.now();
-      const _msgContent = `${leftUser.username} has left the community.`;
-      await c.env.DB.prepare('INSERT INTO chat_messages (id, guild_id, sender_id, sender_name, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)').bind(_msgId, guildId, 'system', 'System', _msgContent, _ts).run();
-      const _stub = c.env.CHAT_ROOM.get(c.env.CHAT_ROOM.idFromName(guildId));
-      await _stub.fetch(new Request('http://internal/system_message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: _msgId,
-          guild_id: guildId,
-          user_id: 'system',
-          content: _msgContent,
-          created_at: _ts
-          
-        })
-      }));
-    }
+        const _msgId = crypto.randomUUID();
+        const _ts = Date.now();
+        const _msgContent = `${leftUser.username} has left the community.`;
+        await c.env.DB.prepare('INSERT INTO chat_messages (id, guild_id, sender_id, sender_name, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)').bind(_msgId, guildId, 'system', 'System', _msgContent, _ts).run();
+        const _stub = c.env.CHAT_ROOM.get(c.env.CHAT_ROOM.idFromName(guildId));
+        await _stub.fetch(new Request('http://internal/system_message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: _msgId,
+            guild_id: guildId,
+            user_id: 'system',
+            content: _msgContent,
+            created_at: _ts
+
+          })
+        }));
+      }
     }
   }
 
@@ -2659,11 +2774,11 @@ app.get('/api/guilds/:id', async (c) => {
 
   const guild = await c.env.DB.prepare('SELECT * FROM guilds WHERE id = ?').bind(guildId).first();
   if (!guild) return c.json({ error: 'Not found' }, 404);
-  
+
   const members = await c.env.DB.prepare(
     'SELECT id, username, email, avatar, total_trees_planted, muted_until FROM users WHERE guild_id = ? ORDER BY total_trees_planted DESC'
   ).bind(guildId).all();
-  
+
   let hasPendingRequest = false;
   const authHeader = c.req.header('Authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -2676,7 +2791,7 @@ app.get('/api/guilds/:id', async (c) => {
       if (existingReq) hasPendingRequest = true;
     }
   }
-  
+
   return c.json({ guild, members: members.results, hasPendingRequest });
 });
 
@@ -2703,7 +2818,7 @@ app.get('/api/chat/community/:guildId', async (c) => {
   const url = new URL(c.req.url);
   url.searchParams.set('guildId', guildId);
   url.searchParams.set('userId', userId);
-  
+
   const modifiedRequest = new Request(url.toString(), c.req.raw);
   return stub.fetch(modifiedRequest);
 });
@@ -2732,18 +2847,18 @@ app.get('/api/friends/:id', async (c) => {
   const friendsWithUnread = await Promise.all(friends.results.map(async (friend: any) => {
     const roomSuffix = [id, friend.id].sort().join('_');
     const roomId = `1to1_${roomSuffix}`;
-    
+
     const lastReadRecord = await c.env.DB.prepare('SELECT last_read_at FROM user_chat_reads WHERE user_id = ? AND guild_id = ?').bind(id, roomId).first();
     const lastReadAt = lastReadRecord ? lastReadRecord.last_read_at : 0;
-    
+
     const unreadRecord = await c.env.DB.prepare('SELECT COUNT(*) as unread_count FROM chat_messages WHERE guild_id = ? AND timestamp > ? AND sender_id != ?').bind(roomId, lastReadAt, id).first();
-    
+
     return {
       ...friend,
       unread_count: unreadRecord ? unreadRecord.unread_count : 0
     };
   }));
-  
+
   return c.json({ friends: friendsWithUnread });
 });
 
@@ -2753,52 +2868,52 @@ app.post('/api/friends/:id', async (c) => {
   const body = await c.req.json();
   const jwtUser = c.get('user') as any;
   if (!jwtUser || jwtUser.sub !== id) return c.json({ error: 'Unauthorized' }, 401);
-  
+
   if (!body.friendId) return c.json({ error: 'Missing friendId' }, 400);
   if (id === body.friendId) return c.json({ error: 'Cannot add yourself' }, 400);
 
-    // Check if friend exists
-    const friendExists = await c.env.DB.prepare('SELECT id, username FROM users WHERE id = ?').bind(body.friendId).first();
-    if (!friendExists) return c.json({ error: 'User not found' }, 404);
-  
-    // Check if already requested or friends
-    const existing = await c.env.DB.prepare('SELECT status FROM friends WHERE user_id = ? AND friend_id = ?').bind(id, body.friendId).first();
-    if (existing) return c.json({ error: 'Already requested or friends' }, 400);
+  // Check if friend exists
+  const friendExists = await c.env.DB.prepare('SELECT id, username FROM users WHERE id = ?').bind(body.friendId).first();
+  if (!friendExists) return c.json({ error: 'User not found' }, 404);
 
-    const now = Date.now();
-    // Insert single unidirectional pending request
-    await c.env.DB.prepare('INSERT INTO friends (user_id, friend_id, status, created_at) VALUES (?, ?, ?, ?)').bind(id, body.friendId, 'pending', now).run();
-    
-    // Fetch my own username for the mail
-    const me = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(id).first();
-    
-    // Send Mail to target user
-    const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2,7)}`;
-    const content = `${me?.username || 'Someone'} has sent you a friend request.`;
-    const actionData = JSON.stringify({ requester_id: id, requester_username: me?.username });
-    
-    await notificationService.createMailAndNotify(c.env, {
-      id: mailId,
-      title: 'Friend Request',
-      content: content,
-      sender: 'System',
-      recipient_type: 'user',
-      recipient_id: body.friendId,
-      action_type: 'friend_request',
-      action_data: actionData,
-      notification_type: 'social',
-      notification_priority: 'high'
-    });
+  // Check if already requested or friends
+  const existing = await c.env.DB.prepare('SELECT status FROM friends WHERE user_id = ? AND friend_id = ?').bind(id, body.friendId).first();
+  if (existing) return c.json({ error: 'Already requested or friends' }, 400);
 
-    // Send Mail to requester
-    const senderMailId = `mail-${Date.now()}-snd-${Math.random().toString(36).substring(2,7)}`;
-    const targetUsername = friendExists.username || 'Someone';
-    const senderContent = `Friend request sent to ${targetUsername}.`;
-    await c.env.DB.prepare(
-      'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, action_type, action_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).bind(senderMailId, 'Friend Request Sent', senderContent, 'System', 'user', id, 0, 'system', '{}', now).run();
-  
-    return c.json({ success: true });
+  const now = Date.now();
+  // Insert single unidirectional pending request
+  await c.env.DB.prepare('INSERT INTO friends (user_id, friend_id, status, created_at) VALUES (?, ?, ?, ?)').bind(id, body.friendId, 'pending', now).run();
+
+  // Fetch my own username for the mail
+  const me = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(id).first();
+
+  // Send Mail to target user
+  const mailId = `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const content = `${me?.username || 'Someone'} has sent you a friend request.`;
+  const actionData = JSON.stringify({ requester_id: id, requester_username: me?.username });
+
+  await notificationService.createMailAndNotify(c.env, {
+    id: mailId,
+    title: 'Friend Request',
+    content: content,
+    sender: 'System',
+    recipient_type: 'user',
+    recipient_id: body.friendId,
+    action_type: 'friend_request',
+    action_data: actionData,
+    notification_type: 'social',
+    notification_priority: 'high'
+  });
+
+  // Send Mail to requester
+  const senderMailId = `mail-${Date.now()}-snd-${Math.random().toString(36).substring(2, 7)}`;
+  const targetUsername = friendExists.username || 'Someone';
+  const senderContent = `Friend request sent to ${targetUsername}.`;
+  await c.env.DB.prepare(
+    'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, action_type, action_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(senderMailId, 'Friend Request Sent', senderContent, 'System', 'user', id, 0, 'system', '{}', now).run();
+
+  return c.json({ success: true });
 });
 
 // DELETE friend
@@ -2810,12 +2925,12 @@ app.delete('/api/friends/:id/:friendId', async (c) => {
 
   // Delete bidirectionally
   await c.env.DB.prepare('DELETE FROM friends WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)').bind(id, friendId, friendId, id).run();
-  
+
   // Delete chat history for the 1-to-1 room
   const roomSuffix = [id, friendId].sort().join('_');
   const roomId = `1to1_${roomSuffix}`;
   await c.env.DB.prepare('DELETE FROM chat_messages WHERE guild_id = ?').bind(roomId).run();
-  
+
   // Unfriend Notifications
   const user1 = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(id).first();
   const user2 = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(friendId).first();
@@ -2823,8 +2938,8 @@ app.delete('/api/friends/:id/:friendId', async (c) => {
   const u2Name = user2?.username || 'Someone';
   const now = Date.now();
 
-  const mailId1 = `mail-${now}-u1-${Math.random().toString(36).substring(2,7)}`;
-  const mailId2 = `mail-${now}-u2-${Math.random().toString(36).substring(2,7)}`;
+  const mailId1 = `mail-${now}-u1-${Math.random().toString(36).substring(2, 7)}`;
+  const mailId2 = `mail-${now}-u2-${Math.random().toString(36).substring(2, 7)}`;
 
   await c.env.DB.prepare(
     'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, action_type, action_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -2833,7 +2948,7 @@ app.delete('/api/friends/:id/:friendId', async (c) => {
   await c.env.DB.prepare(
     'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, action_type, action_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).bind(mailId2, 'Friend Removed', `${u1Name} has unfriended you.`, 'System', 'user', friendId, 0, 'system', '{}', now).run();
-    
+
   return c.json({ success: true });
 });
 
@@ -2845,18 +2960,18 @@ app.delete('/api/friends/:id/:friendId', async (c) => {
 app.post('/api/guilds/:id/members/:memberId/kick', async (c) => {
   const user = c.get('user') as any;
   if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
-  
+
   const guildId = c.req.param('id');
   const memberId = c.req.param('memberId');
   const body = await c.req.json().catch(() => ({}));
   const reason = body.reason || 'No reason provided';
-  
+
   const guild = await c.env.DB.prepare('SELECT admin_id, name FROM guilds WHERE id = ?').bind(guildId).first() as any;
   if (!guild || guild.admin_id !== user.sub) return c.json({ error: 'Unauthorized: Only guild admin can kick members' }, 403);
-  
+
   await c.env.DB.prepare('UPDATE users SET guild_id = NULL, muted_until = NULL WHERE id = ? AND guild_id = ?').bind(memberId, guildId).run();
   await c.env.DB.prepare('UPDATE trees SET guild_id = NULL WHERE author_id = ? AND guild_id = ?').bind(memberId, guildId).run();
-  
+
   // Add system message
   const kickedUser = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(memberId).first() as any;
   if (kickedUser) {
@@ -2877,12 +2992,12 @@ app.post('/api/guilds/:id/members/:memberId/kick', async (c) => {
       })
     }));
   }
-  
+
   // Notify user
   await c.env.DB.prepare(
     'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   ).bind(crypto.randomUUID(), 'Kicked from Community', `You have been removed from ${guild.name} by the admin. Reason: ${reason}`, 'System', 'user', memberId, 0, Date.now()).run();
-  
+
   return c.json({ success: true });
 });
 
@@ -2890,17 +3005,17 @@ app.post('/api/guilds/:id/members/:memberId/kick', async (c) => {
 app.post('/api/guilds/:id/members/:memberId/mute', async (c) => {
   const user = c.get('user') as any;
   if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
-  
+
   const guildId = c.req.param('id');
   const memberId = c.req.param('memberId');
   const { durationMs, action } = await c.req.json();
-  
+
   const guild = await c.env.DB.prepare('SELECT admin_id FROM guilds WHERE id = ?').bind(guildId).first() as any;
   if (!guild || guild.admin_id !== user.sub) return c.json({ error: 'Unauthorized: Only guild admin can mute members' }, 403);
-  
+
   const targetUser = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(memberId).first() as any;
   const targetName = targetUser ? targetUser.username : 'A member';
-  
+
   if (action === 'unmute') {
     await c.env.DB.prepare('UPDATE users SET muted_until = NULL WHERE id = ? AND guild_id = ?').bind(memberId, guildId).run();
     const _msgId = crypto.randomUUID();
@@ -2943,7 +3058,7 @@ app.post('/api/guilds/:id/members/:memberId/mute', async (c) => {
       })
     }));
   }
-  
+
   return c.json({ success: true });
 });
 
@@ -2951,19 +3066,19 @@ app.post('/api/guilds/:id/members/:memberId/mute', async (c) => {
 app.post('/api/guilds/:id/transfer_admin', async (c) => {
   const user = c.get('user') as any;
   if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
-  
+
   const guildId = c.req.param('id');
   const { newAdminId } = await c.req.json();
   if (!newAdminId) return c.json({ error: 'Missing newAdminId' }, 400);
-  
+
   const guild = await c.env.DB.prepare('SELECT admin_id, name FROM guilds WHERE id = ?').bind(guildId).first() as any;
   if (!guild || guild.admin_id !== user.sub) return c.json({ error: 'Unauthorized: Only current guild admin can transfer ownership' }, 403);
-  
+
   const newAdminUser = await c.env.DB.prepare('SELECT id, username FROM users WHERE id = ? AND guild_id = ?').bind(newAdminId, guildId).first() as any;
   if (!newAdminUser) return c.json({ error: 'New admin must be an existing member of this community' }, 400);
 
   await c.env.DB.prepare('UPDATE guilds SET admin_id = ? WHERE id = ?').bind(newAdminId, guildId).run();
-  
+
   // Add system message
   const _msgId = crypto.randomUUID();
   const _ts = Date.now();
@@ -2981,11 +3096,11 @@ app.post('/api/guilds/:id/transfer_admin', async (c) => {
       created_at: _ts
     })
   }));
-  
+
   await c.env.DB.prepare(
     'INSERT INTO mail (id, title, content, sender, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   ).bind(crypto.randomUUID(), 'Promoted to Admin', `You have been promoted to become an admin of ${guild.name}.`, 'System', 'user', newAdminId, 0, Date.now()).run();
-  
+
   return c.json({ success: true });
 });
 
@@ -2993,20 +3108,20 @@ app.post('/api/guilds/:id/transfer_admin', async (c) => {
 app.delete('/api/guilds/:id', async (c) => {
   const user = c.get('user') as any;
   if (!user || !user.sub) return c.json({ error: 'Unauthorized' }, 401);
-  
+
   const guildId = c.req.param('id');
   const guild = await c.env.DB.prepare('SELECT admin_id FROM guilds WHERE id = ?').bind(guildId).first() as any;
   if (!guild || guild.admin_id !== user.sub) return c.json({ error: 'Unauthorized: Only guild admin can delete the community' }, 401);
-  
+
   const memberCount = await c.env.DB.prepare('SELECT COUNT(*) as count FROM users WHERE guild_id = ?').bind(guildId).first() as any;
   if (memberCount && memberCount.count > 1) {
     return c.json({ error: 'Cannot delete community with other active members. Transfer admin first.' }, 400);
   }
-  
+
   await c.env.DB.prepare('UPDATE users SET guild_id = NULL, muted_until = NULL WHERE guild_id = ?').bind(guildId).run();
   await c.env.DB.prepare('UPDATE trees SET guild_id = NULL WHERE guild_id = ?').bind(guildId).run();
   await c.env.DB.prepare('DELETE FROM guilds WHERE id = ?').bind(guildId).run();
-  
+
   return c.json({ success: true });
 });
 
@@ -3016,10 +3131,10 @@ app.get('/api/merchants/dashboard/:uid', async (c) => {
   const uid = c.req.param('uid');
   const jwtUser = c.get('user') as any;
   if (!jwtUser || jwtUser.sub !== uid) return c.json({ error: 'Unauthorized' }, 401);
-  
+
   const merchants = await c.env.DB.prepare('SELECT * FROM merchants WHERE owner_id = ?').bind(uid).all();
   const apps = await c.env.DB.prepare('SELECT * FROM applications WHERE owner_id = ?').bind(uid).all();
-  
+
   return c.json({
     merchants: merchants.results,
     applications: apps.results,
@@ -3032,7 +3147,7 @@ app.get('/api/merchants/:merchantId/store', async (c) => {
   const auth = await resolveAndAuthorizeMerchant(c, merchantId, true);
   if (auth.error) return c.json({ error: auth.error }, auth.status as any);
   const merchant = auth.merchant;
-  
+
   const storeItems = await c.env.DB.prepare(
     'SELECT * FROM point_store WHERE merchant_id = ? OR merchant_id = ?'
   ).bind(merchant.id, merchant.owner_id).all();
@@ -3089,13 +3204,13 @@ app.get('/api/admin/messages', async (c) => {
     WHERE m.recipient_type = 'admin' 
     ORDER BY m.created_at DESC
   `).all();
-  
+
   let readMailIds: string[] = [];
   try {
     const read = await c.env.DB.prepare('SELECT mail_id FROM user_read_mail WHERE user_id = ?').bind(jwtUser.sub).all();
     readMailIds = read.results.map((r: any) => r.mail_id);
-  } catch(e) {}
-  
+  } catch (e) { }
+
   return c.json({ success: true, messages: messages.results, read_mail_ids: readMailIds });
 });
 
@@ -3120,12 +3235,19 @@ app.post('/api/admin/authority-message', async (c) => {
 
   const mailId = crypto.randomUUID();
   const now = Date.now();
-  
-  try { await c.env.DB.prepare('ALTER TABLE mail ADD COLUMN sender_id TEXT').run(); } catch(e) {}
 
-  await c.env.DB.prepare(
-    'INSERT INTO mail (id, title, content, sender, sender_id, recipient_type, recipient_id, expires_for_new_users, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)'
-  ).bind(mailId, title?.trim() || 'Admin Notice', content.trim(), 'EcoStride Admin', jwtUser.sub, 'authority', targetUser.id, now).run();
+  try { await c.env.DB.prepare('ALTER TABLE mail ADD COLUMN sender_id TEXT').run(); } catch (e) { }
+
+  await notificationService.createMailAndNotify(c.env, {
+    id: mailId,
+    title: title?.trim() || 'Admin Notice',
+    content: content.trim(),
+    sender: 'EcoStride Admin',
+    recipient_type: 'authority',
+    recipient_id: targetUser.id,
+    notification_type: 'mailbox',
+    notification_priority: 'high'
+  });
 
   return c.json({ success: true, mailId });
 });
@@ -3137,7 +3259,7 @@ app.get('/api/admin/messages/sent', async (c) => {
   const dbUser = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(jwtUser.sub).first() as any;
   if (!dbUser || dbUser.role !== 'admin') return c.json({ error: 'Forbidden: Requires admin role' }, 403);
 
-  try { await c.env.DB.prepare('ALTER TABLE mail ADD COLUMN sender_id TEXT').run(); } catch(e) {}
+  try { await c.env.DB.prepare('ALTER TABLE mail ADD COLUMN sender_id TEXT').run(); } catch (e) { }
 
   const messages = await c.env.DB.prepare(`
     SELECT m.*, u.username as recipient_name, u.bio as recipient_position, u.avatar as recipient_avatar 
@@ -3146,7 +3268,7 @@ app.get('/api/admin/messages/sent', async (c) => {
     WHERE m.sender_id = ? AND m.recipient_type = 'authority' 
     ORDER BY m.created_at DESC
   `).bind(jwtUser.sub).all();
-  
+
   return c.json({ success: true, messages: messages.results });
 });
 
@@ -3170,7 +3292,7 @@ app.post('/api/users/:id/devices', async (c) => {
   const id = c.req.param('id');
   const jwtUser = c.get('user') as any;
   if (!jwtUser || jwtUser.sub !== id) return c.json({ error: 'Unauthorized' }, 401);
-  
+
   const body = await c.req.json();
   const token = body.token;
   const platform = body.platform || 'android';
@@ -3178,7 +3300,7 @@ app.post('/api/users/:id/devices', async (c) => {
 
   const deviceId = crypto.randomUUID();
   const now = Date.now();
-  
+
   await c.env.DB.prepare(`
     INSERT INTO user_devices (id, user_id, fcm_token, platform, active, last_seen_at, created_at, updated_at)
     VALUES (?, ?, ?, ?, 1, ?, ?, ?)
@@ -3188,7 +3310,7 @@ app.post('/api/users/:id/devices', async (c) => {
     last_seen_at = excluded.last_seen_at,
     updated_at = excluded.updated_at
   `).bind(deviceId, id, token, platform, now, now, now).run();
-  
+
   return c.json({ success: true });
 });
 
@@ -3197,7 +3319,7 @@ app.delete('/api/users/:id/devices/:token', async (c) => {
   const token = c.req.param('token');
   const jwtUser = c.get('user') as any;
   if (!jwtUser || jwtUser.sub !== id) return c.json({ error: 'Unauthorized' }, 401);
-  
+
   await c.env.DB.prepare('DELETE FROM user_devices WHERE user_id = ? AND fcm_token = ?').bind(id, token).run();
   return c.json({ success: true });
 });
@@ -3212,7 +3334,7 @@ app.post('/api/admin/users/:id/coins', async (c) => {
   if (!requestingDbUser || requestingDbUser.role !== 'admin') {
     return c.json({ error: 'Forbidden: Requires admin role' }, 403);
   }
-  
+
   if (body.coins !== undefined) {
     await c.env.DB.prepare('UPDATE users SET coins = ? WHERE id = ?').bind(body.coins, id).run();
   }
@@ -3266,31 +3388,31 @@ app.post('/api/admin/cleanup', async (c) => {
   }
 
   await c.env.DB.prepare('CREATE TABLE IF NOT EXISTS global_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)').run();
-  
+
   // Sync all existing trees to their author's current guild
   await c.env.DB.prepare('UPDATE trees SET guild_id = (SELECT guild_id FROM users WHERE users.id = trees.author_id)').run();
-  
+
   let treeIntervalDays = 0;
   const setting = await c.env.DB.prepare('SELECT value FROM global_settings WHERE key = ?').bind('tree_reset_interval_days').first() as any;
   if (setting && setting.value !== undefined && setting.value !== null) {
     treeIntervalDays = parseInt(setting.value as string);
     if (isNaN(treeIntervalDays)) treeIntervalDays = 0;
   }
-  
+
   if (treeIntervalDays > 0) {
     const treeThreshold = Date.now() - (treeIntervalDays * 24 * 60 * 60 * 1000);
     const treesToDelete = await c.env.DB.prepare('SELECT author_id, COUNT(*) as count FROM trees WHERE planted_at < ? GROUP BY author_id').bind(treeThreshold).all();
     for (const row of treesToDelete.results as any[]) {
       await c.env.DB.prepare('UPDATE users SET total_trees_planted = MAX(total_trees_planted - ?, 0) WHERE id = ?').bind(row.count, row.author_id).run();
     }
-    
+
     await c.env.DB.prepare('DELETE FROM trees WHERE planted_at < ?').bind(treeThreshold).run();
   }
-  
+
   const spThreshold = Date.now() - (3 * 24 * 60 * 60 * 1000);
   await c.env.DB.prepare('DELETE FROM signposts WHERE created_at < ?').bind(spThreshold).run();
   await c.env.DB.prepare("DELETE FROM mail WHERE action_type = 'guild_join_request' AND created_at < ?").bind(spThreshold).run();
-  
+
   const users = await c.env.DB.prepare('SELECT id FROM users').all();
   for (const user of users.results as any[]) {
     const history = await c.env.DB.prepare('SELECT SUM(distance) as total_dist FROM activity_history WHERE user_id = ?').bind(user.id).first() as any;
@@ -3307,15 +3429,15 @@ export default {
   fetch: app.fetch,
   async scheduled(event: any, env: Bindings, ctx: any) {
     const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-  
+
     await env.DB.prepare('UPDATE trees SET guild_id = (SELECT guild_id FROM users WHERE users.id = trees.author_id)').run();
-    
+
     try {
       await env.DB.prepare('DELETE FROM users WHERE verified_email = 0 AND created_at < ?')
         .bind(oneDayAgo)
         .run();
       console.log('Successfully ran unverified user cleanup cron job.');
-      
+
       await notificationService.flushPendingNotifications(env);
     } catch (e) {
       console.error('Cron job error:', e);

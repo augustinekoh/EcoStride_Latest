@@ -112,7 +112,10 @@ export const notificationService = {
             message: {
               token: token,
               notification: { title, body },
-              data: { type, mailId }
+              data: { type, mailId },
+              android: {
+                priority: "high"
+              }
             }
           })
         });

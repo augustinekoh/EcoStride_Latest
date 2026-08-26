@@ -5,6 +5,8 @@ interface DemoState {
   demoProgress: number
   isAutoPlaying: boolean
   activeView: 'landing' | 'map' | 'merchant_dashboard' | 'merchant_onboarding' | 'leaderboard' | 'group' | 'profile' | 'city' | 'settings' | 'cases'
+  viewHistory: ('landing' | 'map' | 'merchant_dashboard' | 'merchant_onboarding' | 'leaderboard' | 'group' | 'profile' | 'city' | 'settings' | 'cases')[]
+  goBack: () => void
   showReportModal: boolean
   completedDistanceKm: number
   isWaitingForApproval: boolean
@@ -23,6 +25,14 @@ interface DemoState {
   setActiveView: (view: 'landing' | 'map' | 'merchant_dashboard' | 'merchant_onboarding' | 'leaderboard' | 'group' | 'profile' | 'city' | 'settings' | 'cases') => void
   setShowReportModal: (show: boolean) => void
   setCompletedDistanceKm: (dist: number) => void
+  completedCheatDistanceKm: number
+  setCompletedCheatDistanceKm: (dist: number) => void
+  completedCoins: number
+  setCompletedCoins: (coins: number) => void
+  penaltyStatus: string
+  penaltyReason: string
+  setPenaltyStatus: (status: string) => void
+  setPenaltyReason: (reason: string) => void
 }
 
 export const useDemoStore = create<DemoState>((set) => ({
@@ -30,6 +40,7 @@ export const useDemoStore = create<DemoState>((set) => ({
   demoProgress: 0,
   isAutoPlaying: false,
   activeView: 'landing',
+  viewHistory: [],
   showReportModal: false,
   completedDistanceKm: 0,
   isWaitingForApproval: false,
@@ -43,11 +54,30 @@ export const useDemoStore = create<DemoState>((set) => ({
   setIsMobileMenuOpen: (val) => set({ isMobileMenuOpen: val }),
   setActivePrivateChat: (chat) => set({ activePrivateChat: chat }),
   setMode: (mode) => set({ currentMode: mode }),
-  setProgress: (progress) => set((state) => ({ 
-    demoProgress: typeof progress === 'function' ? progress(state.demoProgress) : progress 
+  setProgress: (progress) => set((state) => ({
+    demoProgress: typeof progress === 'function' ? progress(state.demoProgress) : progress
   })),
   setIsAutoPlaying: (playing) => set({ isAutoPlaying: playing }),
-  setActiveView: (view) => set({ activeView: view }),
+  setActiveView: (view) => set((state) => ({
+    viewHistory: state.activeView !== view ? [...state.viewHistory, state.activeView] : state.viewHistory,
+    activeView: view
+  })),
+  goBack: () => set((state) => {
+    const history = [...state.viewHistory];
+    if (history.length > 0) {
+      const prev = history.pop();
+      return { viewHistory: history, activeView: prev as any };
+    }
+    return { activeView: 'landing' };
+  }),
   setShowReportModal: (show) => set({ showReportModal: show }),
   setCompletedDistanceKm: (dist) => set({ completedDistanceKm: dist }),
+  completedCheatDistanceKm: 0,
+  setCompletedCheatDistanceKm: (dist) => set({ completedCheatDistanceKm: dist }),
+  completedCoins: 0,
+  setCompletedCoins: (coins) => set({ completedCoins: coins }),
+  penaltyStatus: 'NORMAL',
+  penaltyReason: '',
+  setPenaltyStatus: (status) => set({ penaltyStatus: status }),
+  setPenaltyReason: (reason) => set({ penaltyReason: reason }),
 }))

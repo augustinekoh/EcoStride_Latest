@@ -43,6 +43,12 @@ interface MapState {
 
   isWalkModeActive: boolean
   setIsWalkModeActive: (active: boolean) => void
+  
+  walkedDistanceKm: number
+  setWalkedDistanceKm: (dist: number | ((prev: number) => number)) => void
+  
+  isFreeWalk: boolean
+  setIsFreeWalk: (active: boolean) => void
 }
 
 export const useMapStore = create<MapState>((set) => ({
@@ -87,4 +93,12 @@ export const useMapStore = create<MapState>((set) => ({
 
   isWalkModeActive: false,
   setIsWalkModeActive: (isWalkModeActive) => set({ isWalkModeActive }),
+  
+  walkedDistanceKm: 0,
+  setWalkedDistanceKm: (dist) => set((state) => ({ 
+    walkedDistanceKm: typeof dist === 'function' ? dist(state.walkedDistanceKm) : dist 
+  })),
+  
+  isFreeWalk: false,
+  setIsFreeWalk: (isFreeWalk) => set({ isFreeWalk })
 }))
