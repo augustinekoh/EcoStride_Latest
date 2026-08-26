@@ -41,7 +41,7 @@ export function normalizeMerchant(raw: any): Merchant {
     location: loc,
     status: raw.status || 'approved',
     category: raw.category || 'Eco Merchant',
-    offers: raw.offers || raw.store_name || raw.storeName || '',
+    offers: raw.offers || '',
     icon: raw.icon || '🏪',
     createdAt: raw.created_at || raw.createdAt || Date.now()
   };

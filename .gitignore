@@ -23,4 +23,7 @@ ARCHITECTURE.md
 *.keystore
 keystore.properties
 .dev.vars
+google-services.json
 *.py
+
+.idea/

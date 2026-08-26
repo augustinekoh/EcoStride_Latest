@@ -10,11 +10,11 @@ export const useMapGeolocation = () => {
   const { 
     liveLocation, setLiveLocation, 
     activeRouteGeoJSON, distanceToTarget,
-    isWalkModeActive
+    isWalkModeActive,
+    walkedDistanceKm, setWalkedDistanceKm,
+    isFreeWalk, setIsFreeWalk
   } = useMapStore();
 
-  const [walkedDistanceKm, setWalkedDistanceKm] = useState(0);
-  const [isFreeWalk, setIsFreeWalk] = useState(false);
   const [bearing, setBearing] = useState<number | null>(null);
 
   // 1. Real-time GPS Tracking
@@ -34,9 +34,16 @@ export const useMapGeolocation = () => {
           { enableHighAccuracy: true },
           (pos, err) => {
             if (err) {
-              console.log('GPS Error:', err);
-              alert('GPS location permission is required to access the map. Please allow location access and try again.');
-              setActiveView('landing');
+              console.warn('GPS watchPosition error:', err);
+              // Only kick out if they explicitly denied permissions
+              if (Capacitor.isNativePlatform()) {
+                Geolocation.checkPermissions().then(perm => {
+                  if (perm.location !== 'granted') {
+                    alert('GPS location permission is required to access the map. Please allow location access in settings and try again.');
+                    setActiveView('landing');
+                  }
+                }).catch(() => {});
+              }
               return;
             }
             if (pos) {
@@ -64,7 +71,7 @@ export const useMapGeolocation = () => {
   // 2. Determine the current coordinate (Live GPS vs Demo Interpolation)
   const currentCoordinate = useMemo(() => {
     if (currentMode !== 'demo' || !activeRouteGeoJSON) {
-      return liveLocation || [103.6400, 1.5600];
+      return liveLocation || [0, 0]; // It should never hit the fallback now since MapView blocks rendering
     }
     
     const coords = activeRouteGeoJSON.geometry.coordinates;
@@ -94,7 +101,14 @@ export const useMapGeolocation = () => {
         // Only update bearing if moved at least 1 meter to prevent jittering when standing still
         if (distance > 1) {
           calculatedBearing = turf.bearing(turf.point(prevCoordRef.current), turf.point(currentCoordinate));
-          additionalDistance = distance / 1000;
+          
+          // BUG FIX: Anti-Teleport Filter for Foreground Tracker
+          // If the distance jump is > 200 meters in a single tick, it's a GPS drift or Simulator teleport.
+          if (distance < 200) {
+            additionalDistance = distance / 1000;
+          } else {
+            console.log(`Foreground tracker skipping unrealistic jump: ${distance} meters`);
+          }
         }
       }
       prevCoordRef.current = currentCoordinate as [number, number];

@@ -83,15 +83,18 @@ export const LandingPage: React.FC = () => {
   const [touchCurrentY, setTouchCurrentY] = useState<number | null>(null);
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    e.stopPropagation();
     setTouchStartY(e.touches[0].clientY);
     setTouchCurrentY(e.touches[0].clientY);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    e.stopPropagation();
     setTouchCurrentY(e.touches[0].clientY);
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    e.stopPropagation();
     if (touchStartY !== null && touchCurrentY !== null) {
       if (touchCurrentY - touchStartY > 100) {
         setIsMobileMenuOpen(false);
@@ -254,7 +257,7 @@ export const LandingPage: React.FC = () => {
         {/* Top Action Bar (Expandable on Desktop) */}
         <div className="flex items-center justify-end shrink-0">
           {/* Desktop Inline Menu */}
-          <div className={`hidden sm:flex items-center gap-2 overflow-hidden py-2 px-1 transition-all duration-500 ease-out origin-right ${isMobileMenuOpen ? 'max-w-[600px] opacity-100 pr-3' : 'max-w-0 opacity-0 pr-0'}`}>
+          <div className="hidden sm:flex items-center gap-2 py-2 px-1">
             <div className="relative">
               <button 
                 onClick={() => {
@@ -322,40 +325,24 @@ export const LandingPage: React.FC = () => {
             <button 
               onClick={() => {
                 setIsMobileMenuOpen(!isMobileMenuOpen);
-                setShowMenuTooltip(false);
-                if (typeof window !== 'undefined') sessionStorage.setItem('seen_menu_tooltip', 'true');
               }}
-              className="w-10 h-10 glass-card rounded-full flex items-center justify-center z-10 hover:-translate-y-1 transition-transform shadow-md border-2 border-white/60 bg-white/40"
+              className="sm:hidden w-10 h-10 glass-card rounded-full flex items-center justify-center z-10 hover:-translate-y-1 transition-transform shadow-md border-2 border-white/60 bg-white/40 relative"
             >
               <Menu size={20} className="text-[var(--color-text-main)]" />
-              {/* Mobile notification dot on menu button (now only for Mailbox) */}
+              {/* Mobile notification dot on menu button */}
               {unreadCount > 0 && (
-                <div className="sm:hidden absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></div>
+                <div className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></div>
               )}
             </button>
-            {/* Onboarding Tooltip */}
-            {showMenuTooltip && !isMobileMenuOpen && (
-              <div className="absolute top-14 right-0 bg-[#5496a2] text-white text-xs font-bold px-4 py-3 rounded-xl shadow-lg w-36 text-center animate-bounce z-50 pointer-events-auto leading-tight">
-                <div className="absolute -top-1.5 right-4 w-3 h-3 bg-[#5496a2] rotate-45"></div>
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowMenuTooltip(false);
-                    if (typeof window !== 'undefined') sessionStorage.setItem('seen_menu_tooltip', 'true');
-                  }}
-                  className="absolute -top-2 -left-2 w-5 h-5 bg-[#1d3539] rounded-full flex items-center justify-center border border-[#5496a2] shadow-sm hover:scale-110 active:scale-95 transition-transform"
-                >
-                  <X size={12} strokeWidth={3} className="text-white"/>
-                </button>
-                Tap here to open Mailbox & Store
-              </div>
-            )}
           </div>
         </div>
 
         {/* Mobile Actions Menu Overlay */}
       <div 
         className={`fixed inset-0 z-[200] sm:hidden flex flex-col justify-end transition-opacity duration-300 ${isMobileMenuOpen || menuDragOffset > 0 ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
       >
         <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}></div>
         
@@ -553,9 +540,9 @@ export const LandingPage: React.FC = () => {
 
       {/* Interactive Calendar Modal */}
       {showCalendar && (
-        <div className="fixed inset-0 z-[120] bg-[var(--color-teal-dark)]/20 backdrop-blur-xl flex flex-col items-center justify-end md:justify-center animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[120] bg-[var(--color-teal-dark)]/20 backdrop-blur-xl flex flex-col items-center justify-center animate-in fade-in duration-300 p-4">
           
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 border-t md:border border-slate-200 dark:border-slate-800 rounded-b-none md:rounded-[24px] h-[85vh] md:h-auto md:max-h-[85vh] flex flex-col animate-in slide-in-from-bottom-full md:slide-in-from-bottom-10 shadow-2xl">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[24px] h-auto max-h-[85vh] flex flex-col animate-in slide-in-from-bottom-10 shadow-2xl">
             <div className="flex justify-between items-center p-8 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 glass-active rounded-full flex items-center justify-center shadow-sm">

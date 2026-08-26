@@ -1,0 +1,8 @@
+This is a placeholder for your Android release keystore (.jks file).
+
+To generate your own keystore for release, run the following command in your terminal:
+
+keytool -genkey -v -keystore ecostride-release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias YOUR_KEY_ALIAS
+
+Then, fill out your keystore.properties with the passwords and alias you set during generation.
+Make sure you never commit your actual .jks file to public version control!

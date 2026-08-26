@@ -12,7 +12,7 @@ import { Store, Tag, MapPin, CheckCircle, Search, DollarSign, ChevronLeft, Plus,
 export const MerchantOnboardingForm: React.FC = () => {
   const { user } = useAuthStore();
   const { username } = useUserStore();
-  const { setActiveView } = useDemoStore();
+  const { setActiveView, goBack } = useDemoStore();
   
   const [formData, setFormData] = useState({
     storeName: '',
@@ -192,7 +192,7 @@ export const MerchantOnboardingForm: React.FC = () => {
             You will be notified once you are approved to appear on the EcoStride Map.
           </p>
           <button 
-            onClick={() => setActiveView('merchant_dashboard')} 
+            onClick={goBack} 
             className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black px-8 py-3.5 rounded-2xl shadow-lg shadow-emerald-900/20 active:scale-95 transition-all uppercase text-sm"
           >
             Go to Merchant Hub
@@ -210,7 +210,7 @@ export const MerchantOnboardingForm: React.FC = () => {
         {/* Header with Back Button */}
         <div className="flex items-center gap-3.5 mb-6 border-b border-slate-200/80 dark:border-slate-800 pb-5">
           <button 
-            onClick={() => setActiveView('merchant_dashboard')} 
+            onClick={goBack} 
             className="p-2.5 rounded-2xl bg-white/80 dark:bg-slate-800/80 hover:bg-white dark:hover:bg-slate-700 text-[#1d3539] dark:text-emerald-400 border border-white/90 dark:border-slate-700 shadow-sm transition-all active:scale-95 flex items-center justify-center shrink-0"
             title="Back to Dashboard"
           >
