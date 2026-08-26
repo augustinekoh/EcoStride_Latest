@@ -24,8 +24,8 @@ export interface NavTarget {
   offers?: any[];
 }
 
-// Minimum GPS accuracy in meters to accept a location update
-const MAX_ACCURACY_METERS = 200;
+// MAX_ACCURACY_METERS: We set this to 150m to ensure GPS points are reasonably accurate.
+const MAX_ACCURACY_METERS = 150;
 
 let pedometerListener: PluginListenerHandle | null = null;
 let latestSpeedKmh = 0;
@@ -37,12 +37,13 @@ export async function getCurrentSpeedKmh(): Promise<number> {
 export async function startWalkSession(target?: NavTarget): Promise<string | null> {
   try {
     // 0. Anti-Cheat: Pedometer Permissions (Foreground & Background)
-    let perm = await CapacitorPedometer.checkPermissions();
-    if (perm.activityRecognition !== 'granted') {
-      perm = await CapacitorPedometer.requestPermissions();
+    try {
+      let perm = await CapacitorPedometer.checkPermissions();
       if (perm.activityRecognition !== 'granted') {
-        throw new Error('Motion & Fitness permission is required to prevent cheating and earn coins.');
+        perm = await CapacitorPedometer.requestPermissions();
       }
+    } catch (e) {
+      console.warn('Pedometer permission check failed, continuing without it.', e);
     }
 
     // 1. Call backend to start
@@ -76,17 +77,21 @@ export async function startWalkSession(target?: NavTarget): Promise<string | nul
     }
 
     // 2.5 Start Pedometer
-    if (pedometerListener) {
-      await pedometerListener.remove();
-    }
-    pedometerListener = await CapacitorPedometer.addListener('measurement', async (event: MeasurementEvent) => {
-      if (event.numberOfSteps !== undefined) {
-        // Capgo Pedometer often returns absolute steps during the session. 
-        // We will just store the latest value reported.
-        await Preferences.set({ key: PREF_STEPS, value: event.numberOfSteps.toString() });
+    try {
+      if (pedometerListener) {
+        await pedometerListener.remove();
       }
-    });
-    await CapacitorPedometer.startMeasurementUpdates();
+      pedometerListener = await CapacitorPedometer.addListener('measurement', async (event: MeasurementEvent) => {
+        if (event.numberOfSteps !== undefined) {
+          // Capgo Pedometer often returns absolute steps during the session. 
+          // We will just store the latest value reported.
+          await Preferences.set({ key: PREF_STEPS, value: event.numberOfSteps.toString() });
+        }
+      });
+      await CapacitorPedometer.startMeasurementUpdates();
+    } catch (e) {
+      console.warn('Failed to start pedometer, device might not support it:', e);
+    }
 
     // 3. Configure and start Capgo tracking
     // NOTE: Capgo expects a sync (void) callback, not async.
@@ -118,13 +123,13 @@ export async function startWalkSession(target?: NavTarget): Promise<string | nul
             if (!walkIdObj.value) return; // Walk not active
 
             // Anti-cheat: Detect Mock Location
+            let isSpoofed = false;
             if (location.simulated) {
               const spoofedStr = await Preferences.get({ key: PREF_SPOOFED_COUNT });
               const spoofedCount = parseInt(spoofedStr.value || '0', 10) + 1;
               await Preferences.set({ key: PREF_SPOOFED_COUNT, value: spoofedCount.toString() });
               console.warn('Anti-Cheat: Mock Location detected!');
-              // Do not record distance if spoofed
-              return;
+              isSpoofed = true;
             }
 
             const lastLatStr = await Preferences.get({ key: PREF_LAST_LAT });
@@ -140,11 +145,16 @@ export async function startWalkSession(target?: NavTarget): Promise<string | nul
               lastLng = parseFloat(lastLngStr.value);
             }
 
+            let safeLocationTime = location.time;
+            if (safeLocationTime && safeLocationTime < 1000000000000) {
+              safeLocationTime *= 1000; // Convert seconds to milliseconds
+            }
+
             if (!lastLat || !lastLng || isNaN(lastLat) || isNaN(lastLng)) {
               // First point of the session, just initialize and return
               await Preferences.set({ key: PREF_LAST_LAT, value: location.latitude.toString() });
               await Preferences.set({ key: PREF_LAST_LNG, value: location.longitude.toString() });
-              await Preferences.set({ key: PREF_LAST_TIME, value: (location.time || Date.now()).toString() });
+              await Preferences.set({ key: PREF_LAST_TIME, value: (safeLocationTime || Date.now()).toString() });
               return;
             }
 
@@ -160,30 +170,22 @@ export async function startWalkSession(target?: NavTarget): Promise<string | nul
               const dist = turf.distance(from, to, { units: 'kilometers' });
 
               if (!isNaN(dist)) {
-                // Anti-drift logic: Ignore if > 150m jump, BUT still update anchor!
-                if (dist > 0.15) {
-                  console.log(`Anti-drift: Ignoring jump of ${dist * 1000}m`);
-                  // We MUST update the anchor so we don't get permanently stuck!
-                  await Preferences.set({ key: PREF_LAST_LAT, value: location.latitude.toString() });
-                  await Preferences.set({ key: PREF_LAST_LNG, value: location.longitude.toString() });
-                  await Preferences.set({ key: PREF_LAST_TIME, value: (location.time || Date.now()).toString() });
-                  return;
-                }
-
                 let speedKmh = 0;
                 // Use location.speed directly if available, otherwise calculate using math
                 if (typeof location.speed === 'number' && location.speed > 0) {
                   speedKmh = location.speed * 3.6;
                 } else {
                   const lastTime = parseInt(lastTimeStr.value || '0', 10);
-                  const currentTime = location.time || Date.now();
+                  const currentTime = safeLocationTime || Date.now();
                   const dtSec = Math.max(1, (currentTime - lastTime) / 1000); // Prevent division by zero
                   speedKmh = (dist / dtSec) * 3600;
                 }
                 
                 latestSpeedKmh = speedKmh;
 
-                if (speedKmh > 35) {
+                // Routing all distance to either Cheat or Valid
+                if (isSpoofed || dist > 0.15 || speedKmh > 35) {
+                  if (dist > 0.15) console.log(`Anti-drift: Penalizing jump of ${dist * 1000}m as cheat distance`);
                   currentCheatDistance += dist;
                   await Preferences.set({ key: PREF_CHEAT_DISTANCE, value: currentCheatDistance.toString() });
                 } else {
@@ -195,7 +197,7 @@ export async function startWalkSession(target?: NavTarget): Promise<string | nul
 
             await Preferences.set({ key: PREF_LAST_LAT, value: location.latitude.toString() });
             await Preferences.set({ key: PREF_LAST_LNG, value: location.longitude.toString() });
-            await Preferences.set({ key: PREF_LAST_TIME, value: (location.time || Date.now()).toString() });
+            await Preferences.set({ key: PREF_LAST_TIME, value: (safeLocationTime || Date.now()).toString() });
           } catch (err) {
             console.error('Error processing background location:', err);
           }
@@ -207,6 +209,139 @@ export async function startWalkSession(target?: NavTarget): Promise<string | nul
   } catch (err) {
     console.error('Error starting walk session:', err);
     return null;
+  }
+}
+
+export async function resumeWalkSession(): Promise<boolean> {
+  try {
+    const walkIdObj = await Preferences.get({ key: PREF_WALK_ID });
+    if (!walkIdObj.value) return false;
+
+    // 1. Restart Pedometer
+    try {
+      if (pedometerListener) {
+        await pedometerListener.remove();
+      }
+      pedometerListener = await CapacitorPedometer.addListener('measurement', async (event: MeasurementEvent) => {
+        if (event.numberOfSteps !== undefined) {
+          await Preferences.set({ key: PREF_STEPS, value: event.numberOfSteps.toString() });
+        }
+      });
+      await CapacitorPedometer.startMeasurementUpdates();
+    } catch (e) {
+      console.warn('Failed to resume pedometer:', e);
+    }
+
+    // 2. Restart Capgo Background Geolocation watcher
+    await BackgroundGeolocation.start(
+      {
+        backgroundMessage: 'EcoStride: Walk Mode active. Tracking your walking route.',
+        backgroundTitle: 'EcoStride Walk Mode',
+        requestPermissions: true,
+        stale: false,
+        distanceFilter: 5,
+      },
+      (location: Location | undefined, error: CallbackError | undefined) => {
+        if (error) {
+          console.error('Background Geolocation error:', error);
+          return;
+        }
+        if (!location) return;
+
+        if (location.accuracy > MAX_ACCURACY_METERS) {
+          console.log(`Skipping inaccurate GPS point: accuracy=${location.accuracy}m`);
+          return;
+        }
+
+        // Run async Preferences work inside a void callback
+        void (async () => {
+          try {
+            const activeWalk = await Preferences.get({ key: PREF_WALK_ID });
+            if (!activeWalk.value) return; // Walk not active
+
+            // Anti-cheat: Detect Mock Location
+            let isSpoofed = false;
+            if (location.simulated) {
+              const spoofedStr = await Preferences.get({ key: PREF_SPOOFED_COUNT });
+              const spoofedCount = parseInt(spoofedStr.value || '0', 10) + 1;
+              await Preferences.set({ key: PREF_SPOOFED_COUNT, value: spoofedCount.toString() });
+              console.warn('Anti-Cheat: Mock Location detected!');
+              isSpoofed = true;
+            }
+
+            const lastLatStr = await Preferences.get({ key: PREF_LAST_LAT });
+            const lastLngStr = await Preferences.get({ key: PREF_LAST_LNG });
+            const lastTimeStr = await Preferences.get({ key: PREF_LAST_TIME });
+            const distanceStr = await Preferences.get({ key: PREF_DISTANCE });
+            const cheatDistanceStr = await Preferences.get({ key: PREF_CHEAT_DISTANCE });
+
+            let lastLat = 0;
+            let lastLng = 0;
+            if (lastLatStr.value && lastLngStr.value) {
+              lastLat = parseFloat(lastLatStr.value);
+              lastLng = parseFloat(lastLngStr.value);
+            }
+
+            let safeLocationTime = location.time;
+            if (safeLocationTime && safeLocationTime < 1000000000000) {
+              safeLocationTime *= 1000; // Convert seconds to milliseconds
+            }
+
+            if (!lastLat || !lastLng || isNaN(lastLat) || isNaN(lastLng)) {
+              await Preferences.set({ key: PREF_LAST_LAT, value: location.latitude.toString() });
+              await Preferences.set({ key: PREF_LAST_LNG, value: location.longitude.toString() });
+              await Preferences.set({ key: PREF_LAST_TIME, value: (safeLocationTime || Date.now()).toString() });
+              return;
+            }
+
+            let currentDistance = parseFloat(distanceStr.value || '0');
+            let currentCheatDistance = parseFloat(cheatDistanceStr.value || '0');
+
+            const currentLat = location.latitude;
+            const currentLng = location.longitude;
+
+            if (!isNaN(lastLat) && !isNaN(lastLng) && !isNaN(currentLat) && !isNaN(currentLng)) {
+              const from = turf.point([lastLng, lastLat]);
+              const to = turf.point([currentLng, currentLat]);
+              const dist = turf.distance(from, to, { units: 'kilometers' });
+
+              if (!isNaN(dist)) {
+                let speedKmh = 0;
+                if (typeof location.speed === 'number' && location.speed > 0) {
+                  speedKmh = location.speed * 3.6;
+                } else {
+                  const lastTime = parseInt(lastTimeStr.value || '0', 10);
+                  const currentTime = safeLocationTime || Date.now();
+                  const dtSec = Math.max(1, (currentTime - lastTime) / 1000);
+                  speedKmh = (dist / dtSec) * 3600;
+                }
+                
+                latestSpeedKmh = speedKmh;
+
+                if (isSpoofed || dist > 0.15 || speedKmh > 35) {
+                  if (dist > 0.15) console.log(`Anti-drift: Penalizing jump of ${dist * 1000}m as cheat distance`);
+                  currentCheatDistance += dist;
+                  await Preferences.set({ key: PREF_CHEAT_DISTANCE, value: currentCheatDistance.toString() });
+                } else {
+                  currentDistance += dist;
+                  await Preferences.set({ key: PREF_DISTANCE, value: currentDistance.toString() });
+                }
+              }
+            }
+
+            await Preferences.set({ key: PREF_LAST_LAT, value: location.latitude.toString() });
+            await Preferences.set({ key: PREF_LAST_LNG, value: location.longitude.toString() });
+            await Preferences.set({ key: PREF_LAST_TIME, value: (safeLocationTime || Date.now()).toString() });
+          } catch (err) {
+            console.error('Error processing background location (resume):', err);
+          }
+        })();
+      }
+    );
+    return true;
+  } catch (err) {
+    console.error('Error resuming walk session:', err);
+    return false;
   }
 }
 
@@ -289,113 +424,6 @@ export async function isWalkTrackingActive(): Promise<boolean> {
   return !!walkIdObj.value;
 }
 
-export async function resumeWalkSession(): Promise<void> {
-  const active = await isWalkTrackingActive();
-  if (!active) return;
-
-  await BackgroundGeolocation.start(
-    {
-      backgroundMessage: 'EcoStride: Walk Mode active. Tracking your walking route.',
-      backgroundTitle: 'EcoStride Walk Mode',
-      requestPermissions: true,
-      stale: false,
-      distanceFilter: 5,
-    },
-    (location: Location | undefined, error: CallbackError | undefined) => {
-      if (error) {
-        console.error('Background Geolocation error:', error);
-        return;
-      }
-      if (!location) return;
-
-      if (location.accuracy > MAX_ACCURACY_METERS) {
-        console.log(`Skipping inaccurate GPS point: accuracy=${location.accuracy}m`);
-        return;
-      }
-
-      void (async () => {
-        try {
-          const walkIdObj = await Preferences.get({ key: PREF_WALK_ID });
-          if (!walkIdObj.value) return;
-
-          // Anti-cheat resume handler
-          if (location.simulated) {
-            const spoofedStr = await Preferences.get({ key: PREF_SPOOFED_COUNT });
-            const spoofedCount = parseInt(spoofedStr.value || '0', 10) + 1;
-            await Preferences.set({ key: PREF_SPOOFED_COUNT, value: spoofedCount.toString() });
-            return;
-          }
-
-          const lastLatStr = await Preferences.get({ key: PREF_LAST_LAT });
-          const lastLngStr = await Preferences.get({ key: PREF_LAST_LNG });
-          const lastTimeStr = await Preferences.get({ key: PREF_LAST_TIME });
-          const distanceStr = await Preferences.get({ key: PREF_DISTANCE });
-          const cheatDistanceStr = await Preferences.get({ key: PREF_CHEAT_DISTANCE });
-
-          let lastLat = 0;
-          let lastLng = 0;
-          if (lastLatStr.value && lastLngStr.value) {
-            lastLat = parseFloat(lastLatStr.value);
-            lastLng = parseFloat(lastLngStr.value);
-          }
-
-          if (!lastLat || !lastLng || isNaN(lastLat) || isNaN(lastLng)) {
-            await Preferences.set({ key: PREF_LAST_LAT, value: location.latitude.toString() });
-            await Preferences.set({ key: PREF_LAST_LNG, value: location.longitude.toString() });
-            await Preferences.set({ key: PREF_LAST_TIME, value: (location.time || Date.now()).toString() });
-            return;
-          }
-
-          let currentDistance = parseFloat(distanceStr.value || '0');
-          let currentCheatDistance = parseFloat(cheatDistanceStr.value || '0');
-
-          const currentLat = location.latitude;
-          const currentLng = location.longitude;
-
-          if (!isNaN(lastLat) && !isNaN(lastLng) && !isNaN(currentLat) && !isNaN(currentLng)) {
-            const from = turf.point([lastLng, lastLat]);
-            const to = turf.point([currentLng, currentLat]);
-            const dist = turf.distance(from, to, { units: 'kilometers' });
-
-            if (!isNaN(dist)) {
-              // Anti-drift logic: Ignore if > 100m jump
-              if (dist > 0.1) {
-                console.log(`Anti-drift: Ignoring jump of ${dist * 1000}m`);
-                return; // Anchors to the last valid location by skipping PREF_LAST_LAT update
-              }
-
-              let speedKmh = 0;
-              if (typeof location.speed === 'number' && location.speed > 0) {
-                speedKmh = location.speed * 3.6;
-              } else {
-                const lastTime = parseInt(lastTimeStr.value || '0', 10);
-                const currentTime = location.time || Date.now();
-                const dtSec = Math.max(1, (currentTime - lastTime) / 1000);
-                speedKmh = (dist / dtSec) * 3600;
-              }
-              
-              latestSpeedKmh = speedKmh;
-
-              if (speedKmh > 35) {
-                currentCheatDistance += dist;
-                await Preferences.set({ key: PREF_CHEAT_DISTANCE, value: currentCheatDistance.toString() });
-              } else {
-                currentDistance += dist;
-                await Preferences.set({ key: PREF_DISTANCE, value: currentDistance.toString() });
-              }
-            }
-          }
-
-          await Preferences.set({ key: PREF_LAST_LAT, value: location.latitude.toString() });
-          await Preferences.set({ key: PREF_LAST_LNG, value: location.longitude.toString() });
-          await Preferences.set({ key: PREF_LAST_TIME, value: (location.time || Date.now()).toString() });
-        } catch (err) {
-          console.error('Failed to save background location', err);
-        }
-      })();
-    }
-  );
-}
 
 export async function getCurrentWalkDistance(): Promise<number> {
   const distanceStr = await Preferences.get({ key: PREF_DISTANCE });

@@ -62,6 +62,7 @@ export const MapView: React.FC = () => {
   const mapRef = useRef(null);
   const fullRouteGeoJSONRef = useRef<any>(null);
   const lastRouteFetchTimeRef = useRef<number>(0);
+  const prevLiveLocationRef = useRef<[number, number] | null>(null);
   const location = useLocation();
   const [trees, setTrees] = useState<any[]>([]);
   const [mapFilter, setMapFilter] = useState<'all' | 'issues' | 'trees' | 'signposts'>('all');
@@ -83,9 +84,10 @@ export const MapView: React.FC = () => {
   useEffect(() => {
     const checkActiveWalk = async () => {
       try {
-        const { isWalkTrackingActive, getNavTarget } = await import('../../lib/backgroundTracking');
+        const { isWalkTrackingActive, getNavTarget, resumeWalkSession } = await import('../../lib/backgroundTracking');
         const active = await isWalkTrackingActive();
         if (active) {
+          await resumeWalkSession(); // BUG FIX: Actually restart the native background listener!
           const navTarget = await getNavTarget();
           if (navTarget) {
             setSelectedMerchant(navTarget);
@@ -169,10 +171,23 @@ export const MapView: React.FC = () => {
         const currentLocPoint = turf.point(liveLocation);
         const routeLine = turf.lineString(fullRouteGeoJSONRef.current.geometry.coordinates);
         
-        // 1. Auto-complete if within 30 meters
+        // 1. Auto-complete if within 30 meters OR tunneled through 30 meters
         import('../../lib/mapboxAPI').then(async ({ getDistanceMeters, getWalkingRoute }) => {
           const distMeters = getDistanceMeters(liveLocation, targetCoords);
-          if (distMeters <= 30) {
+          let didTunnel = false;
+
+          // Anti-Tunneling Math: check if the path between previous location and current location intersected the 30m target circle
+          if (distMeters > 30 && prevLiveLocationRef.current) {
+            const destPoint = turf.point(targetCoords);
+            const pathLine = turf.lineString([prevLiveLocationRef.current, liveLocation]);
+            const minDistanceToPath = turf.pointToLineDistance(destPoint, pathLine, { units: 'meters' });
+            if (minDistanceToPath <= 30) {
+              console.log('Anti-Tunneling: Fast bike detected passing through the target zone!');
+              didTunnel = true;
+            }
+          }
+
+          if (distMeters <= 30 || didTunnel) {
             const { stopWalkSession } = await import('../../lib/backgroundTracking');
             const result = await stopWalkSession();
             if (result) {
@@ -225,6 +240,11 @@ export const MapView: React.FC = () => {
       } catch (e) {
         console.error('Failed to trim route locally:', e);
       }
+    }
+    
+    // Always update previous location at the end of the effect
+    if (liveLocation) {
+      prevLiveLocationRef.current = liveLocation;
     }
   }, [liveLocation, selectedMerchant]);
 
@@ -1616,8 +1636,8 @@ export const MapView: React.FC = () => {
 
       {/* Toast Notification */}
       {toastMsg && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[500] animate-in fade-in slide-in-from-bottom-5">
-          <div className="bg-slate-900/90 dark:bg-white/90 text-white dark:text-slate-900 px-4 py-2 rounded-full shadow-lg text-sm font-bold backdrop-blur-sm">
+        <div className="fixed bottom-40 left-1/2 -translate-x-1/2 z-[500] animate-in fade-in slide-in-from-bottom-5 w-[90%] max-w-sm pointer-events-none">
+          <div className="bg-[#1C2033]/95 text-white px-5 py-3 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] text-sm font-semibold backdrop-blur-md text-center border border-white/10 mx-auto flex items-center justify-center">
             {toastMsg}
           </div>
         </div>
