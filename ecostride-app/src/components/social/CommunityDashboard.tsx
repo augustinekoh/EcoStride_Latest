@@ -5,6 +5,7 @@ import { Trophy, TreeDeciduous, Users, MoreVertical, ShieldAlert, MicOff, Mic, U
 import { auth } from '../../firebase';
 import { UserProfileModal } from '../modals/UserProfileModal';
 import { EditCommunityModal } from '../modals/EditCommunityModal';
+import { GHGReportModal } from '../modals/GHGReportModal';
 import { useAppRefresh } from '../../hooks/useAppRefresh';
 
 interface Member {
@@ -36,6 +37,7 @@ export function CommunityDashboard() {
   const [isLeaving, setIsLeaving] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<Member | null>(null);
   const [isEditingCommunity, setIsEditingCommunity] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [muteMenuId, setMuteMenuId] = useState<string | null>(null);
@@ -338,6 +340,15 @@ export function CommunityDashboard() {
         >
           {isLeaving ? 'Processing...' : (isAdmin && members.length > 1) ? 'Transfer admin to leave' : (isAdmin && members.length === 1) ? 'Delete Community' : 'Leave Community'}
         </button>
+
+        {isAdmin && (
+          <button 
+            onClick={() => setIsReportModalOpen(true)}
+            className="w-full mt-4 py-4 rounded-[1.5rem] font-bold transition-all text-[15px] bg-slate-900 text-white shadow-[0_8px_30px_rgb(0,0,0,0.08)] hover:bg-black active:scale-[0.98] flex items-center justify-center"
+          >
+            ✨ Generate GHG Scope 3 Report
+          </button>
+        )}
       </div>
 
       {/* Profile Modal */}
@@ -382,6 +393,13 @@ export function CommunityDashboard() {
           </div>
         </div>
       )}
+
+      {/* GHG Report Modal */}
+      <GHGReportModal 
+        isOpen={isReportModalOpen} 
+        onClose={() => setIsReportModalOpen(false)} 
+        guildId={activeGuildId} 
+      />
     </div>
   );
 }

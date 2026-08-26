@@ -138,6 +138,12 @@ export const AuthModal: React.FC = () => {
 
       if (isLogin) {
         userCredential = await signInWithEmailAndPassword(auth, email, password);
+        
+        // Sync session_id to backend on explicit login
+        await apiClient(`/users/${userCredential.user.uid}`, {
+          method: 'POST',
+          body: JSON.stringify({}) // Empty body; session_id is pulled from X-Session-ID header
+        });
       } else {
         if (usernameStatus === 'taken') {
           setError('Username is already taken!');

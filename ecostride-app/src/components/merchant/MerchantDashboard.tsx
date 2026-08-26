@@ -383,7 +383,7 @@ export const MerchantDashboard: React.FC = () => {
               )}
               <button 
                 onClick={() => setActiveView('merchant_onboarding')}
-                className="p-1 sm:p-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl shadow-md shadow-emerald-900/10 active:scale-95 transition-all flex items-center gap-1 text-xs font-bold px-2 sm:px-2.5"
+                className="hidden p-1 sm:p-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl shadow-md shadow-emerald-900/10 active:scale-95 transition-all items-center gap-1 text-xs font-bold px-2 sm:px-2.5"
                 title="Create New Store"
               >
                 <Plus size={14} />

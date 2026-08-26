@@ -16,6 +16,10 @@
 		"classpath": "com.capacitorjs.plugins.pushnotifications.PushNotificationsPlugin"
 	},
 	{
+		"pkg": "@capacitor/share",
+		"classpath": "com.capacitorjs.plugins.share.SharePlugin"
+	},
+	{
 		"pkg": "@capgo/background-geolocation",
 		"classpath": "com.capgo.capacitor_background_geolocation.BackgroundGeolocation"
 	}
