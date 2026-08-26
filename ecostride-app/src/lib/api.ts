@@ -18,6 +18,15 @@ export const getApiBaseUrl = () => {
   return envUrl;
 };
 
+export const getSessionId = () => {
+  let sid = localStorage.getItem('ecostride_session_id');
+  if (!sid) {
+    sid = crypto.randomUUID();
+    localStorage.setItem('ecostride_session_id', sid);
+  }
+  return sid;
+};
+
 export const apiClient = async (endpoint: string, options: RequestInit = {}) => {
   const API_BASE_URL = getApiBaseUrl();
   const auth = getAuth();
@@ -28,6 +37,8 @@ export const apiClient = async (endpoint: string, options: RequestInit = {}) => 
   if (!(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
+  
+  headers.set('X-Session-ID', getSessionId());
   
   if (user) {
     const token = await user.getIdToken();
@@ -41,12 +52,19 @@ export const apiClient = async (endpoint: string, options: RequestInit = {}) => 
 
   if (!response.ok) {
     let errorMsg = `HTTP Error ${response.status} ${response.statusText}`;
+    let isSessionExpired = false;
     try {
       const errorData = await response.json();
+      if (errorData.error === 'SESSION_EXPIRED' || errorData.error === '401_SESSION_EXPIRED') isSessionExpired = true;
       errorMsg = errorData.error || errorMsg;
     } catch (e) {
       // Ignore JSON parse errors
     }
+    
+    if (response.status === 401 && isSessionExpired) {
+      window.dispatchEvent(new Event('session_expired'));
+    }
+    
     throw new Error(errorMsg);
   }
 

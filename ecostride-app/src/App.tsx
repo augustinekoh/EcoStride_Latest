@@ -161,6 +161,16 @@ function App() {
   }, [isDarkMode]);
 
   useEffect(() => {
+    const handleSessionExpired = () => {
+      alert("You have been logged out because your account was accessed on another device.");
+      auth.signOut();
+      localStorage.removeItem('ecostride_session_id');
+    };
+    window.addEventListener('session_expired', handleSessionExpired);
+    return () => window.removeEventListener('session_expired', handleSessionExpired);
+  }, []);
+
+  useEffect(() => {
     // Passive cleanup of expired trees and signposts
     const cleanup = async () => {
       try {
@@ -375,7 +385,7 @@ function App() {
             }
             } catch (e: any) {
               console.error("Failed to fetch user data", e);
-              if (e.message && (e.message.includes('401') || e.message.includes('403'))) {
+              if (e.message && (e.message.includes('401') || e.message.includes('403') || e.message.includes('SESSION_EXPIRED'))) {
                 auth.signOut();
                 setUser(null, null);
                 useUserStore.getState().clearUser();
