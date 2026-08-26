@@ -937,7 +937,7 @@ app.post('/api/walks/:walkId/end', async (c) => {
   const reportedDistance = body.distance_km || 0;
   const cheatDistance = body.cheat_distance_km || 0;
   const spoofedCount = body.spoofed_count || 0;
-  const steps = body.steps || 0;
+
   const activityTime = body.activity_time_minutes || {};
 
   try { await c.env.DB.prepare('ALTER TABLE walk_sessions ADD COLUMN cheat_distance_km REAL DEFAULT 0').run(); } catch (e) { }
@@ -967,8 +967,6 @@ app.post('/api/walks/:walkId/end', async (c) => {
 
   // Multi-Sensor Deterministic Classification
   const speedKmh = durationSec > 0 ? (totalDistanceKm) / (durationSec / 3600) : 0;
-  const cadence = durationSec > 0 ? (steps / durationSec) * 60 : 0;
-  const stepRatio = distanceMeters > 0 ? (steps / distanceMeters) : 0;
 
   let validatedDistance = reportedDistance;
 
@@ -980,14 +978,7 @@ app.post('/api/walks/:walkId/end', async (c) => {
     coinsAwarded = 0;
   } 
   // 2. Zero Tolerance: Phone Shaker
-  else if (steps > 100 && distanceMeters < 15) {
-    // Or if stepRatio is abnormally high (> 15 steps per meter) with zero speed
-    penaltyStatus = 'CHEATER_SHAKER';
-    penaltyReason = 'High step count with almost no physical displacement (Phone Shaker).';
-    validatedDistance = 0;
-    coinsAwarded = 0;
-  }
-  // 3. Vehicle / Transport Classification
+  // Removed CHEATER_SHAKER due to pedometer removal.
   const totalDistance = validatedDistance + cheatDistance;
   
   if (cheatDistance <= 0) {
@@ -1017,13 +1008,12 @@ app.post('/api/walks/:walkId/end', async (c) => {
   }
 
   await c.env.DB.prepare(
-    'UPDATE walk_sessions SET ended_at = ?, distance_km = ?, cheat_distance_km = ?, spoofed_count = ?, steps = ?, activity_time_minutes = ?, penalty_status = ?, status = ?, coins_awarded = ?, updated_at = ? WHERE id = ?'
+    'UPDATE walk_sessions SET ended_at = ?, distance_km = ?, cheat_distance_km = ?, spoofed_count = ?, activity_time_minutes = ?, penalty_status = ?, status = ?, coins_awarded = ?, updated_at = ? WHERE id = ?'
   ).bind(
     endedAt.toISOString(),
     validatedDistance,
     cheatDistance,
     spoofedCount,
-    steps,
     JSON.stringify(activityTime),
     penaltyStatus,
     'completed',

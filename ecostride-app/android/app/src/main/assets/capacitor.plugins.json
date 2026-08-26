@@ -18,9 +18,5 @@
 	{
 		"pkg": "@capgo/background-geolocation",
 		"classpath": "com.capgo.capacitor_background_geolocation.BackgroundGeolocation"
-	},
-	{
-		"pkg": "@capgo/capacitor-pedometer",
-		"classpath": "app.capgo.pedometer.CapacitorPedometerPlugin"
 	}
 ]

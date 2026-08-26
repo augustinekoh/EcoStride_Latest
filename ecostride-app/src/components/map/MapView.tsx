@@ -194,11 +194,17 @@ export const MapView: React.FC = () => {
               const { setCompletedDistanceKm, setCompletedCheatDistanceKm, setCompletedCoins, setPenaltyStatus, setPenaltyReason } = useDemoStore.getState();
               setCompletedDistanceKm(result.distance);
               setCompletedCheatDistanceKm(result.cheatDistance || 0);
-              setCompletedCoins(result.coins);
-              setPenaltyStatus(result.penaltyStatus || '');
+              setPenaltyStatus(result.penaltyStatus || 'NORMAL');
               setPenaltyReason(result.penaltyReason || '');
+              
+              if (result.distance > 0 || (result.cheatDistance && result.cheatDistance > 0)) {
+                setShowReportModal(true);
+              } else {
+                showToast('Walk session ended. No distance was recorded.');
+              }
+            } else {
+              setShowReportModal(true);
             }
-            setShowReportModal(true);
             setActiveRouteGeoJSON(null);
             setDistanceToTarget(null);
             fullRouteGeoJSONRef.current = null;
@@ -1513,11 +1519,17 @@ export const MapView: React.FC = () => {
                 const { setCompletedDistanceKm, setCompletedCheatDistanceKm, setCompletedCoins, setPenaltyStatus, setPenaltyReason } = useDemoStore.getState();
                 setCompletedDistanceKm(result.distance);
                 setCompletedCheatDistanceKm(result.cheatDistance || 0);
-                setCompletedCoins(result.coins);
                 setPenaltyStatus(result.penaltyStatus || 'NORMAL');
                 setPenaltyReason(result.penaltyReason || '');
+                
+                if (result.distance > 0 || (result.cheatDistance && result.cheatDistance > 0)) {
+                  setShowReportModal(true);
+                } else {
+                  showToast('Walk session ended. No distance was recorded.');
+                }
+              } else {
+                setShowReportModal(true);
               }
-              setShowReportModal(true);
               setActiveRouteGeoJSON(null); 
               setDistanceToTarget(null);
               fullRouteGeoJSONRef.current = null;
@@ -1575,14 +1587,21 @@ export const MapView: React.FC = () => {
                   const { setCompletedDistanceKm, setCompletedCheatDistanceKm, setCompletedCoins, setPenaltyStatus, setPenaltyReason } = useDemoStore.getState();
                   setCompletedDistanceKm(result.distance);
                   setCompletedCheatDistanceKm(result.cheatDistance || 0);
-                  setCompletedCoins(result.coins);
                   setPenaltyStatus(result.penaltyStatus || 'NORMAL');
                   setPenaltyReason(result.penaltyReason || '');
+
+                  if (result.distance > 0 || (result.cheatDistance && result.cheatDistance > 0)) {
+                    setShowReportModal(true);
+                  } else {
+                    showToast('Walk session ended. No distance was recorded.');
+                  }
+                } else {
+                  setShowReportModal(true);
                 }
               } else {
                 setCompletedDistanceKm(walkedDistanceKm);
+                setShowReportModal(true);
               }
-              setShowReportModal(true);
               setIsFreeWalk(false);
               setWalkedDistanceKm(0);
               // reset demo mode state if needed

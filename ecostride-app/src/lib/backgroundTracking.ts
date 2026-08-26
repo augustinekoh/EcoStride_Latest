@@ -1,5 +1,4 @@
 import { BackgroundGeolocation, type Location, type CallbackError } from '@capgo/background-geolocation';
-import { CapacitorPedometer, type MeasurementEvent } from '@capgo/capacitor-pedometer';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 import * as turf from '@turf/turf';
@@ -14,7 +13,6 @@ const PREF_NAV_TARGET = 'walk_nav_target';
 const PREF_CHEAT_DISTANCE = 'walk_cheat_distance_km';
 const PREF_SPOOFED_COUNT = 'walk_spoofed_count';
 const PREF_LAST_TIME = 'walk_last_time';
-const PREF_STEPS = 'walk_steps';
 
 export interface NavTarget {
   id?: string;
@@ -27,7 +25,7 @@ export interface NavTarget {
 // MAX_ACCURACY_METERS: We set this to 150m to ensure GPS points are reasonably accurate.
 const MAX_ACCURACY_METERS = 150;
 
-let pedometerListener: PluginListenerHandle | null = null;
+
 let latestSpeedKmh = 0;
 
 export async function getCurrentSpeedKmh(): Promise<number> {
@@ -36,16 +34,6 @@ export async function getCurrentSpeedKmh(): Promise<number> {
 
 export async function startWalkSession(target?: NavTarget): Promise<string | null> {
   try {
-    // 0. Anti-Cheat: Pedometer Permissions (Foreground & Background)
-    try {
-      let perm = await CapacitorPedometer.checkPermissions();
-      if (perm.activityRecognition !== 'granted') {
-        perm = await CapacitorPedometer.requestPermissions();
-      }
-    } catch (e) {
-      console.warn('Pedometer permission check failed, continuing without it.', e);
-    }
-
     // 1. Call backend to start
     const res = await apiClient('/walks/start', { method: 'POST' });
     if (!res.walkId) throw new Error('Failed to start walk on backend');
@@ -62,36 +50,17 @@ export async function startWalkSession(target?: NavTarget): Promise<string | nul
     await Preferences.remove({ key: PREF_CHEAT_DISTANCE });
     await Preferences.remove({ key: PREF_SPOOFED_COUNT });
     await Preferences.remove({ key: PREF_LAST_TIME });
-    await Preferences.remove({ key: PREF_STEPS });
-
     await Preferences.set({ key: PREF_WALK_ID, value: walkId });
     await Preferences.set({ key: PREF_START_TIME, value: res.startedAt });
     await Preferences.set({ key: PREF_DISTANCE, value: '0' });
     await Preferences.set({ key: PREF_CHEAT_DISTANCE, value: '0' });
     await Preferences.set({ key: PREF_SPOOFED_COUNT, value: '0' });
     await Preferences.set({ key: PREF_LAST_TIME, value: Date.now().toString() });
-    await Preferences.set({ key: PREF_STEPS, value: '0' });
 
     if (target) {
       await Preferences.set({ key: PREF_NAV_TARGET, value: JSON.stringify(target) });
     }
 
-    // 2.5 Start Pedometer
-    try {
-      if (pedometerListener) {
-        await pedometerListener.remove();
-      }
-      pedometerListener = await CapacitorPedometer.addListener('measurement', async (event: MeasurementEvent) => {
-        if (event.numberOfSteps !== undefined) {
-          // Capgo Pedometer often returns absolute steps during the session. 
-          // We will just store the latest value reported.
-          await Preferences.set({ key: PREF_STEPS, value: event.numberOfSteps.toString() });
-        }
-      });
-      await CapacitorPedometer.startMeasurementUpdates();
-    } catch (e) {
-      console.warn('Failed to start pedometer, device might not support it:', e);
-    }
 
     // 3. Configure and start Capgo tracking
     // NOTE: Capgo expects a sync (void) callback, not async.
@@ -217,21 +186,6 @@ export async function resumeWalkSession(): Promise<boolean> {
     const walkIdObj = await Preferences.get({ key: PREF_WALK_ID });
     if (!walkIdObj.value) return false;
 
-    // 1. Restart Pedometer
-    try {
-      if (pedometerListener) {
-        await pedometerListener.remove();
-      }
-      pedometerListener = await CapacitorPedometer.addListener('measurement', async (event: MeasurementEvent) => {
-        if (event.numberOfSteps !== undefined) {
-          await Preferences.set({ key: PREF_STEPS, value: event.numberOfSteps.toString() });
-        }
-      });
-      await CapacitorPedometer.startMeasurementUpdates();
-    } catch (e) {
-      console.warn('Failed to resume pedometer:', e);
-    }
-
     // 2. Restart Capgo Background Geolocation watcher
     await BackgroundGeolocation.start(
       {
@@ -352,13 +306,11 @@ export async function stopWalkSession(): Promise<{ distance: number, cheatDistan
     const distanceStr = await Preferences.get({ key: PREF_DISTANCE });
     const cheatDistanceStr = await Preferences.get({ key: PREF_CHEAT_DISTANCE });
     const spoofedCountStr = await Preferences.get({ key: PREF_SPOOFED_COUNT });
-    const stepsStr = await Preferences.get({ key: PREF_STEPS });
 
     if (!walkIdObj.value) {
       console.log('No active walk session to stop');
       // Still attempt to stop native service in case it's orphaned
       await BackgroundGeolocation.stop().catch(() => { });
-      await CapacitorPedometer.stopMeasurementUpdates().catch(() => { });
       return null;
     }
 
@@ -366,7 +318,6 @@ export async function stopWalkSession(): Promise<{ distance: number, cheatDistan
     const distance = parseFloat(distanceStr.value || '0');
     const cheatDistance = parseFloat(cheatDistanceStr.value || '0');
     const spoofedCount = parseInt(spoofedCountStr.value || '0', 10);
-    const steps = parseInt(stepsStr.value || '0', 10);
 
     // 2. Finalize on backend FIRST (before stopping native service)
     // Send full telemetry to Cloudflare AI for final verdict
@@ -376,7 +327,6 @@ export async function stopWalkSession(): Promise<{ distance: number, cheatDistan
         distance_km: distance,
         cheat_distance_km: cheatDistance,
         spoofed_count: spoofedCount,
-        steps: steps,
         activity_time_minutes: { WALKING: 0 } // We can simulate this if needed
       }),
     });
@@ -386,12 +336,7 @@ export async function stopWalkSession(): Promise<{ distance: number, cheatDistan
     }
 
     // 3. Backend succeeded — NOW stop native tracking
-    await BackgroundGeolocation.stop();
-    await CapacitorPedometer.stopMeasurementUpdates();
-    if (pedometerListener) {
-      await pedometerListener.remove();
-      pedometerListener = null;
-    }
+    await BackgroundGeolocation.stop().catch(() => {});
 
     // 4. Clear local state only after everything succeeded
     await Preferences.remove({ key: PREF_WALK_ID });
@@ -403,7 +348,7 @@ export async function stopWalkSession(): Promise<{ distance: number, cheatDistan
     await Preferences.remove({ key: PREF_LAST_LAT });
     await Preferences.remove({ key: PREF_LAST_LNG });
     await Preferences.remove({ key: PREF_NAV_TARGET });
-    await Preferences.remove({ key: PREF_STEPS });
+
 
     return {
       distance: res.distance_km,
