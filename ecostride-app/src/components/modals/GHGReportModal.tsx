@@ -65,26 +65,52 @@ export function GHGReportModal({ isOpen, onClose, guildId }: GHGReportModalProps
       .catch(() => alert('Failed to copy.'));
   };
 
-  const handleDownloadMD = () => {
+  const handleDownloadMD = async () => {
     if (!reportData) return;
-    const blob = new Blob([reportData.reportMarkdown], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `GHG_Scope3_Report_${new Date().toISOString().split('T')[0]}.md`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const fileName = `GHG_Scope3_Report_${new Date().toISOString().split('T')[0]}.md`;
+    
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
+        const { Share } = await import('@capacitor/share');
+        
+        const savedFile = await Filesystem.writeFile({
+          path: fileName,
+          data: reportData.reportMarkdown,
+          directory: Directory.Cache,
+          encoding: Encoding.UTF8
+        });
+        
+        await Share.share({
+          title: fileName,
+          url: savedFile.uri,
+          dialogTitle: 'Download Markdown'
+        });
+      } catch (err) {
+        console.error(err);
+        alert('Failed to export Markdown file on mobile.');
+      }
+    } else {
+      const blob = new Blob([reportData.reportMarkdown], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
   };
 
   const handleDownloadPDF = async () => {
     if (!reportRef.current) return;
     try {
       const element = reportRef.current;
+      const fileName = `GHG_Scope3_Report_${new Date().toISOString().split('T')[0]}.pdf`;
       const opt = {
         margin:       10,
-        filename:     `GHG_Scope3_Report_${new Date().toISOString().split('T')[0]}.pdf`,
+        filename:     fileName,
         image:        { type: 'jpeg' as const, quality: 0.98 },
         html2canvas:  { scale: 2 },
         jsPDF:        { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
@@ -94,23 +120,30 @@ export function GHGReportModal({ isOpen, onClose, guildId }: GHGReportModalProps
         // Native Export Flow
         // @ts-ignore
         const pdfWorker = html2pdf().set(opt).from(element).output('datauristring');
-        const pdfBase64 = await pdfWorker;
+        const pdfBase64DataUri = await pdfWorker;
+        const base64Data = pdfBase64DataUri.split(',')[1];
         
-        // Dynamically import Capacitor Share to avoid breaking if not installed
+        const { Filesystem, Directory } = await import('@capacitor/filesystem');
         const { Share } = await import('@capacitor/share');
         
-        // On Android, we need to save the file first using Filesystem before sharing,
-        // OR we can just use Web Share API for Base64, but typically Filesystem is required.
-        // Since we want to avoid native plugins as much as possible, let's try direct share if supported,
-        // otherwise notify the user.
-        alert('PDF generated! Please use the Web Version to download files, or use the Copy Text button on mobile.');
+        const savedFile = await Filesystem.writeFile({
+          path: fileName,
+          data: base64Data,
+          directory: Directory.Cache
+        });
+        
+        await Share.share({
+          title: fileName,
+          url: savedFile.uri,
+          dialogTitle: 'Export PDF'
+        });
       } else {
         // Web Export Flow
         html2pdf().set(opt).from(element).save();
       }
     } catch (err) {
       console.error(err);
-      alert('Failed to generate PDF. Please ensure html2pdf.js is installed.');
+      alert('Failed to generate or export PDF.');
     }
   };
 
@@ -240,20 +273,20 @@ export function GHGReportModal({ isOpen, onClose, guildId }: GHGReportModalProps
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div 
                 ref={reportRef} 
-                className="p-10 border rounded-2xl shadow-sm"
+                className="p-5 sm:p-10 border rounded-2xl shadow-sm"
                 style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', color: '#334155', fontFamily: 'Arial, sans-serif' }}
               >
                 {/* Professional Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '3px solid #10b981', paddingBottom: '20px', marginBottom: '24px' }}>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end border-b-[3px] border-emerald-500 pb-4 sm:pb-5 mb-5 sm:mb-6 gap-3 sm:gap-4">
                   <div>
-                    <h2 style={{ margin: 0, color: '#0f172a', fontSize: '28px', fontWeight: 'bold' }}>EcoStride</h2>
-                    <p style={{ margin: '4px 0 0 0', color: '#10b981', fontWeight: 'bold', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '1px' }}>Sustainability Report</p>
+                    <h2 className="m-0 text-slate-900 text-2xl sm:text-[28px] font-bold">EcoStride</h2>
+                    <p className="m-0 mt-1 text-emerald-500 font-bold text-[11px] sm:text-[14px] uppercase tracking-widest">Sustainability Report</p>
                   </div>
-                  <div style={{ textAlign: 'right', fontSize: '13px', color: '#64748b' }}>
-                    <p style={{ margin: '0 0 4px 0' }}><strong>Period:</strong> {new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}</p>
-                    <p style={{ margin: '0 0 4px 0' }}><strong>Generated:</strong> {new Date().toLocaleDateString()}</p>
-                    <p style={{ margin: '0 0 4px 0' }}><strong>Community ID:</strong> {guildId}</p>
-                    <p style={{ margin: 0 }}><strong>Document ID:</strong> {reportData.reportId.split('-')[2] || 'N/A'}</p>
+                  <div className="text-left sm:text-right text-[11px] sm:text-[13px] text-slate-500">
+                    <p className="m-0 mb-1"><strong>Period:</strong> {new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}</p>
+                    <p className="m-0 mb-1"><strong>Generated:</strong> {new Date().toLocaleDateString()}</p>
+                    <p className="m-0 mb-1"><strong>Community ID:</strong> {guildId}</p>
+                    <p className="m-0"><strong>Document ID:</strong> {reportData.reportId.split('-')[2] || 'N/A'}</p>
                   </div>
                 </div>
 
@@ -295,24 +328,24 @@ export function GHGReportModal({ isOpen, onClose, guildId }: GHGReportModalProps
 
         {/* Footer Actions */}
         {reportData && (
-          <div className="p-4 bg-white border-t border-slate-100 flex items-center justify-end space-x-3">
+          <div className="p-3 sm:p-4 bg-white border-t border-slate-100 flex flex-row flex-wrap items-center justify-center sm:justify-end gap-2">
             <button 
               onClick={handleCopy}
-              className="px-4 py-2 flex items-center text-slate-600 hover:bg-slate-100 rounded-lg font-bold text-sm transition-colors"
+              className="px-3 py-2 flex-1 sm:flex-none flex items-center justify-center text-slate-600 hover:bg-slate-100 rounded-lg font-bold text-xs sm:text-sm transition-colors whitespace-nowrap"
             >
-              <Copy size={16} className="mr-2" /> Copy Text
+              <Copy size={16} className="mr-1 sm:mr-2" /> Copy<span className="hidden sm:inline">&nbsp;Text</span>
             </button>
             <button 
               onClick={handleDownloadMD}
-              className="px-4 py-2 flex items-center text-slate-600 hover:bg-slate-100 rounded-lg font-bold text-sm transition-colors"
+              className="px-3 py-2 flex-1 sm:flex-none flex items-center justify-center text-slate-600 hover:bg-slate-100 rounded-lg font-bold text-xs sm:text-sm transition-colors whitespace-nowrap"
             >
-              <Download size={16} className="mr-2" /> Download .md
+              <Download size={16} className="mr-1 sm:mr-2" /> <span className="hidden sm:inline">Download </span>.md
             </button>
             <button 
               onClick={handleDownloadPDF}
-              className="px-4 py-2 flex items-center bg-emerald-500 text-white hover:bg-emerald-600 rounded-lg font-bold text-sm transition-colors"
+              className="px-3 py-2 flex-1 sm:flex-none flex items-center justify-center bg-emerald-500 text-white hover:bg-emerald-600 rounded-lg font-bold text-xs sm:text-sm transition-colors whitespace-nowrap"
             >
-              <Download size={16} className="mr-2" /> Export PDF
+              <Download size={16} className="mr-1 sm:mr-2" /> <span className="hidden sm:inline">Export </span>PDF
             </button>
           </div>
         )}
