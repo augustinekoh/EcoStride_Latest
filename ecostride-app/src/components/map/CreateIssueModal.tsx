@@ -73,22 +73,33 @@ export const CreateIssueModal: React.FC<Props> = ({ isOpen, onClose, currentLoca
     try {
       let uploadedUrls: string[] = [];
       
-      // Upload images using direct multipart endpoint
+      // Upload images using presigned URLs directly to R2
       if (images.length > 0) {
         for (const img of images) {
-          const formData = new FormData();
-          formData.append('file', img);
+          // 1. Get Presigned URL from backend (authenticated)
+          const ext = img.name.split('.').pop() || 'webp';
+          const preRes = await apiClient(`/issues/presigned-url?ext=${ext}`);
           
-          const uploadRes = await apiClient('/issues/images', {
-            method: 'POST',
-            body: formData
-          });
-          
-          if (!uploadRes.success || !uploadRes.url) {
-            throw new Error(uploadRes.error || 'Failed to upload photo evidence');
+          if (!preRes.success || !preRes.uploadUrl) {
+            throw new Error(preRes.error || 'Failed to get upload authorization');
           }
           
-          uploadedUrls.push(uploadRes.url);
+          // 2. Direct PUT to R2 (or local-upload proxy in dev)
+          const buffer = await img.arrayBuffer();
+          const putRes = await fetch(preRes.uploadUrl, {
+            method: 'PUT',
+            body: buffer,
+            headers: {
+              'Content-Type': img.type || 'image/webp'
+            }
+          });
+          
+          if (!putRes.ok) {
+            throw new Error('Failed to upload image to storage');
+          }
+          
+          // 3. Collect the public URL
+          uploadedUrls.push(preRes.publicUrl);
         }
       }
 

@@ -127,6 +127,7 @@ app.use('/api/*', async (c, next) => {
     c.req.path === '/api/check-username' ||
     c.req.path.startsWith('/api/authorities/verify-token') ||
     c.req.path.startsWith('/api/chat/community/') ||
+    c.req.path.startsWith('/api/issues/local-upload/') ||
     (c.req.path.startsWith('/api/guilds') && c.req.method === 'GET')
   ) {
     return next();
@@ -1265,27 +1266,65 @@ app.post('/api/signposts/:id/like', async (c) => {
   return c.json({ success: true, likes: newLikes, likedBy });
 });
 
-// POST /api/issues/images (Direct Multipart Upload for Issue Photos)
-app.post('/api/issues/images', async (c) => {
+// GET /api/issues/presigned-url (Generate R2 Presigned PUT URL for Issue Photos)
+app.get('/api/issues/presigned-url', async (c) => {
   const jwtUser = c.get('user') as any;
   if (!jwtUser || !jwtUser.sub) return c.json({ error: 'Unauthorized' }, 401);
 
-  const formData = await c.req.parseBody();
-  const file = formData['file'] as File;
-  if (!file) return c.json({ error: 'No file provided' }, 400);
-
-  const extension = file.name.split('.').pop() || 'webp';
+  const extension = c.req.query('ext') || 'webp';
   const objectKey = `issues/${jwtUser.sub}-${Date.now()}.${extension}`;
-
-  const arrayBuffer = await file.arrayBuffer();
-  await c.env.AVATARS_BUCKET.put(objectKey, arrayBuffer, {
-    httpMetadata: { contentType: file.type || 'image/webp' }
-  });
-
   const url = new URL(c.req.url);
   const publicUrl = `${url.origin}/r2/${objectKey}`;
 
-  return c.json({ success: true, url: publicUrl, objectKey });
+  // Local dev: return a local Worker endpoint instead of a real R2 presigned URL
+  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname.startsWith('192.168.')) {
+    return c.json({
+      success: true,
+      uploadUrl: `${url.origin}/api/issues/local-upload/${encodeURIComponent(objectKey)}`,
+      publicUrl: publicUrl,
+      objectKey: objectKey
+    });
+  }
+
+  if (!c.env.R2_ACCOUNT_ID || !c.env.R2_ACCESS_KEY_ID || !c.env.R2_SECRET_ACCESS_KEY) {
+    return c.json({ error: 'R2 API Credentials not configured' }, 500);
+  }
+
+  const aws = new AwsClient({
+    accessKeyId: c.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: c.env.R2_SECRET_ACCESS_KEY,
+  });
+
+  const endpoint = new URL(`https://${c.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/ecostride/${objectKey}`);
+  endpoint.searchParams.set('X-Amz-Expires', '60');
+
+  try {
+    const signed = await aws.sign(endpoint, {
+      method: 'PUT',
+      aws: { signQuery: true }
+    });
+
+    return c.json({
+      success: true,
+      uploadUrl: signed.url,
+      publicUrl: publicUrl,
+      objectKey: objectKey
+    });
+  } catch (err: any) {
+    console.error('Error generating presigned URL:', err);
+    return c.json({ error: 'Failed to generate upload URL' }, 500);
+  }
+});
+
+// PUT /api/issues/local-upload/* (Local dev: simulate R2 presigned PUT via Worker)
+app.put('/api/issues/local-upload/*', async (c) => {
+  const url = new URL(c.req.url);
+  const key = decodeURIComponent(url.pathname.replace('/api/issues/local-upload/', ''));
+  const buffer = await c.req.arrayBuffer();
+  await c.env.AVATARS_BUCKET.put(key, buffer, {
+    httpMetadata: { contentType: c.req.header('Content-Type') || 'image/webp' }
+  });
+  return c.text('OK');
 });
 
 // POST /api/issues
