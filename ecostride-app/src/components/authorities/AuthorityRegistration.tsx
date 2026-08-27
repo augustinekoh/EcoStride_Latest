@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { User, Shield, Briefcase, Mail, KeyRound, Loader2, ImagePlus, MapPin } from 'lucide-react';
-import { apiClient } from '../../lib/api';
+import { apiClient, getApiBaseUrl } from '../../lib/api';
 import { auth } from '../../firebase';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useUserStore } from '../../stores/useUserStore';
@@ -68,7 +68,7 @@ export const AuthorityRegistration: React.FC = () => {
       const timer = setTimeout(async () => {
         try {
           // Note: using direct API url for unauthenticated check
-          const res = await fetch(`https://ecostride-backend.ecostride0.workers.dev/api/check-username?username=${encodeURIComponent(username)}`);
+          const res = await fetch(`${getApiBaseUrl()}/check-username?username=${encodeURIComponent(username)}`);
           const data = await res.json();
           setUsernameStatus(data.available ? 'available' : 'taken');
         } catch (e) {

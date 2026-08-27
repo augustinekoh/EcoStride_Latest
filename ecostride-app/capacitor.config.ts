@@ -5,12 +5,12 @@ const config: CapacitorConfig = {
   appName: 'EcoStride',
   webDir: 'dist',
   android: {
-    allowMixedContent: false,
+    allowMixedContent: true,
     useLegacyBridge: true
   },
   server: {
-    cleartext: false,
-    androidScheme: 'https'
+    cleartext: true,
+    androidScheme: 'http'
   },
   plugins: {
     PushNotifications: {
