@@ -6,6 +6,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { apiClient } from '../../lib/api';
 import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 
 interface GHGReportModalProps {
   isOpen: boolean;
@@ -25,6 +27,7 @@ export function GHGReportModal({ isOpen, onClose, guildId }: GHGReportModalProps
   const [isLoading, setIsLoading] = useState(false);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isPdfGenerating, setIsPdfGenerating] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
 
   if (!isOpen) return null;
@@ -71,9 +74,6 @@ export function GHGReportModal({ isOpen, onClose, guildId }: GHGReportModalProps
     
     if (Capacitor.isNativePlatform()) {
       try {
-        const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
-        const { Share } = await import('@capacitor/share');
-        
         const savedFile = await Filesystem.writeFile({
           path: fileName,
           data: reportData.reportMarkdown,
@@ -86,9 +86,9 @@ export function GHGReportModal({ isOpen, onClose, guildId }: GHGReportModalProps
           url: savedFile.uri,
           dialogTitle: 'Download Markdown'
         });
-      } catch (err) {
+      } catch (err: any) {
         console.error(err);
-        alert('Failed to export Markdown file on mobile.');
+        alert(`Error exporting MD: ${err?.message || JSON.stringify(err) || String(err)}`);
       }
     } else {
       const blob = new Blob([reportData.reportMarkdown], { type: 'text/markdown' });
@@ -106,6 +106,10 @@ export function GHGReportModal({ isOpen, onClose, guildId }: GHGReportModalProps
   const handleDownloadPDF = async () => {
     if (!reportRef.current) return;
     try {
+      setIsPdfGenerating(true);
+      // Wait for React to re-render the DOM with desktop classes
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       const element = reportRef.current;
       const fileName = `GHG_Scope3_Report_${new Date().toISOString().split('T')[0]}.pdf`;
       const opt = {
@@ -123,9 +127,6 @@ export function GHGReportModal({ isOpen, onClose, guildId }: GHGReportModalProps
         const pdfBase64DataUri = await pdfWorker;
         const base64Data = pdfBase64DataUri.split(',')[1];
         
-        const { Filesystem, Directory } = await import('@capacitor/filesystem');
-        const { Share } = await import('@capacitor/share');
-        
         const savedFile = await Filesystem.writeFile({
           path: fileName,
           data: base64Data,
@@ -141,9 +142,11 @@ export function GHGReportModal({ isOpen, onClose, guildId }: GHGReportModalProps
         // Web Export Flow
         html2pdf().set(opt).from(element).save();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Failed to generate or export PDF.');
+      alert(`Error generating PDF: ${err?.message || JSON.stringify(err) || String(err)}`);
+    } finally {
+      setIsPdfGenerating(false);
     }
   };
 
@@ -277,12 +280,19 @@ export function GHGReportModal({ isOpen, onClose, guildId }: GHGReportModalProps
                 style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', color: '#334155', fontFamily: 'Arial, sans-serif' }}
               >
                 {/* Professional Header */}
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end border-b-[3px] border-emerald-500 pb-4 sm:pb-5 mb-5 sm:mb-6 gap-3 sm:gap-4">
+                <div 
+                  className={
+                    isPdfGenerating 
+                      ? "flex flex-row justify-between items-end border-b-[3px] pb-5 mb-6 gap-4" 
+                      : "flex flex-col sm:flex-row justify-between items-start sm:items-end border-b-[3px] pb-4 sm:pb-5 mb-5 sm:mb-6 gap-3 sm:gap-4"
+                  }
+                  style={{ borderBottomColor: '#10b981' }}
+                >
                   <div>
-                    <h2 className="m-0 text-slate-900 text-2xl sm:text-[28px] font-bold">EcoStride</h2>
-                    <p className="m-0 mt-1 text-emerald-500 font-bold text-[11px] sm:text-[14px] uppercase tracking-widest">Sustainability Report</p>
+                    <h2 className={isPdfGenerating ? "m-0 text-[28px] font-bold" : "m-0 text-2xl sm:text-[28px] font-bold"} style={{ color: '#0f172a' }}>EcoStride</h2>
+                    <p className={isPdfGenerating ? "m-0 mt-1 font-bold text-[14px] uppercase tracking-widest" : "m-0 mt-1 font-bold text-[11px] sm:text-[14px] uppercase tracking-widest"} style={{ color: '#10b981' }}>Sustainability Report</p>
                   </div>
-                  <div className="text-left sm:text-right text-[11px] sm:text-[13px] text-slate-500">
+                  <div className={isPdfGenerating ? "text-right text-[13px]" : "text-left sm:text-right text-[11px] sm:text-[13px]"} style={{ color: '#64748b' }}>
                     <p className="m-0 mb-1"><strong>Period:</strong> {new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}</p>
                     <p className="m-0 mb-1"><strong>Generated:</strong> {new Date().toLocaleDateString()}</p>
                     <p className="m-0 mb-1"><strong>Community ID:</strong> {guildId}</p>
