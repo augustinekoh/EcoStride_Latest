@@ -63,10 +63,10 @@ jobs:
           java-version: '17'
 
       # ── 3. Setup Node.js ───────────────────────────────────────
-      - name: Set up Node.js 20
+      - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: ecostride-app/package-lock.json
 
