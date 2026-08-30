@@ -310,9 +310,9 @@ export const AuthorityIssueDetailModal: React.FC<Props> = ({ isOpen, onClose, is
           <h2 className="text-slate-800 font-bold text-2xl mt-1 leading-tight pr-10">{issue.title}</h2>
 
           {/* Status & Date */}
-          <div className="flex items-center gap-4 mt-4">
+          <div className="flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap hide-scrollbar w-full mt-4">
             <div 
-              className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+              className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 shrink-0 ${
                 issue.takedown_status === 'taken-down' ? 'bg-red-100 text-red-800' :
                 issue.takedown_status === 'requested' ? 'bg-orange-100 text-orange-800' :
                 issue.status === 'resolved' ? 'bg-emerald-100 text-emerald-800' :
@@ -333,7 +333,7 @@ export const AuthorityIssueDetailModal: React.FC<Props> = ({ isOpen, onClose, is
 
             {issue.severity && (
               <div 
-                className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 shrink-0 ${
                   issue.severity === 'Critical' ? 'bg-rose-100 text-rose-800' :
                   issue.severity === 'Major' ? 'bg-amber-100 text-amber-800' :
                   'bg-emerald-100 text-emerald-800'
@@ -344,13 +344,13 @@ export const AuthorityIssueDetailModal: React.FC<Props> = ({ isOpen, onClose, is
                   issue.severity === 'Major' ? 'bg-amber-500' :
                   'bg-emerald-500'
                 }`}></span>
-                {issue.severity} Severity
+                {issue.severity}
               </div>
             )}
 
-            <div className="text-[13px] font-semibold text-slate-400 flex items-center gap-1.5">
-              <Clock size={14} />
-              {new Date(issue.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+            <div className="text-[12px] font-semibold text-slate-400 flex items-center gap-1 shrink-0 ml-auto">
+              <Clock size={12} />
+              {new Date(issue.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
             </div>
           </div>
         </div>

@@ -75,6 +75,16 @@ export const CaseReportsView: React.FC = () => {
           ) : (
             <ImageOff className="text-slate-300 dark:text-slate-600" size={24} />
           )}
+          {/* Severity badge overlaid on image */}
+          {issue.severity && (
+            <div className={`absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wide leading-none ${
+              issue.severity === 'Critical' ? 'bg-rose-500 text-white' :
+              issue.severity === 'Major' ? 'bg-amber-500 text-white' :
+              'bg-emerald-500 text-white'
+            }`}>
+              {issue.severity}
+            </div>
+          )}
         </div>
         
         <div className="flex-1 flex flex-col justify-between min-h-[5rem] sm:min-h-[6rem]">

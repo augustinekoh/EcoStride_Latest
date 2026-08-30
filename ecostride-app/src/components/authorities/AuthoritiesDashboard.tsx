@@ -162,7 +162,7 @@ export function AuthoritiesDashboard() {
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 overflow-auto relative pb-24 md:pb-0">
+        <div className="flex-1 flex flex-col relative overflow-hidden">
           <Routes>
             <Route path="/" element={<DashboardHome key={refreshKey} />} />
             <Route path="/map" element={<div className="w-full h-full relative"><MapView /></div>} />

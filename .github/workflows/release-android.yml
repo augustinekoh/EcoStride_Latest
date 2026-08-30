@@ -1,0 +1,171 @@
+# ============================================================
+# EcoStride Android APK — Automated Build & Release
+# ============================================================
+# TRIGGER: Only fires when a tag matching "v*.*.*" is pushed.
+#          Push to any branch WITHOUT a tag → NO build triggered.
+#
+# HOW TO RELEASE:
+#   git tag v1.2.1
+#   git push origin v1.2.1
+#
+# REQUIRED GITHUB SECRETS (Settings → Secrets → Actions):
+#
+#   KEYSTORE_BASE64       — Base64-encoded keystore file
+#   KEY_STORE_PASSWORD    — Keystore password
+#   KEY_ALIAS             — Key alias (e.g. "ecostride")
+#   KEY_PASSWORD          — Key password
+#
+# HOW TO GENERATE A KEYSTORE (one-time, run locally):
+#   keytool -genkeypair \
+#     -v \
+#     -keystore ecostride.keystore \
+#     -keyalg RSA -keysize 2048 \
+#     -validity 10000 \
+#     -alias ecostride \
+#     -dname "CN=EcoStride, OU=Mobile, O=EcoStride, L=Malaysia, S=Johor, C=MY"
+#
+# HOW TO ENCODE KEYSTORE TO BASE64 (run in repo root):
+#   base64 -w 0 ecostride.keystore   # Linux/Mac
+#   [Convert]::ToBase64String([IO.File]::ReadAllBytes("ecostride.keystore"))  # PowerShell
+#
+#   Then add the output string as the KEYSTORE_BASE64 secret.
+#
+# ⚠️  IMPORTANT: Keep ecostride.keystore in a safe place OUTSIDE
+#   the repository. Losing the keystore = users cannot upgrade.
+# ============================================================
+
+name: Build & Release Android APK
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'   # Only v1.0.0, v1.2.3 style tags → triggers build
+
+jobs:
+  build-android:
+    name: Build Signed Android APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # Needed to create GitHub Release
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── 2. Setup Java 17 ───────────────────────────────────────
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # ── 3. Setup Node.js ───────────────────────────────────────
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ecostride-app/package-lock.json
+
+      # ── 4. Cache Gradle ────────────────────────────────────────
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      # ── 5. Install App Dependencies ────────────────────────────
+      - name: Install ecostride-app dependencies
+        working-directory: ecostride-app
+        run: npm ci
+
+      # ── 6. Vite Build (Web Assets) ─────────────────────────────
+      - name: Build Vite web assets
+        working-directory: ecostride-app
+        run: npm run build
+        env:
+          # Add any env vars needed for the build, e.g.:
+          # VITE_MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
+          # VITE_API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          NODE_ENV: production
+
+      # ── 7. Sync Capacitor ──────────────────────────────────────
+      - name: Sync Capacitor Android
+        working-directory: ecostride-app
+        run: npx cap sync android
+
+      # ── 8. Decode Keystore ─────────────────────────────────────
+      - name: Decode signing keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ecostride-app/android/app/ecostride.keystore
+
+      # ── 9. Make Gradlew executable ─────────────────────────────
+      - name: Set Gradle wrapper permissions
+        working-directory: ecostride-app/android
+        run: chmod +x gradlew
+
+      # ── 10. Build Signed Release APK ───────────────────────────
+      - name: Build signed release APK
+        working-directory: ecostride-app/android
+        run: |
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=${{ github.workspace }}/ecostride-app/android/app/ecostride.keystore \
+            -Pandroid.injected.signing.store.password=${{ secrets.KEY_STORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+
+      # ── 11. Locate APK ─────────────────────────────────────────
+      - name: Locate APK file
+        id: find-apk
+        run: |
+          APK_PATH=$(find ecostride-app/android -name "*.apk" -path "*/release/*" | head -1)
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_OUTPUT
+          echo "APK_NAME=EcoStride-${{ github.ref_name }}.apk" >> $GITHUB_OUTPUT
+          # Compute SHA-256 checksum for the release notes
+          SHA256=$(sha256sum "$APK_PATH" | awk '{print $1}')
+          echo "SHA256=$SHA256" >> $GITHUB_OUTPUT
+
+      # ── 12. Rename APK ─────────────────────────────────────────
+      - name: Rename APK to versioned filename
+        run: |
+          cp "${{ steps.find-apk.outputs.APK_PATH }}" "${{ steps.find-apk.outputs.APK_NAME }}"
+
+      # ── 13. Create GitHub Release & Upload APK ─────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "EcoStride ${{ github.ref_name }}"
+          body: |
+            ## EcoStride ${{ github.ref_name }}
+
+            ### Installation
+            1. Download the APK below
+            2. Enable "Install from unknown sources" in Settings
+            3. Open the APK and follow the installation prompt
+            4. Grant **Location (Always)** and **Physical Activity** permissions
+
+            ### SHA-256 Checksum
+            ```
+            SHA256: ${{ steps.find-apk.outputs.SHA256 }}
+            ```
+
+            ### Requirements
+            - Android 8.0 (Oreo) or higher
+            - Location permission (Always Allow) for background walk tracking
+            - Physical Activity permission for step counting
+
+            ---
+            *Built automatically from tag `${{ github.ref_name }}` via GitHub Actions*
+          files: ${{ steps.find-apk.outputs.APK_NAME }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

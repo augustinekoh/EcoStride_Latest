@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS users (
   position TEXT,
   unlocked_badges TEXT,
   read_mails TEXT,
-  showcased_badges TEXT
+  showcased_badges TEXT,
+  session_id TEXT
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);

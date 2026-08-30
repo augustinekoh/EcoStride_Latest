@@ -113,6 +113,16 @@ const AuthorityIssueCard: React.FC<{
           }`}>
             {issue.takedown_status === 'taken-down' ? 'Taken Down' : issue.takedown_status === 'requested' ? 'Takedown Pending' : issue.status === 'pending' ? 'Pending' : issue.status}
           </div>
+
+          {issue.severity && (
+            <div className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider self-start ${
+              issue.severity === 'Critical' ? 'bg-rose-100 text-rose-700 border border-rose-200' :
+              issue.severity === 'Major' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
+              'bg-emerald-100 text-emerald-700 border border-emerald-200'
+            }`}>
+              {issue.severity}
+            </div>
+          )}
           
           {issue.ai_status === 'pending' && (
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
