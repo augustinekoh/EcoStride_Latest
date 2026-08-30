@@ -114,7 +114,11 @@ function PublicApp() {
         )}
         {activeView === 'merchant_dashboard' && <MerchantDashboard />}
         {activeView === 'merchant_onboarding' && <MerchantOnboardingForm />}
-        {activeView === 'group' && <SocialRouter />}
+        {activeView === 'group' && (
+          <ErrorBoundary>
+            <SocialRouter />
+          </ErrorBoundary>
+        )}
         {activeView === 'cases' && <CaseReportsView />}
       </PullToRefresh>
     </div>

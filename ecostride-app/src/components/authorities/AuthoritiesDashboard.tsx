@@ -8,6 +8,7 @@ import { AuthorityIssuesView } from './views/AuthorityIssuesView';
 import { AuthoritySettingsView } from './views/AuthoritySettingsView';
 import { apiClient } from '../../lib/api';
 import { useMailStore } from '../../stores/useMailStore';
+import { useUserStore } from '../../stores/useUserStore';
 
 export function AuthoritiesDashboard() {
   const location = useLocation();
@@ -17,9 +18,12 @@ export function AuthoritiesDashboard() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   const { mails, readMails } = useMailStore();
+  const { authorityUnreadCount } = useUserStore();
 
   const unreadCount = (mails || []).filter(m => !(readMails || []).includes(m.id)).length;
   const hasUnread = unreadCount > 0;
+  
+  const unreadIssuesCount = authorityUnreadCount || 0;
 
   useEffect(() => {
     // Start fading out after 2.5 seconds
@@ -68,7 +72,7 @@ export function AuthoritiesDashboard() {
   const navItems = [
     { name: 'Home', path: '/authorities', icon: Home },
     { name: 'Map', path: '/authorities/map', icon: MapIcon },
-    { name: 'Issues', path: '/authorities/issues', icon: AlertTriangle },
+    { name: 'Issues', path: '/authorities/issues', icon: AlertTriangle, hasUnread: unreadIssuesCount > 0, count: unreadIssuesCount },
     { name: 'Settings', path: '/authorities/settings', icon: Settings, hasUnread, count: unreadCount },
   ];
 
@@ -78,20 +82,18 @@ export function AuthoritiesDashboard() {
       {/* Intro Animation Overlay */}
       {showIntro && (
         <div 
-          className={`absolute inset-0 z-50 bg-[#1B4A2E]/40 backdrop-blur-2xl flex flex-col items-center justify-center transition-opacity duration-500 ease-in-out ${fadeOut ? 'opacity-0' : 'opacity-100'}`}
+          className={`absolute inset-0 z-50 bg-[#174F35]/80 backdrop-blur-2xl flex flex-col items-center justify-center transition-opacity duration-500 ease-in-out ${fadeOut ? 'opacity-0' : 'opacity-100'}`}
         >
           <div className="relative flex flex-col items-center animate-in slide-in-from-bottom-8 fade-in duration-1000">
             {/* Glowing Logo */}
             <div className="relative mb-8">
-              <div className="absolute inset-0 bg-[#D5B054] rounded-full blur-2xl opacity-50 animate-pulse"></div>
-              <div className="w-24 h-24 bg-white rounded-[24px] flex items-center justify-center shadow-2xl relative z-10">
-                <span className="text-5xl font-black text-[#1B4A2E]">E</span>
-              </div>
+              <div className="absolute inset-0 bg-[#C5F04F] rounded-full blur-[50px] opacity-40 animate-pulse"></div>
+              <img src="/app-logo.png" alt="EcoStride Logo" className="w-32 h-32 md:w-40 md:h-40 object-contain drop-shadow-2xl relative z-10" />
             </div>
             
             {/* Text */}
             <h1 className="text-4xl md:text-5xl font-black text-white tracking-tight mb-4 text-center">
-              EcoStride <span className="text-[#D5B054]">Authorities</span>
+              EcoStride <span className="text-[#C5F04F]">Authorities</span>
             </h1>
             <p className="text-emerald-100/70 text-lg md:text-xl font-medium max-w-md text-center">
               "Empowering leaders to build greener, smarter, and safer cities."
@@ -106,7 +108,7 @@ export function AuthoritiesDashboard() {
         {/* Sidebar */}
         <div className="hidden md:flex w-64 bg-white z-10 flex-col h-full rounded-r-3xl shadow-xl">
           <div className="p-8 flex items-center gap-3">
-            <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center text-white font-black">E</div>
+            <img src="/app-logo.png" alt="Logo" className="w-9 h-9 object-contain drop-shadow-sm" />
             <h1 className="text-2xl font-black text-slate-800 tracking-tight">EcoStride</h1>
           </div>
           
@@ -120,16 +122,16 @@ export function AuthoritiesDashboard() {
                   to={item.path}
                   className={`flex items-center space-x-4 px-6 py-4 rounded-2xl transition-all duration-300 font-bold relative ${
                     isActive
-                      ? 'text-[#1B4A2E] bg-emerald-50 shadow-sm'
-                      : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'
+                      ? 'text-[#174F35] bg-[#EAF0EC] shadow-sm'
+                      : 'text-[#718278] hover:bg-slate-50 hover:text-slate-700'
                   }`}
                 >
                   <Icon size={22} className={isActive ? 'stroke-[2.5px]' : 'stroke-2'} />
                   <span className="text-[15px]">{item.name}</span>
                   {item.hasUnread && (
                     <span className="relative flex h-2.5 w-2.5 ml-auto">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#C8942A]"></span>
                     </span>
                   )}
                 </Link>
@@ -142,7 +144,7 @@ export function AuthoritiesDashboard() {
             <button
               onClick={handleRefreshAll}
               disabled={isRefreshing}
-              className="flex items-center space-x-3 w-full py-3.5 px-6 bg-emerald-50 hover:bg-emerald-100/80 text-[#1B4A2E] rounded-2xl font-bold transition-all duration-300 shadow-sm border border-emerald-200/60 disabled:opacity-50 active:scale-95"
+              className="flex items-center space-x-3 w-full py-3.5 px-6 bg-emerald-50 hover:bg-emerald-100/80 text-[#174F35] rounded-2xl font-bold transition-all duration-300 shadow-sm border border-emerald-200/60 disabled:opacity-50 active:scale-95"
             >
               <RefreshCw size={18} className={isRefreshing ? 'animate-spin text-emerald-700' : 'text-emerald-700'} strokeWidth={2.5} />
               <span className="text-[14px]">{isRefreshing ? 'Refreshing...' : 'Refresh Data'}</span>
@@ -170,8 +172,8 @@ export function AuthoritiesDashboard() {
         </div>
 
         {/* Modern Floating Mobile Navigation (visible only on mobile) */}
-        <div className="md:hidden fixed bottom-6 left-4 right-4 z-50 flex justify-center pointer-events-none">
-          <div className="bg-slate-900/95 backdrop-blur-xl border border-white/10 shadow-2xl rounded-3xl p-2 flex items-center gap-1 w-full max-w-[360px] pointer-events-auto">
+        <div className={`md:hidden fixed bottom-6 left-4 right-4 z-50 flex justify-center pointer-events-none transition-all duration-300 ${location.pathname === '/authorities/map' ? 'translate-y-32 opacity-0' : 'translate-y-0 opacity-100'}`}>
+          <div className="bg-[#174F35]/95 backdrop-blur-xl border border-[#2E8B57]/30 shadow-2xl rounded-3xl p-2 flex items-center gap-1 w-full max-w-[360px] pointer-events-auto">
             {navItems.map((item) => {
               const isActive = location.pathname === item.path || (item.path === '/authorities' && location.pathname === '/authorities/');
               const Icon = item.icon;
@@ -179,19 +181,19 @@ export function AuthoritiesDashboard() {
                 <Link
                   key={item.name}
                   to={item.path}
-                  className={`flex-1 flex flex-col items-center justify-center py-2.5 px-2 rounded-2xl relative transition-all duration-300 ${
-                    isActive ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400 hover:text-slate-200'
+                  className={`flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-2xl relative transition-all duration-300 ${
+                    isActive ? 'bg-[#2E8B57] text-white shadow-md' : 'text-[#A5D1B8] hover:text-[#D1FAE5]'
                   }`}
                 >
-                  <Icon size={isActive ? 22 : 20} className={isActive ? 'stroke-[2.5px]' : 'stroke-2'} />
-                  {isActive && <span className="text-[9px] font-bold mt-1 tracking-wide uppercase">{item.name}</span>}
+                  <Icon size={20} className={isActive ? 'stroke-[2.5px]' : 'stroke-2'} />
+                  <span className={`text-[10px] font-bold mt-1 tracking-wide ${isActive ? 'text-[#C8942A]' : 'text-[#A5D1B8]'}`}>{item.name}</span>
                   
                   {item.hasUnread && (
-                    <div className="absolute top-1 right-1/4 flex items-center justify-center shrink-0 min-w-[16px] h-[16px] bg-rose-500 rounded-full border border-slate-900 shadow-sm">
+                    <div className="absolute top-1 right-3 flex items-center justify-center shrink-0 min-w-[16px] h-[16px] bg-[#C8942A] rounded-full shadow-sm">
                       {item.count ? (
-                        <span className="text-[8px] font-bold text-white leading-none pt-[1px] px-1">{item.count > 99 ? '99+' : item.count}</span>
+                        <span className="text-[8px] font-bold text-[#174F35] leading-none pt-[1px] px-1">{item.count > 99 ? '99+' : item.count}</span>
                       ) : (
-                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#174F35]"></span>
                       )}
                     </div>
                   )}

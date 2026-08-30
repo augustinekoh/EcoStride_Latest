@@ -166,7 +166,7 @@ export function CommunityDashboard() {
             >
               <div className="absolute inset-0 bg-[#5496a2]/5" />
               {guild?.icon ? (
-                (guild.icon.startsWith('http') || guild.icon.startsWith('/')) ? (
+                (String(guild.icon).startsWith('http') || String(guild.icon).startsWith('/')) ? (
                   <img src={resolveImageUrl(guild.icon)} alt={guild.name} className="w-full h-full object-cover" />
                 ) : (
                   <span className="text-5xl">{guild.icon}</span>
@@ -201,12 +201,12 @@ export function CommunityDashboard() {
 
           <div className="flex gap-4 w-full max-w-sm">
             <div className="flex-1 glass-card rounded-[1.5rem] py-4 flex flex-col items-center shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-              <span className="text-2xl font-black text-[var(--color-text-main)] mb-0.5">{members.length}</span>
+              <span className="text-2xl font-black text-[var(--color-text-main)] mb-0.5">{(members || []).length}</span>
               <span className="text-[10px] text-[var(--color-text-muted)] font-bold uppercase tracking-widest">Members</span>
             </div>
             <div className="flex-1 glass-card rounded-[1.5rem] py-4 flex flex-col items-center shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-emerald-50/20">
               <span className="text-2xl font-black text-emerald-500 mb-0.5">
-                {members.reduce((acc, m) => acc + (m.total_trees_planted || 0), 0)}
+                {(members || []).reduce((acc, m) => acc + (m.total_trees_planted || 0), 0)}
               </span>
               <span className="text-[10px] text-emerald-400/80 font-bold uppercase tracking-widest">Trees</span>
             </div>
@@ -220,7 +220,7 @@ export function CommunityDashboard() {
           <span className="flex items-center">
             Top Contributors <Trophy size={18} className="ml-2 text-yellow-500" />
           </span>
-          <span className="text-xs font-normal text-[var(--color-text-muted)]">{members.length}/75 Members</span>
+          <span className="text-xs font-normal text-[var(--color-text-muted)]">{(members || []).length}/75 Members</span>
         </h2>
         
         <div className="glass-card rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-visible relative">
@@ -231,7 +231,7 @@ export function CommunityDashboard() {
               ))}
             </div>
           ) : (
-            members.map((member, index) => (
+            (members || []).map((member, index) => (
               <div 
                 key={member.id} 
                 onClick={() => setSelectedProfile(member)}
@@ -248,7 +248,7 @@ export function CommunityDashboard() {
 
                 <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
                   {member.avatar ? (
-                    (member.avatar.startsWith('http') || member.avatar.startsWith('/')) ? (
+                    (String(member.avatar).startsWith('http') || String(member.avatar).startsWith('/')) ? (
                       <img src={resolveImageUrl(member.avatar)} alt={member.username} className="w-full h-full object-cover" />
                     ) : (
                       <span className="text-xl">{member.avatar}</span>
@@ -384,7 +384,7 @@ export function CommunityDashboard() {
               <X size={28} />
             </button>
             <div className="w-full aspect-square rounded-full border-4 border-[#1d3539] overflow-hidden bg-white/10 shadow-comic flex items-center justify-center text-9xl">
-              {(guild.icon.startsWith('http') || guild.icon.startsWith('/')) ? (
+              {(String(guild.icon).startsWith('http') || String(guild.icon).startsWith('/')) ? (
                 <img src={resolveImageUrl(guild.icon)} alt="community full" className="w-full h-full object-cover" />
               ) : (
                 guild.icon

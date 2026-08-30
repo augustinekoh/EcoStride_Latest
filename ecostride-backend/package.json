@@ -6,8 +6,8 @@
     "dev": "wrangler dev --ip 0.0.0.0",
     "dev:remote": "wrangler dev --remote --ip 0.0.0.0",
     "deploy": "wrangler deploy",
-    "db:init": "wrangler d1 execute ecostride-db --local --file=./schema.sql",
-    "db:push": "wrangler d1 execute ecostride-db --remote --file=./schema.sql"
+    "db:init": "wrangler d1 migrations apply ecostride-db --local",
+    "db:push": "wrangler d1 migrations apply ecostride-db --remote"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",

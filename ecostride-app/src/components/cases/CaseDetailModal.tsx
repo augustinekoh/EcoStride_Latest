@@ -4,7 +4,7 @@ import { useMapStore } from '../../stores/useMapStore';
 import { useDemoStore } from '../../stores/useDemoStore';
 import { apiClient, getApiBaseUrl, resolveImageUrl } from '../../lib/api';
 import { formatLocation } from '../../lib/locationData';
-import { X, Send, Camera, Clock, Info, ChevronLeft, ChevronRight, MessageSquare, User, MapPin, CheckCircle, ShieldCheck, ImagePlus, Loader2 } from 'lucide-react';
+import { X, Send, Camera, Clock, Info, ChevronLeft, ChevronRight, MessageSquare, User, MapPin, CheckCircle, ShieldCheck, ImagePlus, Loader2, Sparkles } from 'lucide-react';
 import { compressImage } from '../../lib/imageUtils';
 
 interface Props {
@@ -191,19 +191,27 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue, onUpd
     setIsUploading(true);
     try {
       const compressedFile = await compressImage(file, 1200, 1200, 0.8);
-      const formData = new FormData();
-      formData.append('file', compressedFile);
-
-      const uploadRes = await apiClient('/issues/images', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!uploadRes.success || !uploadRes.url) {
-        throw new Error(uploadRes.error || 'Failed to upload photo');
+      const ext = compressedFile.name.split('.').pop() || 'webp';
+      
+      const preRes = await apiClient(`/issues/presigned-url?ext=${ext}`);
+      if (!preRes.success || !preRes.uploadUrl) {
+        throw new Error(preRes.error || 'Failed to get upload authorization');
       }
 
-      await handleSendMessage(undefined, uploadRes.url);
+      const buffer = await compressedFile.arrayBuffer();
+      const putRes = await fetch(preRes.uploadUrl, {
+        method: 'PUT',
+        body: buffer,
+        headers: {
+          'Content-Type': compressedFile.type || 'image/webp'
+        }
+      });
+
+      if (!putRes.ok) {
+        throw new Error('Failed to upload image to storage');
+      }
+
+      await handleSendMessage(undefined, preRes.publicUrl);
     } catch (err: any) {
       alert(`Upload failed: ${err.message || 'Error uploading image'}`);
     } finally {
@@ -280,18 +288,33 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue, onUpd
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white/80 dark:bg-slate-800/80 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Status</span>
-                  <div 
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
-                      issue.takedown_status === 'taken-down' ? 'bg-red-100 text-red-700 border border-red-200' :
-                      issue.takedown_status === 'requested' ? 'bg-orange-100 text-orange-700 border border-orange-200' :
-                      issue.status === 'resolved' ? 'bg-green-100 text-green-700 border border-green-200' :
-                      issue.status === 'in-progress' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                      'bg-amber-100 text-amber-700 border border-amber-200'
-                    }`}
-                    title={issue.takedown_reason ? `Reason: ${issue.takedown_reason}` : ''}
-                  >
-                    {issue.takedown_status === 'taken-down' ? <X size={12}/> : issue.status === 'resolved' ? <CheckCircle size={12}/> : <Clock size={12}/>}
-                    <span>{issue.takedown_status === 'taken-down' ? 'Taken Down' : issue.takedown_status === 'requested' ? 'Takedown Pending' : issue.status}</span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <div 
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
+                        issue.takedown_status === 'taken-down' ? 'bg-red-100 text-red-700 border border-red-200' :
+                        issue.takedown_status === 'requested' ? 'bg-orange-100 text-orange-700 border border-orange-200' :
+                        issue.status === 'resolved' ? 'bg-green-100 text-green-700 border border-green-200' :
+                        issue.status === 'in-progress' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                        'bg-amber-100 text-amber-700 border border-amber-200'
+                      }`}
+                      title={issue.takedown_reason ? `Reason: ${issue.takedown_reason}` : ''}
+                    >
+                      {issue.takedown_status === 'taken-down' ? <X size={12}/> : issue.status === 'resolved' ? <CheckCircle size={12}/> : <Clock size={12}/>}
+                      <span>{issue.takedown_status === 'taken-down' ? 'Taken Down' : issue.takedown_status === 'requested' ? 'Takedown Pending' : issue.status}</span>
+                    </div>
+
+                    {issue.severity && (
+                      <div 
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                          issue.severity === 'Critical' ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800' :
+                          issue.severity === 'Major' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
+                          'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                        }`}
+                      >
+                        <Sparkles size={11} className="animate-pulse" />
+                        <span>{issue.severity} Priority</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -344,6 +367,45 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue, onUpd
                   {issue.description || 'No description provided.'}
                 </p>
               </div>
+
+              {/* AI Civic Intelligence Assessment Card */}
+              {(issue.ai_summary || issue.ai_refined_description) && (
+                <div className="bg-gradient-to-br from-[#C5F04F]/20 to-white/60 dark:from-[#C5F04F]/10 dark:to-slate-800/80 backdrop-blur-xl rounded-2xl p-4 border border-[#C5F04F]/60 shadow-sm flex flex-col gap-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-[#174F35] dark:text-[#C5F04F]">
+                      <Sparkles size={14} className="text-[#9BB3A3] dark:text-[#C5F04F] animate-pulse" />
+                      <h3 className="text-[10px] font-black uppercase tracking-wider">AI Civic Intelligence</h3>
+                    </div>
+                    {issue.severity && (
+                      <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
+                        issue.severity === 'Critical' ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300' :
+                        issue.severity === 'Major' ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300' :
+                        'bg-[#C5F04F]/30 dark:bg-[#C5F04F]/20 text-[#174F35] dark:text-[#C5F04F]'
+                      }`}>
+                        {issue.severity} Priority
+                      </span>
+                    )}
+                  </div>
+
+                  {issue.ai_summary && (
+                    <div>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5">Municipal Briefing</span>
+                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 leading-snug">
+                        {issue.ai_summary}
+                      </p>
+                    </div>
+                  )}
+
+                  {issue.ai_refined_description && (
+                    <div>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5">Technical Assessment</span>
+                      <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
+                        {issue.ai_refined_description}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Location Card */}
               {!isReadOnly && (

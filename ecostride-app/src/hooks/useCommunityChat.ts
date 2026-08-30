@@ -1,6 +1,6 @@
 import { useUserStore } from '../stores/useUserStore';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { apiClient, getApiBaseUrl } from '../lib/api';
+import { apiClient, getWebSocketBaseUrl } from '../lib/api';
 
 export interface ChatMessage {
   id: string;
@@ -31,7 +31,7 @@ export function useCommunityChat(guildId: string | undefined | null, token: stri
           setMessages(data.messages);
           if (data.last_read_at !== undefined) {
              const unreadCount = data.messages.filter((m: any) => m.created_at > data.last_read_at).length;
-             useUserStore.getState().setUserData({ communityUnreadCount: unreadCount });
+             useUserStore.getState().setLocalData({ communityUnreadCount: unreadCount });
           }
         }
       })
@@ -41,12 +41,11 @@ export function useCommunityChat(guildId: string | undefined | null, token: stri
   const connect = useCallback(() => {
     if (!guildId || !token) return;
 
-    // Convert http/https to ws/wss
-    const baseUrl = getApiBaseUrl().replace(/\/api$/, '');
-    const wsUrl = new URL(`${baseUrl}/api/chat/community/${guildId}?token=${token}`);
-    wsUrl.protocol = wsUrl.protocol.replace('http', 'ws');
+    try {
+      const wsBase = getWebSocketBaseUrl();
+      const wsUrl = `${wsBase}/chat/community/${guildId}?token=${encodeURIComponent(token)}`;
 
-    const ws = new WebSocket(wsUrl.toString());
+      const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
       setIsConnected(true);
@@ -108,6 +107,9 @@ export function useCommunityChat(guildId: string | undefined | null, token: stri
     };
 
     wsRef.current = ws;
+    } catch (err) {
+      console.error("Failed to establish WebSocket connection:", err);
+    }
   }, [guildId, token]);
 
   useEffect(() => {

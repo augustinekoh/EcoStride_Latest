@@ -7,6 +7,7 @@ import { FriendsTab } from './FriendsTab';
 import { PrivateChatRoom } from './PrivateChatRoom';
 import { CapybaraRequests } from './CapybaraRequests';
 import { FloatingChat } from './FloatingChat';
+import { ErrorBoundary } from '../ErrorBoundary';
 
 export function SocialRouter() {
   const { guildId, setGuildId, communityUnreadCount, friendsUnreadCount } = useUserStore();
@@ -92,16 +93,20 @@ export function SocialRouter() {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {activeTab === 'friends' ? (
-          <FriendsTab />
-        ) : (
-          guildId ? <CommunityDashboard /> : <CommunityDiscovery onJoinCommunity={handleJoin} />
-        )}
+        <ErrorBoundary>
+          {activeTab === 'friends' ? (
+            <FriendsTab />
+          ) : (
+            guildId ? <CommunityDashboard /> : <CommunityDiscovery onJoinCommunity={handleJoin} />
+          )}
+        </ErrorBoundary>
       </div>
 
       {/* Floating Chat for Community */}
       {activeTab === 'community' && guildId && (
-        <FloatingChat guildId={guildId} />
+        <ErrorBoundary fallback={null}>
+          <FloatingChat guildId={guildId} />
+        </ErrorBoundary>
       )}
     </div>
   );

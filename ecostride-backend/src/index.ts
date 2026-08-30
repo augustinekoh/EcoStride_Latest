@@ -10,6 +10,8 @@ import { notificationService } from './notificationService';
 
 export { CommunityChatRoom } from './CommunityChatRoom';
 export { IssueConversationDO } from './IssueConversationDO';
+export { AuthorityCopilotDO } from './AuthorityCopilotDO';
+import { processCivicAI } from './civicIntelligence';
 
 export function parseFirebaseJwt(token: string): any | null {
   try {
@@ -26,10 +28,12 @@ type Bindings = {
   DB: D1Database;
   AI: any;
   FIREBASE_PROJECT_ID: string;
+  GEMINI_API_KEY?: string;
   RESEND_API_KEY?: string;
   FIREBASE_SERVICE_ACCOUNT?: string;
   CHAT_ROOM: DurableObjectNamespace;
   ISSUE_CHAT: DurableObjectNamespace;
+  COPILOT_CHAT: DurableObjectNamespace;
   AVATARS_BUCKET: R2Bucket;
   R2_ACCOUNT_ID: string;
   R2_ACCESS_KEY_ID: string;
@@ -126,6 +130,7 @@ app.use('/api/*', async (c, next) => {
   if (
     c.req.path === '/api/check-username' ||
     c.req.path.startsWith('/api/authorities/verify-token') ||
+    c.req.path.startsWith('/api/authorities/copilot/chat') ||
     c.req.path.startsWith('/api/chat/community/') ||
     c.req.path.startsWith('/api/issues/local-upload/') ||
     (c.req.path.startsWith('/api/guilds') && c.req.method === 'GET')
@@ -635,8 +640,11 @@ app.get('/api/users/:id/issues', async (c) => {
 
     const unreadRecord = await c.env.DB.prepare('SELECT COUNT(*) as unread_count FROM issue_messages WHERE issue_id = ? AND created_at > ? AND sender_id != ?').bind(issue.id, lastReadAt, id).first() as any;
 
+    const sanitized = { ...issue };
+    delete sanitized.ai_recommendation;
+
     return {
-      ...issue,
+      ...sanitized,
       unread_count: unreadRecord ? unreadRecord.unread_count : 0
     };
   }));
@@ -1277,7 +1285,14 @@ app.get('/api/issues/presigned-url', async (c) => {
   const publicUrl = `${url.origin}/r2/${objectKey}`;
 
   // Local dev: return a local Worker endpoint instead of a real R2 presigned URL
-  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname.startsWith('192.168.')) {
+  if (
+    url.hostname === 'localhost' ||
+    url.hostname === '127.0.0.1' ||
+    url.hostname === '10.0.2.2' ||
+    url.hostname.startsWith('192.168.') ||
+    url.hostname.startsWith('10.') ||
+    url.hostname.startsWith('172.')
+  ) {
     return c.json({
       success: true,
       uploadUrl: `${url.origin}/api/issues/local-upload/${encodeURIComponent(objectKey)}`,
@@ -1343,11 +1358,6 @@ app.post('/api/issues', async (c) => {
     return c.json({ error: 'Valid country, state, and city jurisdiction are required' }, 400);
   }
 
-  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN country TEXT').run(); } catch (e) { }
-  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN state TEXT').run(); } catch (e) { }
-  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN city TEXT').run(); } catch (e) { }
-  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN takedown_status TEXT').run(); } catch (e) { }
-  try { await c.env.DB.prepare('ALTER TABLE infrastructure_reports ADD COLUMN takedown_reason TEXT').run(); } catch (e) { }
 
   const now = Date.now();
 
@@ -1371,8 +1381,8 @@ app.post('/api/issues', async (c) => {
 
   const insertIssue = c.env.DB.prepare(`
     INSERT INTO infrastructure_reports 
-    (id, author_id, title, description, lat, lng, photos, specific_location, country, state, city, status, created_at, updated_at) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+    (id, author_id, title, description, lat, lng, photos, specific_location, country, state, city, status, ai_status, created_at, updated_at) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending', ?, ?)
   `).bind(id, jwtUser.sub, body.title, body.description || '', body.lat, body.lng, JSON.stringify(body.photos || []), body.specific_location || null, country, state, city, now, now);
 
   const activityId = crypto.randomUUID();
@@ -1383,6 +1393,16 @@ app.post('/api/issues', async (c) => {
   `).bind(activityId, id, jwtUser.sub, 'The user submitted the initial report.', now);
 
   await c.env.DB.batch([insertIssue, insertActivity]);
+
+  c.executionCtx.waitUntil(
+    processCivicAI(
+      c.env,
+      id,
+      body.photos || [],
+      { lat: body.lat, lng: body.lng, specific_location: body.specific_location, city, state, country },
+      body.description || ''
+    )
+  );
 
   return c.json({ success: true, id });
 });
@@ -1486,7 +1506,13 @@ app.get('/api/issues', async (c) => {
       AND r.lng >= ? AND r.lng <= ?
   `).bind(Number(minLat), Number(maxLat), Number(minLng), Number(maxLng)).all();
 
-  return c.json({ issues: issues.results });
+  const sanitizedIssues = (issues.results || []).map((issue: any) => {
+    const sanitized = { ...issue };
+    delete sanitized.ai_recommendation;
+    return sanitized;
+  });
+
+  return c.json({ issues: sanitizedIssues });
 });
 
 // GET /api/issues/:id/messages
@@ -1573,7 +1599,7 @@ app.get('/api/issues/:id/chat', async (c) => {
 // GET /api/issues/:id
 app.get('/api/issues/:id', async (c) => {
   const id = c.req.param('id');
-  const issue = await c.env.DB.prepare(`
+  const issue: any = await c.env.DB.prepare(`
     SELECT r.*, u.username as author_username, u.avatar as author_avatar, auth.username as authority_username
     FROM infrastructure_reports r
     LEFT JOIN users u ON r.author_id = u.id
@@ -1581,7 +1607,11 @@ app.get('/api/issues/:id', async (c) => {
     WHERE r.id = ? AND r.deleted_at IS NULL
   `).bind(id).first();
   if (!issue) return c.json({ error: 'Issue not found' }, 404);
-  return c.json({ issue });
+  
+  const sanitizedIssue = { ...issue };
+  delete sanitizedIssue.ai_recommendation;
+  
+  return c.json({ issue: sanitizedIssue });
 });
 
 // POST /api/issues/:id/share

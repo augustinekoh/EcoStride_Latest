@@ -5,6 +5,11 @@ export const authoritiesRouter = new Hono<{ Bindings: any, Variables: { user: an
 
 // 1. requireAuthority middleware
 authoritiesRouter.use('/*', async (c, next) => {
+  // Bypass WebSocket upgrade route since it relies on ephemeral tickets
+  if (c.req.path === '/api/authorities/copilot/chat') {
+    return next();
+  }
+
   const jwtUser = c.get('user') as any;
   if (!jwtUser || !jwtUser.sub) return c.json({ error: 'Unauthorized' }, 401);
   
@@ -51,6 +56,216 @@ authoritiesRouter.use('/*', async (c, next) => {
     }
   }
   await next();
+});
+
+const MAX_COPILOT_REPORTS = 10;
+
+// POST /copilot/sessions
+authoritiesRouter.post('/copilot/sessions', async (c) => {
+  const jwtUser = c.get('user') as any;
+  const body = await c.req.json();
+  const reportIds = body.reportIds;
+
+  if (!Array.isArray(reportIds) || reportIds.length === 0) {
+    return c.json({ error: 'reportIds must be a non-empty array' }, 400);
+  }
+
+  const uniqueReportIds = Array.from(new Set(reportIds));
+  if (uniqueReportIds.length > MAX_COPILOT_REPORTS) {
+    return c.json({ error: `Cannot select more than ${MAX_COPILOT_REPORTS} reports.` }, 400);
+  }
+
+  // Get authority jurisdiction
+  const authUser: any = await c.env.DB.prepare('SELECT country, state, city FROM users WHERE id = ?').bind(jwtUser.sub).first();
+  const authCountry = authUser?.country || '';
+  const authState = authUser?.state || '';
+  const authCity = authUser?.city || '';
+
+  // Validate ownership/jurisdiction of reports
+  const placeholders = uniqueReportIds.map(() => '?').join(',');
+  const query = `
+    SELECT id FROM infrastructure_reports 
+    WHERE id IN (${placeholders}) 
+      AND deleted_at IS NULL
+      AND (((country = ? AND state = ? AND city = ?) OR authority_id = ?))
+  `;
+  const reports = await c.env.DB.prepare(query).bind(...uniqueReportIds, authCountry, authState, authCity, jwtUser.sub).all();
+  
+  if (reports.results.length !== uniqueReportIds.length) {
+    return c.json({ error: 'One or more reports are invalid or outside your jurisdiction.' }, 403);
+  }
+
+  const sessionId = crypto.randomUUID();
+  const title = `Investigation for ${uniqueReportIds.length} Report${uniqueReportIds.length > 1 ? 's' : ''}`;
+  const now = Date.now();
+
+  await c.env.DB.prepare(
+    'INSERT INTO copilot_sessions (id, authority_id, title, selected_report_ids, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).bind(sessionId, jwtUser.sub, title, JSON.stringify(uniqueReportIds), 'created', now, now).run();
+
+  return c.json({ sessionId });
+});
+
+// GET /copilot/sessions
+authoritiesRouter.get('/copilot/sessions', async (c) => {
+  const jwtUser = c.get('user') as any;
+  const limit = parseInt(c.req.query('limit') || '20');
+  
+  if (isNaN(limit) || limit < 1 || limit > 100) return c.json({ error: 'Invalid limit' }, 400);
+
+  const sessions = await c.env.DB.prepare(
+    'SELECT id as sessionId, title, selected_report_ids as selectedReportIds, status, created_at as createdAt, updated_at as updatedAt FROM copilot_sessions WHERE authority_id = ? ORDER BY updated_at DESC LIMIT ?'
+  ).bind(jwtUser.sub, limit).all();
+
+  const formatted = sessions.results.map((s: any) => ({
+    ...s,
+    selectedReportIds: s.selectedReportIds ? JSON.parse(s.selectedReportIds) : []
+  }));
+
+  return c.json({ sessions: formatted, nextCursor: null }); // Cursor pagination can be implemented later if needed
+});
+
+// GET /copilot/sessions/:sessionId
+authoritiesRouter.get('/copilot/sessions/:sessionId', async (c) => {
+  const jwtUser = c.get('user') as any;
+  const sessionId = c.req.param('sessionId');
+
+  const session = await c.env.DB.prepare(
+    'SELECT id as sessionId, title, selected_report_ids as selectedReportIds, status, created_at as createdAt, updated_at as updatedAt, authority_id FROM copilot_sessions WHERE id = ?'
+  ).bind(sessionId).first() as any;
+
+  if (!session) return c.json({ error: 'Session not found' }, 404);
+  
+  const dbUser = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(jwtUser.sub).first() as any;
+  const isAdmin = dbUser && dbUser.role === 'admin';
+
+  if (session.authority_id !== jwtUser.sub && !isAdmin) {
+    return c.json({ error: 'Forbidden. You do not own this investigation.' }, 403);
+  }
+
+  // Fetch messages from D1 as source of truth for resume flow
+  const messages = await c.env.DB.prepare(
+    'SELECT sender_role, content, timestamp FROM copilot_messages WHERE session_id = ? ORDER BY timestamp ASC'
+  ).bind(sessionId).all();
+
+  return c.json({
+    session: {
+      sessionId: session.sessionId,
+      title: session.title,
+      selectedReportIds: session.selectedReportIds ? JSON.parse(session.selectedReportIds) : [],
+      status: session.status,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt
+    },
+    messages: messages.results
+  });
+});
+
+// DELETE /copilot/sessions/:sessionId
+authoritiesRouter.delete('/copilot/sessions/:sessionId', async (c) => {
+  const jwtUser = c.get('user') as any;
+  const sessionId = c.req.param('sessionId');
+
+  const session = await c.env.DB.prepare(
+    'SELECT authority_id FROM copilot_sessions WHERE id = ?'
+  ).bind(sessionId).first() as any;
+
+  if (!session) return c.json({ error: 'Session not found' }, 404);
+  
+  const dbUser = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(jwtUser.sub).first() as any;
+  const isAdmin = dbUser && dbUser.role === 'admin';
+
+  if (session.authority_id !== jwtUser.sub && !isAdmin) {
+    return c.json({ error: 'Forbidden. You do not own this investigation.' }, 403);
+  }
+
+  try {
+    await c.env.DB.prepare('DELETE FROM copilot_messages WHERE session_id = ?').bind(sessionId).run();
+    await c.env.DB.prepare('DELETE FROM copilot_sessions WHERE id = ?').bind(sessionId).run();
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: 'Failed to delete session' }, 500);
+  }
+});
+
+// Copilot Real-time Routes
+authoritiesRouter.post('/copilot/socket-ticket', async (c) => {
+  const jwtUser = c.get('user') as any;
+  const body = await c.req.json();
+  const sessionId = body.sessionId;
+
+  if (!sessionId) return c.json({ error: 'Missing sessionId' }, 400);
+
+  // Authorize Session Ownership
+  const session: any = await c.env.DB.prepare(
+    'SELECT id, authority_id FROM copilot_sessions WHERE id = ?'
+  ).bind(sessionId).first();
+
+  if (!session) return c.json({ error: 'Investigation session not found' }, 404);
+  
+  const dbUser = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(jwtUser.sub).first() as any;
+  const isAdmin = dbUser && dbUser.role === 'admin';
+
+  if (session.authority_id !== jwtUser.sub && !isAdmin) {
+    return c.json({ error: 'Forbidden. You do not own this investigation.' }, 403);
+  }
+
+  // Generate 32-byte cryptographically secure random ticket
+  const randomBytes = new Uint8Array(32);
+  crypto.getRandomValues(randomBytes);
+  const ticket = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+
+  const now = Date.now();
+  const expiresAt = now + 60 * 1000; // 60-second validity window
+
+  await c.env.DB.prepare(
+    'INSERT INTO copilot_socket_tickets (id, authority_id, session_id, expires_at) VALUES (?, ?, ?, ?)'
+  ).bind(ticket, jwtUser.sub, sessionId, expiresAt).run();
+
+  return c.json({ success: true, ticket, expiresAt });
+});
+
+authoritiesRouter.get('/copilot/chat', async (c) => {
+  const upgradeHeader = c.req.header('Upgrade');
+  if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
+    return c.text('Expected Upgrade: websocket', 426);
+  }
+
+  const sessionId = c.req.query('sessionId');
+  const ticket = c.req.query('ticket');
+
+  if (!sessionId || !ticket) {
+    return c.json({ error: 'Missing sessionId or ticket' }, 400);
+  }
+
+  const now = Date.now();
+
+  // ATOMIC SINGLE-USE CONSUMPTION VIA D1
+  const redemption: any = await c.env.DB.prepare(`
+    UPDATE copilot_socket_tickets
+    SET consumed_at = ?
+    WHERE id = ?
+      AND session_id = ?
+      AND consumed_at IS NULL
+      AND expires_at > ?
+    RETURNING authority_id, session_id
+  `).bind(now, ticket, sessionId, now).first();
+
+  if (!redemption) {
+    const raw = await c.env.DB.prepare('SELECT * FROM copilot_socket_tickets WHERE id = ?').bind(ticket).all();
+    console.error('Ticket redemption failed. DB state for this ticket:', JSON.stringify(raw));
+    return c.json({ error: 'Invalid, expired, or previously redeemed WebSocket ticket' }, 401);
+  }
+
+  // Forward to Durable Object with verified parameters
+  const id = c.env.COPILOT_CHAT.idFromName(sessionId);
+  const stub = c.env.COPILOT_CHAT.get(id);
+
+  const forwardUrl = new URL(c.req.url);
+  forwardUrl.searchParams.set('authorityId', redemption.authority_id);
+  forwardUrl.searchParams.delete('ticket'); // Strip redeemed ticket
+
+  return stub.fetch(new Request(forwardUrl.toString(), c.req.raw));
 });
 
 // 2. GET /dashboard/stats

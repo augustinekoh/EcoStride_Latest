@@ -242,7 +242,7 @@ export function PrivateChatRoom() {
                     <div className={`flex gap-2 mb-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
                       {!isMe && (
                         <div className="w-8 h-8 rounded-full bg-[var(--color-teal-dark)]/10 flex items-center justify-center text-[var(--color-teal-dark)] overflow-hidden shrink-0 mt-auto border border-black/5">
-                          {msg.avatar && (msg.avatar.startsWith('http') || msg.avatar.includes('.') || msg.avatar.includes('/')) ? (
+                          {msg.avatar && (String(msg.avatar).startsWith('http') || String(msg.avatar).includes('.') || String(msg.avatar).includes('/')) ? (
                             <img src={resolveAvatarUrl(msg.avatar, msg.username)} alt={msg.username} className="w-full h-full object-cover" />
                           ) : msg.avatar ? (
                             <span className="text-sm">{msg.avatar}</span>
@@ -262,7 +262,7 @@ export function PrivateChatRoom() {
                         onPointerCancel={handleMessagePointerUp}
                       >
                         <div className="text-[15px] font-medium leading-relaxed whitespace-pre-wrap break-words">
-                          {msg.content.split(/(\[IMAGE:.*?\]|\[SIGNPOST:.*?\]|\[ISSUE:.*?\])/g).map((part, i) => {
+                          {(msg.content || '').split(/(\[IMAGE:.*?\]|\[SIGNPOST:.*?\]|\[ISSUE:.*?\])/g).map((part, i) => {
                             if (part.startsWith('[IMAGE:')) {
                               let url = part.replace('[IMAGE:', '').replace(']', '');
                                 if (Capacitor.isNativePlatform() && url.includes('localhost')) {
@@ -318,7 +318,7 @@ export function PrivateChatRoom() {
                             </div>
                             
                             {/* Can only edit if it's text and within 5 minutes */}
-                            {!msg.content.includes('[IMAGE:') && !msg.content.includes('[SIGNPOST:') && (Date.now() - msg.created_at) <= 5 * 60 * 1000 && (
+                            {!(msg.content || '').includes('[IMAGE:') && !(msg.content || '').includes('[SIGNPOST:') && (Date.now() - msg.created_at) <= 5 * 60 * 1000 && (
                               <button 
                                 className="text-sm font-bold px-3 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
                                 onClick={() => startEdit(msg)}

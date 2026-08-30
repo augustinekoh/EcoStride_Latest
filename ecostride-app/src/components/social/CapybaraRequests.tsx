@@ -133,7 +133,7 @@ export const CapybaraRequests: React.FC = () => {
               <div className="p-2 space-y-1">
                 {requestMails.map(mail => {
                   const isPending = mail.action_type === 'guild_join_request' || mail.action_type === 'friend_request';
-                  const isGuildEvent = mail.action_type === 'guild_join_request' || mail.title.includes('Community') || mail.title.includes('Join') || mail.title.includes('Admin');
+                  const isGuildEvent = mail.action_type === 'guild_join_request' || (mail.title || '').includes('Community') || (mail.title || '').includes('Join') || (mail.title || '').includes('Admin');
                   const isUnread = !(readMails || []).includes(mail.id);
                   
                   return (
