@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useDemoStore } from '../../stores/useDemoStore';
 import { apiClient } from '../../lib/api';
-import { ArrowLeft, ClipboardList, AlertCircle, Clock, CheckCircle, ChevronRight, ImageOff, X } from 'lucide-react';
+import { ArrowLeft, ClipboardList, AlertCircle, Clock, CheckCircle, ChevronRight, ImageOff, X, Sparkles } from 'lucide-react';
 import { CaseDetailModal } from './CaseDetailModal';
 import { useAppRefresh } from '../../hooks/useAppRefresh';
 
@@ -80,16 +80,29 @@ export const CaseReportsView: React.FC = () => {
         <div className="flex-1 flex flex-col justify-between min-h-[5rem] sm:min-h-[6rem]">
           <div className="flex flex-col">
             <div className="flex justify-between items-center mb-1.5 gap-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">#{issue.id.toUpperCase()}</span>
-              <div className={`px-2 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider flex items-center gap-1 leading-none shadow-sm whitespace-nowrap ${
-                issue.takedown_status === 'taken-down' ? 'bg-red-100/80 text-red-700 border-red-200/60 dark:bg-red-950/60 dark:text-red-300' :
-                issue.takedown_status === 'requested' ? 'bg-orange-100/80 text-orange-700 border-orange-200/60 dark:bg-orange-950/60 dark:text-orange-300' :
-                issue.status === 'resolved' ? 'bg-emerald-100/80 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/60 dark:text-emerald-300' :
-                issue.status === 'in-progress' ? 'bg-blue-100/80 text-blue-700 border-blue-200/60 dark:bg-blue-950/60 dark:text-blue-300' :
-                'bg-amber-100/80 text-amber-700 border-amber-200/60 dark:bg-amber-950/60 dark:text-amber-300'
-              }`}>
-                {issue.takedown_status === 'taken-down' ? <X size={10}/> : issue.status === 'resolved' ? <CheckCircle size={10}/> : <Clock size={10}/>}
-                <span className="pt-px">{issue.takedown_status === 'taken-down' ? 'Taken Down' : issue.takedown_status === 'requested' ? 'Takedown Pending' : issue.status}</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">#{String(issue.id).toUpperCase()}</span>
+              <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                <div className={`px-2 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider flex items-center gap-1 leading-none shadow-sm whitespace-nowrap ${
+                  issue.takedown_status === 'taken-down' ? 'bg-red-100/80 text-red-700 border-red-200/60 dark:bg-red-950/60 dark:text-red-300' :
+                  issue.takedown_status === 'requested' ? 'bg-orange-100/80 text-orange-700 border-orange-200/60 dark:bg-orange-950/60 dark:text-orange-300' :
+                  issue.status === 'resolved' ? 'bg-emerald-100/80 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/60 dark:text-emerald-300' :
+                  issue.status === 'in-progress' ? 'bg-blue-100/80 text-blue-700 border-blue-200/60 dark:bg-blue-950/60 dark:text-blue-300' :
+                  'bg-amber-100/80 text-amber-700 border-amber-200/60 dark:bg-amber-950/60 dark:text-amber-300'
+                }`}>
+                  {issue.takedown_status === 'taken-down' ? <X size={10}/> : issue.status === 'resolved' ? <CheckCircle size={10}/> : <Clock size={10}/>}
+                  <span className="pt-px">{issue.takedown_status === 'taken-down' ? 'Taken Down' : issue.takedown_status === 'requested' ? 'Takedown Pending' : issue.status}</span>
+                </div>
+
+                {issue.severity && (
+                  <div className={`px-1.5 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider flex items-center gap-1 leading-none shadow-sm whitespace-nowrap ${
+                    issue.severity === 'Critical' ? 'bg-rose-100/80 text-rose-700 border-rose-200/60 dark:bg-rose-950/60 dark:text-rose-300' :
+                    issue.severity === 'Major' ? 'bg-amber-100/80 text-amber-700 border-amber-200/60 dark:bg-amber-950/60 dark:text-amber-300' :
+                    'bg-emerald-100/80 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/60 dark:text-emerald-300'
+                  }`}>
+                    <Sparkles size={9} className="animate-pulse" />
+                    <span className="pt-px">{issue.severity}</span>
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex items-start justify-between gap-2 pr-2">

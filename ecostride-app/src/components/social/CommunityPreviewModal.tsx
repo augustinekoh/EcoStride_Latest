@@ -134,7 +134,7 @@ export function CommunityPreviewModal({ guildId, onClose, onJoined }: CommunityP
             <div className="px-6 pt-2 pb-6 border-b border-[#1d3539]/10 text-center">
               <div className="w-20 h-20 mx-auto rounded-3xl bg-white/50 border border-[#1d3539]/10 flex items-center justify-center text-4xl shadow-md mb-4 shadow-[#1d3539]/5 overflow-hidden">
                 {guild.icon ? (
-                  (guild.icon.startsWith('http') || guild.icon.startsWith('/')) ? (
+                  (String(guild.icon).startsWith('http') || String(guild.icon).startsWith('/')) ? (
                     <img src={guild.icon} alt={guild.name} className="w-full h-full object-cover" />
                   ) : (
                     guild.icon
@@ -179,7 +179,7 @@ export function CommunityPreviewModal({ guildId, onClose, onJoined }: CommunityP
                     
                     <div className="w-10 h-10 rounded-full bg-[#1d3539]/10 flex items-center justify-center mr-3 shrink-0 overflow-hidden text-[#1d3539]">
                       {member.avatar ? (
-                        (member.avatar.startsWith('http') || member.avatar.startsWith('/')) ? (
+                        (String(member.avatar).startsWith('http') || String(member.avatar).startsWith('/')) ? (
                           <img src={member.avatar} alt={member.username} className="w-full h-full object-cover" />
                         ) : (
                           <span className="text-xl">{member.avatar}</span>

@@ -29,6 +29,10 @@ class_name = "CommunityChatRoom"
 name = "ISSUE_CHAT"
 class_name = "IssueConversationDO"
 
+[[durable_objects.bindings]]
+name = "COPILOT_CHAT"
+class_name = "AuthorityCopilotDO"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["CommunityChatRoom"]
@@ -36,3 +40,7 @@ new_sqlite_classes = ["CommunityChatRoom"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["IssueConversationDO"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["AuthorityCopilotDO"]

@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { apiClient } from '../../../lib/api';
-import { AlertTriangle, MapPin, Clock, Filter, User, ChevronLeft, ChevronRight, Map, Network } from 'lucide-react';
+import { AlertTriangle, MapPin, Clock, Filter, User, ChevronLeft, ChevronRight, Map, Network, CheckSquare, Square, History, Bot, Sparkles } from 'lucide-react';
 import { AuthorityIssueDetailModal } from './AuthorityIssueDetailModal';
 
-const AuthorityIssueCard: React.FC<{ issue: any, onClick: () => void }> = ({ issue, onClick }) => {
+const AuthorityIssueCard: React.FC<{ 
+  issue: any, 
+  onClick: () => void,
+  isMultiSelectMode?: boolean,
+  isSelected?: boolean
+}> = ({ issue, onClick, isMultiSelectMode, isSelected }) => {
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
 
   let photos: string[] = [];
@@ -36,7 +41,7 @@ const AuthorityIssueCard: React.FC<{ issue: any, onClick: () => void }> = ({ iss
   return (
     <div 
       onClick={onClick}
-      className="p-6 rounded-[24px] bg-white border border-[#EAF0EC] shadow-[0_2px_10px_-4px_rgba(34,76,49,0.1)] hover:-translate-y-1 hover:shadow-[0_8px_20px_-6px_rgba(34,76,49,0.15)] transition-all duration-300 cursor-pointer group flex flex-col relative h-full overflow-hidden"
+      className={`p-6 rounded-[24px] bg-white border-2 shadow-[0_2px_10px_-4px_rgba(34,76,49,0.1)] hover:-translate-y-1 hover:shadow-[0_8px_20px_-6px_rgba(34,76,49,0.15)] transition-all duration-300 cursor-pointer group flex flex-col relative h-full overflow-hidden ${isSelected ? 'border-[#C5F04F] ring-4 ring-[#C5F04F]/30' : 'border-transparent'}`}
     >
       <div className="absolute -top-10 -right-10 w-32 h-32 bg-gradient-to-br from-[#34D399]/10 to-transparent rounded-full blur-2xl pointer-events-none group-hover:scale-125 transition-transform duration-700"></div>
       
@@ -98,19 +103,32 @@ const AuthorityIssueCard: React.FC<{ issue: any, onClick: () => void }> = ({ iss
         )}
 
         {/* Status */}
-        <div className={`mt-auto px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider self-start ${
-          issue.takedown_status === 'taken-down' ? 'bg-[#FFE4E6] text-[#E11D48]' :
-          issue.takedown_status === 'requested' ? 'bg-[#FFEDD5] text-[#C2410C]' :
-          issue.status === 'resolved' ? 'bg-[#D1FAE5] text-[#059669]' :
-          issue.status === 'in-progress' ? 'bg-blue-100 text-blue-700' :
-          'bg-[#FEF3C7] text-[#D97706]'
-        }`}>
-          {issue.takedown_status === 'taken-down' ? 'Taken Down' : issue.takedown_status === 'requested' ? 'Takedown Pending' : issue.status === 'pending' ? 'Pending' : issue.status}
+        <div className="mt-auto flex flex-wrap gap-2 items-center">
+          <div className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider self-start ${
+            issue.takedown_status === 'taken-down' ? 'bg-[#FFE4E6] text-[#E11D48]' :
+            issue.takedown_status === 'requested' ? 'bg-[#FFEDD5] text-[#C2410C]' :
+            issue.status === 'resolved' ? 'bg-[#D1FAE5] text-[#059669]' :
+            issue.status === 'in-progress' ? 'bg-blue-100 text-blue-700' :
+            'bg-[#FEF3C7] text-[#D97706]'
+          }`}>
+            {issue.takedown_status === 'taken-down' ? 'Taken Down' : issue.takedown_status === 'requested' ? 'Takedown Pending' : issue.status === 'pending' ? 'Pending' : issue.status}
+          </div>
+          
+          {issue.ai_status === 'pending' && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+              <Sparkles size={12} className="animate-pulse" />
+              AI Analyzing
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 };
+
+import { useCopilotSession } from '../hooks/useCopilotSession';
+import { AuthorityCopilotChatWidget } from './AuthorityCopilotChatWidget';
+import { AuthorityCopilotHistoryModal } from './AuthorityCopilotHistoryModal';
 
 export const AuthorityIssuesView: React.FC = () => {
   const location = useLocation();
@@ -118,6 +136,18 @@ export const AuthorityIssuesView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedIssue, setSelectedIssue] = useState<any | null>(location.state?.openIssue || null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'in-progress' | 'resolved' | 'taken down'>('all');
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+  const [selectedReportIds, setSelectedReportIds] = useState<Set<number>>(new Set());
+  const [isSparkleAnimating, setIsSparkleAnimating] = useState(false);
+  
+  const { isCreatingSession, createSession } = useCopilotSession();
+  const [activeCopilotSessionId, setActiveCopilotSessionId] = useState<string | null>(null);
+  const [activeSessionReportIds, setActiveSessionReportIds] = useState<string[]>([]);
+  const [activeSessionReports, setActiveSessionReports] = useState<any[]>([]);
+  const [initialMessages, setInitialMessages] = useState<any[]>([]);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
   useEffect(() => {
     if (location.state?.openIssue) {
@@ -143,6 +173,46 @@ export const AuthorityIssuesView: React.FC = () => {
   useEffect(() => {
     fetchIssues();
   }, []);
+
+  const handleIssueClick = (issue: any) => {
+    if (isMultiSelectMode) {
+      setSelectedReportIds(prev => {
+        const next = new Set(prev);
+        if (next.has(issue.id)) {
+          next.delete(issue.id);
+        } else {
+          if (next.size < 10) {
+            next.add(issue.id);
+          } else {
+            alert('You can only select up to 10 reports for a Copilot investigation.');
+          }
+        }
+        return next;
+      });
+    } else {
+      setSelectedIssue(issue);
+    }
+  };
+
+  const handleStartInvestigation = async () => {
+    if (selectedReportIds.size === 0 || isCreatingSession) return;
+    try {
+      const idsArray = Array.from(selectedReportIds).map(String);
+      const reportsArray = issues.filter(i => selectedReportIds.has(i.id));
+      const sessionId = await createSession(idsArray);
+      
+      setActiveSessionReportIds(idsArray);
+      setActiveSessionReports(reportsArray);
+      setInitialMessages([]);
+      setActiveCopilotSessionId(sessionId);
+      
+      // Auto-close select mode after starting investigation
+      setIsMultiSelectMode(false);
+      setSelectedReportIds(new Set());
+    } catch (e: any) {
+      alert(`Failed to start investigation: ${e.message}`);
+    }
+  };
 
   const handleClaim = async (issueId: number) => {
     try {
@@ -182,24 +252,79 @@ export const AuthorityIssuesView: React.FC = () => {
       <Map size={800} className="absolute bottom-0 right-0 text-[#FBBF24] opacity-[0.12] pointer-events-none stroke-1 mix-blend-overlay translate-y-1/4 translate-x-1/4 fixed" />
       
       <div className="max-w-[1600px] mx-auto relative z-10 pb-20 md:pb-0">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 relative z-10">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 relative z-50">
           <div>
             <h1 className="text-3xl font-black text-white tracking-tight">Reported Issues</h1>
             <p className="text-emerald-100/70 font-bold mt-1 text-sm md:text-base">Manage and resolve citizen infrastructure reports.</p>
           </div>
           
-          <div className="flex gap-2 max-w-full overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-             {['all', 'pending', 'in-progress', 'resolved', 'taken down'].map(f => (
-               <button
-                 key={f}
-                 onClick={() => setFilter(f as any)}
-                 className={`px-4 md:px-5 py-2 rounded-full text-xs md:text-sm font-black uppercase transition-all shrink-0 ${
-                   filter === f ? 'bg-white text-[#1E432B] shadow-lg' : 'bg-[#EAF0EC]/50 text-[#9BB3A3] hover:bg-[#EAF0EC] hover:text-[#4A6B53]'
-                 }`}
-               >
-                 {f === 'all' ? <span className="flex items-center gap-1.5"><Filter size={14} /> ALL</span> : f.replace('-', ' ')}
-               </button>
-             ))}
+          <div className="flex items-center gap-3 justify-end relative">
+            
+            <div className="relative">
+              <button
+                onClick={() => setIsFilterOpen(!isFilterOpen)}
+                className={`p-3 rounded-full transition-all flex items-center justify-center hover:scale-110 ${
+                  filter !== 'all' ? 'bg-[#34D399] text-[#1E432B]' : 'bg-[#EAF0EC]/20 text-white hover:bg-[#EAF0EC]/30'
+                }`}
+                title="Filter Reports"
+              >
+                <Filter size={20} />
+              </button>
+              {isFilterOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsFilterOpen(false)}></div>
+                  <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl shadow-xl border border-emerald-100 overflow-hidden z-50 py-2">
+                    {['all', 'pending', 'in-progress', 'resolved', 'taken down'].map(f => (
+                      <button
+                        key={f}
+                        onClick={() => { setFilter(f as any); setIsFilterOpen(false); }}
+                        className={`w-full text-left px-5 py-3 text-sm font-bold uppercase transition-colors flex items-center justify-between ${
+                          filter === f ? 'bg-[#34D399]/20 text-[#1E432B]' : 'text-[#738F7C] hover:bg-[#F3F7F4]'
+                        }`}
+                      >
+                        {f === 'all' ? 'All Reports' : f}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <button
+              onClick={() => {
+                setIsSparkleAnimating(true);
+                setTimeout(() => setIsSparkleAnimating(false), 800);
+                setIsMultiSelectMode(!isMultiSelectMode);
+                if (isMultiSelectMode) {
+                  setSelectedReportIds(new Set());
+                }
+              }}
+              className={`p-3 rounded-full transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] flex items-center justify-center relative hover:scale-110 ${
+                isSparkleAnimating 
+                  ? 'bg-white text-[#C5F04F] scale-125 rotate-[360deg] shadow-[0_0_30px_rgba(255,255,255,1)] z-10' 
+                  : isMultiSelectMode 
+                    ? 'bg-[#C5F04F] text-[#1E432B] shadow-[0_0_15px_rgba(197,240,79,0.5)]' 
+                    : 'bg-[#EAF0EC]/20 text-white hover:bg-[#EAF0EC]/30'
+              }`}
+              title="Select Reports"
+            >
+              <Sparkles size={20} className={`transition-all duration-300 ${isMultiSelectMode && !isSparkleAnimating ? 'animate-pulse' : ''}`} />
+              
+              {isSparkleAnimating && (
+                <>
+                  <div className="absolute inset-0 rounded-full border-4 border-white animate-[ping_0.5s_cubic-bezier(0,0,0.2,1)_forwards] opacity-0 pointer-events-none"></div>
+                  <div className="absolute -inset-2 rounded-full border-2 border-[#C5F04F] animate-[ping_0.6s_cubic-bezier(0,0,0.2,1)_0.1s_forwards] opacity-0 pointer-events-none"></div>
+                </>
+              )}
+            </button>
+            
+            <button
+              className="p-3 rounded-full transition-all bg-[#EAF0EC]/20 text-white hover:bg-[#EAF0EC]/30 hover:scale-110 flex items-center justify-center"
+              onClick={() => setIsHistoryModalOpen(true)}
+              title="Investigation History"
+            >
+              <History size={20} />
+            </button>
           </div>
         </div>
 
@@ -219,7 +344,9 @@ export const AuthorityIssuesView: React.FC = () => {
             <AuthorityIssueCard 
               key={issue.id} 
               issue={issue} 
-              onClick={() => setSelectedIssue(issue)} 
+              onClick={() => handleIssueClick(issue)} 
+              isMultiSelectMode={isMultiSelectMode}
+              isSelected={selectedReportIds.has(issue.id)}
             />
           ))}
         </div>
@@ -237,6 +364,57 @@ export const AuthorityIssuesView: React.FC = () => {
         />
       )}
       </div>
+
+      {/* Copilot FAB */}
+      {isMultiSelectMode && selectedReportIds.size > 0 && (
+        <div className="fixed bottom-32 md:bottom-24 right-6 md:right-10 z-50">
+          <button
+            onClick={handleStartInvestigation}
+            disabled={isCreatingSession}
+            className={`flex items-center gap-3 px-6 py-4 rounded-full font-black shadow-2xl transition-all hover:scale-105 active:scale-95 border-2 border-white/40 ${
+              isCreatingSession 
+                ? 'bg-gray-400 text-white cursor-not-allowed opacity-80' 
+                : 'bg-[#C5F04F] text-[#1E432B] hover:shadow-[0_8px_30px_rgba(197,240,79,0.5)]'
+            }`}
+          >
+            {isCreatingSession ? (
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#1E432B]"></div>
+            ) : (
+              <Sparkles size={24} className="animate-pulse text-white drop-shadow-md" fill="currentColor" />
+            )}
+            <span className="text-sm md:text-base">
+              {isCreatingSession ? 'Starting...' : `Investigate ${selectedReportIds.size} Report${selectedReportIds.size > 1 ? 's' : ''}`}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {activeCopilotSessionId && (
+        <AuthorityCopilotChatWidget 
+          sessionId={activeCopilotSessionId} 
+          reportIds={activeSessionReportIds}
+          reports={activeSessionReports}
+          initialMessages={initialMessages}
+          onClose={() => {
+            setActiveCopilotSessionId(null);
+            setInitialMessages([]);
+            setActiveSessionReportIds([]);
+            setActiveSessionReports([]);
+          }} 
+        />
+      )}
+
+      <AuthorityCopilotHistoryModal 
+        isOpen={isHistoryModalOpen} 
+        onClose={() => setIsHistoryModalOpen(false)} 
+        onSelectSession={(sessionId, msgs, reportIds) => {
+          setActiveCopilotSessionId(sessionId);
+          setInitialMessages(msgs);
+          const ids = reportIds || [];
+          setActiveSessionReportIds(ids);
+          setActiveSessionReports(issues.filter(i => ids.includes(String(i.id))));
+        }}
+      />
     </div>
   );
 };

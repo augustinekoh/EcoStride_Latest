@@ -28,7 +28,7 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
   const unreadCount = useUserStore(state => state.communityUnreadCount);
   const setUnreadCount = (val: any) => {
     const newState = typeof val === 'function' ? val(useUserStore.getState().communityUnreadCount) : val;
-    useUserStore.getState().setUserData({ communityUnreadCount: newState });
+    useUserStore.getState().setLocalData({ communityUnreadCount: newState });
   };
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -337,7 +337,7 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
                     <div className={`flex gap-2 mb-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
                       {!isMe && (
                         <div className="w-8 h-8 rounded-full bg-[var(--color-teal-dark)]/10 flex items-center justify-center text-[var(--color-teal-dark)] overflow-hidden shrink-0 mt-auto border border-black/5">
-                          {msg.avatar && (msg.avatar.startsWith('http') || msg.avatar.includes('.') || msg.avatar.includes('/')) ? (
+                          {msg.avatar && (String(msg.avatar).startsWith('http') || String(msg.avatar).includes('.') || String(msg.avatar).includes('/')) ? (
                             <img src={resolveAvatarUrl(msg.avatar, msg.username)} alt={msg.username} className="w-full h-full object-cover" />
                           ) : msg.avatar ? (
                             <span className="text-sm font-bold">{msg.avatar}</span>
@@ -361,7 +361,7 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
                           </div>
                         )}
                         <div className="text-[15px] font-medium leading-relaxed whitespace-pre-wrap break-words">
-                          {msg.content.split(/(\[IMAGE:.*?\]|\[SIGNPOST:.*?\]|\[ISSUE:.*?\])/g).map((part, i) => {
+                          {(msg.content || '').split(/(\[IMAGE:.*?\]|\[SIGNPOST:.*?\]|\[ISSUE:.*?\])/g).map((part, i) => {
                             if (part.startsWith('[IMAGE:')) {
                               let url = part.replace('[IMAGE:', '').replace(']', '');
                                 if (Capacitor.isNativePlatform() && url.includes('localhost')) {
@@ -419,7 +419,7 @@ export function FloatingChat({ guildId }: FloatingChatProps) {
                               onClick={(e) => e.stopPropagation()}
                             >
                               {/* Can only edit if it's text and within 5 minutes */}
-                              {!msg.content.includes('[IMAGE:') && !msg.content.includes('[SIGNPOST:') && (Date.now() - msg.created_at) <= 5 * 60 * 1000 && (
+                              {!(msg.content || '').includes('[IMAGE:') && !(msg.content || '').includes('[SIGNPOST:') && (Date.now() - msg.created_at) <= 5 * 60 * 1000 && (
                                 <button 
                                   className="flex items-center gap-2 text-sm font-bold px-5 py-2.5 text-slate-700 dark:text-slate-200 hover:bg-slate-500/10 dark:hover:bg-slate-400/10 rounded-full transition-all active:scale-95 whitespace-nowrap"
                                   onClick={() => startEdit(msg)}

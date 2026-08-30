@@ -5,7 +5,7 @@ import { useMapStore } from '../../../stores/useMapStore';
 import { useNavigate } from 'react-router-dom';
 import { apiClient, getApiBaseUrl, resolveImageUrl } from '../../../lib/api';
 import { formatLocation } from '../../../lib/locationData';
-import { X, Send, Camera, Clock, Info, RefreshCw, User, MapPin, ChevronLeft, ChevronRight, ImageOff, Plus, FileText, Loader2, Trash2, AlertTriangle } from 'lucide-react';
+import { X, Send, Camera, Clock, Info, RefreshCw, User, MapPin, ChevronLeft, ChevronRight, ImageOff, Plus, FileText, Loader2, Trash2, AlertTriangle, Sparkles } from 'lucide-react';
 import { compressImage } from '../../../lib/imageUtils';
 
 interface Props {
@@ -179,19 +179,27 @@ export const AuthorityIssueDetailModal: React.FC<Props> = ({ isOpen, onClose, is
     setIsUploading(true);
     try {
       const compressedFile = await compressImage(file, 1200, 1200, 0.8);
-      const formData = new FormData();
-      formData.append('file', compressedFile);
-
-      const uploadRes = await apiClient('/issues/images', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!uploadRes.success || !uploadRes.url) {
-        throw new Error(uploadRes.error || 'Failed to upload photo');
+      const ext = compressedFile.name.split('.').pop() || 'webp';
+      
+      const preRes = await apiClient(`/issues/presigned-url?ext=${ext}`);
+      if (!preRes.success || !preRes.uploadUrl) {
+        throw new Error(preRes.error || 'Failed to get upload authorization');
       }
 
-      await handleSendMessage(undefined, uploadRes.url);
+      const buffer = await compressedFile.arrayBuffer();
+      const putRes = await fetch(preRes.uploadUrl, {
+        method: 'PUT',
+        body: buffer,
+        headers: {
+          'Content-Type': compressedFile.type || 'image/webp'
+        }
+      });
+
+      if (!putRes.ok) {
+        throw new Error('Failed to upload image to storage');
+      }
+
+      await handleSendMessage(undefined, preRes.publicUrl);
     } catch (err: any) {
       alert(`Upload failed: ${err.message || 'Error uploading image'}`);
     } finally {
@@ -298,7 +306,7 @@ export const AuthorityIssueDetailModal: React.FC<Props> = ({ isOpen, onClose, is
             <X size={20} />
           </button>
 
-          <span className="text-slate-400 text-sm font-semibold tracking-wide">Report #{issue.id.toUpperCase()}</span>
+          <span className="text-slate-400 text-sm font-semibold tracking-wide">Report #{String(issue.id).toUpperCase()}</span>
           <h2 className="text-slate-800 font-bold text-2xl mt-1 leading-tight pr-10">{issue.title}</h2>
 
           {/* Status & Date */}
@@ -322,6 +330,23 @@ export const AuthorityIssueDetailModal: React.FC<Props> = ({ isOpen, onClose, is
               }`}></span>
               {issue.takedown_status === 'taken-down' ? 'Taken Down' : issue.takedown_status === 'requested' ? 'Takedown Requested' : issue.status === 'pending' ? 'Pending' : issue.status}
             </div>
+
+            {issue.severity && (
+              <div 
+                className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                  issue.severity === 'Critical' ? 'bg-rose-100 text-rose-800' :
+                  issue.severity === 'Major' ? 'bg-amber-100 text-amber-800' :
+                  'bg-emerald-100 text-emerald-800'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  issue.severity === 'Critical' ? 'bg-rose-500' :
+                  issue.severity === 'Major' ? 'bg-amber-500' :
+                  'bg-emerald-500'
+                }`}></span>
+                {issue.severity} Severity
+              </div>
+            )}
 
             <div className="text-[13px] font-semibold text-slate-400 flex items-center gap-1.5">
               <Clock size={14} />
@@ -429,12 +454,83 @@ export const AuthorityIssueDetailModal: React.FC<Props> = ({ isOpen, onClose, is
             </div>
           )}
 
-          {/* Description */}
-          <div>
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Problem Description</h3>
-            <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm text-slate-700 text-sm leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-              {issue.description || 'No description provided.'}
+          {/* Description & AI Civic Intelligence Grid */}
+          <div className={`grid grid-cols-1 ${issue.ai_status === 'pending' || issue.ai_status === 'failed' || issue.ai_summary || issue.ai_refined_description || issue.ai_recommendation ? 'lg:grid-cols-2' : ''} gap-5`}>
+            {/* Citizen Input Card */}
+            <div className="flex flex-col h-full">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 shrink-0">Citizen Description</h3>
+              <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm text-slate-700 text-sm leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] flex-1">
+                {issue.description || 'No description provided.'}
+              </div>
             </div>
+
+            {/* AI Civic Intelligence Card */}
+            {(issue.ai_status === 'pending' || issue.ai_status === 'failed' || issue.ai_summary || issue.ai_refined_description || issue.ai_recommendation) ? (
+              <div className="flex flex-col h-full">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 shrink-0">AI Refined</h3>
+                
+                {issue.ai_status === 'pending' ? (
+                  <div className="flex-1 bg-gradient-to-br from-[#C5F04F]/20 to-white/60 backdrop-blur-xl p-5 rounded-3xl border border-[#C5F04F]/60 shadow-sm flex flex-col items-center justify-center gap-3.5 text-center min-h-[160px]">
+                    <Sparkles size={24} className="text-[#9BB3A3] animate-pulse" />
+                    <div>
+                      <h3 className="text-sm font-bold text-[#174F35] mb-1">Civic Intelligence</h3>
+                      <p className="text-xs text-[#4A6B53]">AI is analyzing this report...</p>
+                    </div>
+                    <div className="text-[10px] text-[#174F35] font-medium bg-[#C5F04F]/30 px-3 py-1 rounded-full animate-pulse mt-2 border border-[#C5F04F]/40 shadow-sm">
+                      Multimodal assessment in progress
+                    </div>
+                  </div>
+                ) : issue.ai_status === 'failed' ? (
+                  <div className="flex-1 bg-slate-50 p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col items-center justify-center gap-2 text-center min-h-[160px]">
+                    <Sparkles size={24} className="text-slate-400 opacity-50" />
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-600 mb-1">Civic Intelligence</h3>
+                      <p className="text-xs text-slate-500">AI analysis is temporarily unavailable.</p>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-2">The original citizen report is still available.</p>
+                  </div>
+                ) : (
+                  <div className="flex-1 bg-gradient-to-br from-[#C5F04F]/20 to-white/60 backdrop-blur-xl p-5 rounded-3xl border border-[#C5F04F]/60 shadow-sm flex flex-col gap-3.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Sparkles size={14} className="text-[#9BB3A3] animate-pulse" />
+                        <h3 className="text-xs font-bold text-[#174F35] uppercase tracking-widest">Civic Intelligence</h3>
+                      </div>
+                      {issue.severity && (
+                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
+                          issue.severity === 'Critical' ? 'bg-rose-100 text-rose-700 border border-rose-200' :
+                          issue.severity === 'Major' ? 'bg-[#F4FCE3] text-[#174F35] border border-[#C5F04F]/60' :
+                          'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                        }`}>
+                          {issue.severity}
+                        </span>
+                      )}
+                    </div>
+
+                    {issue.ai_summary && (
+                      <div>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#9BB3A3] block mb-1">Executive Summary</span>
+                        <p className="text-sm font-semibold text-[#183D2A] leading-snug">{issue.ai_summary}</p>
+                      </div>
+                    )}
+
+                    {issue.ai_refined_description && (
+                      <div>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#9BB3A3] block mb-1">Standardized Technical Assessment</span>
+                        <p className="text-xs text-[#174F35]/80 leading-relaxed">{issue.ai_refined_description}</p>
+                      </div>
+                    )}
+
+                    {issue.ai_recommendation && (
+                      <div className="mt-auto pt-2.5 border-t border-[#C5F04F]/30">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#174F35] block mb-1">Actionable Recommendation</span>
+                        <p className="text-xs font-medium text-[#183D2A] leading-relaxed">{issue.ai_recommendation}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
 
           {/* Metadata Grid */}
@@ -467,7 +563,7 @@ export const AuthorityIssueDetailModal: React.FC<Props> = ({ isOpen, onClose, is
                   <MapPin size={18} className="text-slate-400 shrink-0 mt-0.5" />
                   <div className="flex flex-col gap-1">
                     <span className="font-semibold text-slate-800">{formatLocation(issue.city, issue.state, issue.country, issue.specific_location)}</span>
-                    <span className="text-slate-400 text-xs font-mono">GPS: {issue.lat.toFixed(6)}, {issue.lng.toFixed(6)}</span>
+                    <span className="text-slate-400 text-xs font-mono">GPS: {Number(issue.lat || 0).toFixed(6)}, {Number(issue.lng || 0).toFixed(6)}</span>
                   </div>
                 </div>
               </div>

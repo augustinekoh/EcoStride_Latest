@@ -1,0 +1,29 @@
+{
+  "users": [
+    {
+      "id": "BGqZGs0LvxU5LDsqX439a74sLYR2",
+      "email": "bipolih627@ebflyai.com",
+      "username": "TestRun",
+      "guild_id": null,
+      "coins": 0,
+      "total_distance_km": 0,
+      "total_trees_planted": 0,
+      "created_at": 1787579820263,
+      "role": "user",
+      "player_id": "11545370",
+      "nationality": null,
+      "bio": "Apunene",
+      "unlocked_badges": null,
+      "avatar": "https://ecostride-backend.ecostride0.workers.dev/r2/avatars/BGqZGs0LvxU5LDsqX439a74sLYR2-1787579822902.jpg",
+      "read_mails": null,
+      "muted_until": null,
+      "banned_until": null,
+      "showcased_badges": null,
+      "country": "Malaysia",
+      "state": null,
+      "city": null,
+      "position": null,
+      "verified_email": 1
+    }
+  ]
+}

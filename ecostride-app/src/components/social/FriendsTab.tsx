@@ -145,7 +145,7 @@ export function FriendsTab() {
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-[var(--color-teal-dark)]/20 flex items-center justify-center text-[var(--color-teal-dark)] overflow-hidden shrink-0">
-                      {user.avatar && (user.avatar.startsWith('http') || user.avatar.includes('.') || user.avatar.includes('/')) ? (
+                      {user.avatar && (String(user.avatar).startsWith('http') || String(user.avatar).includes('.') || String(user.avatar).includes('/')) ? (
                         <img src={resolveAvatarUrl(user.avatar, user.username)} alt={user.username} className="w-full h-full object-cover" />
                       ) : user.avatar ? (
                         <span className="text-lg">{user.avatar}</span>
@@ -199,7 +199,7 @@ export function FriendsTab() {
                 <div className="flex items-center gap-3">
                   <div className="relative shrink-0">
                     <div className="w-12 h-12 rounded-full bg-[var(--color-teal-dark)]/20 flex items-center justify-center text-[var(--color-teal-dark)] shadow-inner overflow-hidden">
-                      {friend.avatar && (friend.avatar.startsWith('http') || friend.avatar.includes('.') || friend.avatar.includes('/')) ? (
+                      {friend.avatar && (String(friend.avatar).startsWith('http') || String(friend.avatar).includes('.') || String(friend.avatar).includes('/')) ? (
                         <img src={resolveAvatarUrl(friend.avatar, friend.username)} alt={friend.username} className="w-full h-full object-cover" />
                       ) : friend.avatar ? (
                         <span className="text-xl">{friend.avatar}</span>

@@ -137,7 +137,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
             onClick={() => setIsAvatarExpanded(true)}
             className="w-24 h-24 rounded-full border-4 border-white/40 bg-white/20 backdrop-blur-lg flex items-center justify-center text-5xl shadow-lg overflow-hidden shrink-0 cursor-pointer transition-transform hover:scale-105 active:scale-95"
           >
-            {displayUser.avatar && (displayUser.avatar.startsWith('http') || displayUser.avatar.startsWith('/')) ? (
+            {displayUser.avatar && (String(displayUser.avatar).startsWith('http') || String(displayUser.avatar).startsWith('/')) ? (
               <img src={displayUser.avatar} alt="avatar" className="w-full h-full object-cover" />
             ) : (
               displayUser.avatar || '👤'
@@ -304,7 +304,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
               <X size={28} />
             </button>
             <div className="w-full aspect-square rounded-full border-4 border-[#1d3539] overflow-hidden bg-white/10 shadow-comic flex items-center justify-center text-9xl">
-              {displayUser.avatar && (displayUser.avatar.startsWith('http') || displayUser.avatar.startsWith('/')) ? (
+              {displayUser.avatar && (String(displayUser.avatar).startsWith('http') || String(displayUser.avatar).startsWith('/')) ? (
                 <img src={displayUser.avatar} alt="avatar full" className="w-full h-full object-cover" />
               ) : (
                 displayUser.avatar || 'dY` '

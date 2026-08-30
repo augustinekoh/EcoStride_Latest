@@ -64,9 +64,7 @@ export const StartupAnimation: React.FC<{ onComplete: () => void }> = ({ onCompl
       <FloatingIcons />
 
       <div className="relative z-10 flex flex-col items-center gap-3 animate-bounce shadow-black/5">
-        <div className="bg-white/80 dark:bg-slate-800/80 p-4 rounded-full backdrop-blur-md shadow-sm border border-slate-200/80 dark:border-slate-700">
-          <Leaf size={56} className="text-emerald-600 dark:text-emerald-400 drop-shadow-sm" />
-        </div>
+        <img src="/app-logo.png" alt="EcoStride Logo" className="w-32 h-32 md:w-40 md:h-40 object-contain drop-shadow-2xl" />
       </div>
       <h1 className="relative z-10 mt-6 text-4xl font-black text-slate-900 dark:text-white uppercase tracking-widest drop-shadow-sm text-center">
         EcoStride

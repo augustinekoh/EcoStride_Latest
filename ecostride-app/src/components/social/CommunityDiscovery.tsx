@@ -107,7 +107,7 @@ export function CommunityDiscovery({ onJoinCommunity }: CommunityDiscoveryProps)
           {isLoading ? (
             <div className="text-center text-slate-400 py-10">Loading communities...</div>
           ) : (
-            (searchQuery.trim() ? searchResults : recommended.slice(0, visibleCount))?.map(guild => (
+            (searchQuery.trim() ? (searchResults || []) : (recommended || []).slice(0, visibleCount)).map(guild => (
               <div 
                 key={guild.id}
                 onClick={() => setPreviewGuildId(guild.id)}
@@ -116,7 +116,7 @@ export function CommunityDiscovery({ onJoinCommunity }: CommunityDiscoveryProps)
                 <div className="flex items-center flex-1 min-w-0">
                   <div className="w-12 h-12 rounded-[1rem] bg-[var(--color-teal-dark)]/10 flex items-center justify-center text-2xl shrink-0 mr-3 text-[var(--color-teal-dark)] overflow-hidden">
                     {guild.icon ? (
-                      (guild.icon.startsWith('http') || guild.icon.startsWith('/')) ? (
+                      (String(guild.icon).startsWith('http') || String(guild.icon).startsWith('/')) ? (
                         <img src={guild.icon} alt={guild.name} className="w-full h-full object-cover" />
                       ) : (
                         guild.icon
@@ -149,10 +149,10 @@ export function CommunityDiscovery({ onJoinCommunity }: CommunityDiscoveryProps)
             ))
           )}
           
-          {!isLoading && !searchQuery.trim() && recommended.length > 3 && (
+          {!isLoading && !searchQuery.trim() && (recommended || []).length > 3 && (
             <button 
               onClick={() => {
-                if (visibleCount >= recommended.length) {
+                if (visibleCount >= (recommended || []).length) {
                   setVisibleCount(3);
                 } else {
                   setVisibleCount(prev => prev + 3);
@@ -160,7 +160,7 @@ export function CommunityDiscovery({ onJoinCommunity }: CommunityDiscoveryProps)
               }}
               className="w-full py-3 glass-active bg-white/50 border border-black/5 rounded-2xl text-slate-500 font-bold hover:bg-[var(--color-teal-dark)] hover:text-white hover:shadow-md transition-all"
             >
-              {visibleCount >= recommended.length ? 'Collapse' : 'Show More'}
+              {visibleCount >= (recommended || []).length ? 'Collapse' : 'Show More'}
             </button>
           )}
           

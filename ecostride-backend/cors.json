@@ -1,19 +1,19 @@
 {
   "rules": [
     {
-      "allowedOrigins": [
-        "*"
-      ],
-      "allowedMethods": [
-        "GET",
-        "PUT",
-        "POST",
-        "DELETE",
-        "HEAD"
-      ],
-      "allowedHeaders": [
-        "*"
-      ]
+      "id": "AllowProductionUploads",
+      "allowed": {
+        "origins": [
+          "https://ecostride.cc",
+          "https://localhost"
+        ],
+        "methods": [
+          "PUT"
+        ],
+        "headers": [
+          "Content-Type"
+        ]
+      }
     }
   ]
 }
