@@ -101,10 +101,11 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
           VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
 
-      # ── 8. Decode Keystore ─────────────────────────────────────
-      - name: Decode signing keystore
+      # ── 8. Decode Keystore & Google Services ───────────────────
+      - name: Decode signing keystore and Google Services
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ecostride-app/android/app/ecostride.keystore
+          echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | base64 --decode > ecostride-app/android/app/google-services.json
 
       # ── 9. Make Gradlew executable ─────────────────────────────
       - name: Set Gradle wrapper permissions
