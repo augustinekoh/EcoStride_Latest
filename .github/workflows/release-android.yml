@@ -85,20 +85,15 @@ jobs:
         working-directory: ecostride-app
         run: npm ci
 
-      # ── 6. Vite Build (Web Assets) ─────────────────────────────
-      - name: Build Vite web assets
+      # ── 6. Vite Build & Sync (Android) ─────────────────────────
+      - name: Build Vite web assets & Sync Capacitor
         working-directory: ecostride-app
-        run: npm run build
+        run: npm run build:android
         env:
           # Add any env vars needed for the build, e.g.:
           # VITE_MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
           # VITE_API_BASE_URL: ${{ secrets.API_BASE_URL }}
           NODE_ENV: production
-
-      # ── 7. Sync Capacitor ──────────────────────────────────────
-      - name: Sync Capacitor Android
-        working-directory: ecostride-app
-        run: npx cap sync android
 
       # ── 8. Decode Keystore ─────────────────────────────────────
       - name: Decode signing keystore
