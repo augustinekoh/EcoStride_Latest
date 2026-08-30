@@ -720,8 +720,8 @@ const handleTakeDownIssue = async (c: any) => {
 
   // 1. Mark as taken down
   const updateIssue = c.env.DB.prepare(
-    'UPDATE infrastructure_reports SET takedown_status = ?, takedown_reason = ?, updated_at = ? WHERE id = ?'
-  ).bind('taken-down', reason, now, id);
+    'UPDATE infrastructure_reports SET takedown_status = ?, takedown_reason = ?, updated_at = ?, status = ?, resolved_at = COALESCE(resolved_at, ?) WHERE id = ?'
+  ).bind('taken-down', reason, now, 'resolved', now, id);
 
   // 2. Insert audit activity entry
   const activityId = crypto.randomUUID();
@@ -765,7 +765,7 @@ authoritiesRouter.post('/issues/:id/approve-takedown', async (c: any) => {
   if (!issue) return c.json({ error: 'Issue not found' }, 404);
   if (issue.takedown_status !== 'requested') return c.json({ error: 'No takedown requested' }, 400);
 
-  const updateIssue = c.env.DB.prepare('UPDATE infrastructure_reports SET takedown_status = ?, updated_at = ? WHERE id = ?').bind('taken-down', now, id);
+  const updateIssue = c.env.DB.prepare('UPDATE infrastructure_reports SET takedown_status = ?, updated_at = ?, status = ?, resolved_at = COALESCE(resolved_at, ?) WHERE id = ?').bind('taken-down', now, 'resolved', now, id);
   const activityId = crypto.randomUUID();
   const insertActivity = c.env.DB.prepare(`
     INSERT INTO report_activity (id, report_id, actor_id, actor_type, activity_type, title, description, created_at) 

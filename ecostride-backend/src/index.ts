@@ -1472,8 +1472,8 @@ app.post('/api/issues/:id/take-down', async (c) => {
     return c.json({ success: true, message: 'Takedown request sent for approval', takedown_status: 'requested' });
   } else {
     // Direct takedown
-    const updateIssue = c.env.DB.prepare('UPDATE infrastructure_reports SET takedown_status = ?, takedown_reason = ?, updated_at = ? WHERE id = ?')
-      .bind('taken-down', reason, now, id);
+    const updateIssue = c.env.DB.prepare('UPDATE infrastructure_reports SET takedown_status = ?, takedown_reason = ?, updated_at = ?, status = ?, resolved_at = COALESCE(resolved_at, ?) WHERE id = ?')
+      .bind('taken-down', reason, now, 'resolved', now, id);
     const insertActivity = c.env.DB.prepare(`
       INSERT INTO report_activity (id, report_id, actor_id, actor_type, activity_type, title, description, created_at) 
       VALUES (?, ?, ?, 'user', 'ISSUE_TAKEN_DOWN', 'Issue Taken Down', ?, ?)

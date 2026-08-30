@@ -80,7 +80,7 @@ export const CaseReportsView: React.FC = () => {
         <div className="flex-1 flex flex-col justify-between min-h-[5rem] sm:min-h-[6rem]">
           <div className="flex flex-col">
             <div className="flex justify-between items-center mb-1.5 gap-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">#{issue.id.toUpperCase()}</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">#{String(issue.id).toUpperCase()}</span>
               <div className="flex items-center gap-1.5 flex-wrap justify-end">
                 <div className={`px-2 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider flex items-center gap-1 leading-none shadow-sm whitespace-nowrap ${
                   issue.takedown_status === 'taken-down' ? 'bg-red-100/80 text-red-700 border-red-200/60 dark:bg-red-950/60 dark:text-red-300' :

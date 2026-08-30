@@ -306,7 +306,7 @@ export const AuthorityIssueDetailModal: React.FC<Props> = ({ isOpen, onClose, is
             <X size={20} />
           </button>
 
-          <span className="text-slate-400 text-sm font-semibold tracking-wide">Report #{issue.id.toUpperCase()}</span>
+          <span className="text-slate-400 text-sm font-semibold tracking-wide">Report #{String(issue.id).toUpperCase()}</span>
           <h2 className="text-slate-800 font-bold text-2xl mt-1 leading-tight pr-10">{issue.title}</h2>
 
           {/* Status & Date */}
@@ -563,7 +563,7 @@ export const AuthorityIssueDetailModal: React.FC<Props> = ({ isOpen, onClose, is
                   <MapPin size={18} className="text-slate-400 shrink-0 mt-0.5" />
                   <div className="flex flex-col gap-1">
                     <span className="font-semibold text-slate-800">{formatLocation(issue.city, issue.state, issue.country, issue.specific_location)}</span>
-                    <span className="text-slate-400 text-xs font-mono">GPS: {issue.lat.toFixed(6)}, {issue.lng.toFixed(6)}</span>
+                    <span className="text-slate-400 text-xs font-mono">GPS: {Number(issue.lat || 0).toFixed(6)}, {Number(issue.lng || 0).toFixed(6)}</span>
                   </div>
                 </div>
               </div>

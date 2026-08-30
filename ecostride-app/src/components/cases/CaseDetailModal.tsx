@@ -267,7 +267,7 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue, onUpd
             <div className="flex items-center justify-between px-5 sm:px-6 py-3.5 border-b border-slate-200/80 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl shrink-0 z-10">
               <div>
                 <span className="text-[10px] font-black text-emerald-800 dark:text-emerald-400 tracking-wider uppercase">
-                  Case #{issue.id.toUpperCase()}
+                  Case #{String(issue.id).toUpperCase()}
                 </span>
                 <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white truncate max-w-[240px] sm:max-w-sm">
                   {issue.title}
@@ -516,7 +516,7 @@ export const CaseDetailModal: React.FC<Props> = ({ isOpen, onClose, issue, onUpd
 
               <div className="text-center shrink-0">
                 <h3 className="font-black text-slate-900 dark:text-white text-xs sm:text-sm uppercase tracking-tight">
-                  Case #{issue.id.toUpperCase()}
+                  Case #{String(issue.id).toUpperCase()}
                 </h3>
                 <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 block -mt-0.5">
                   {issue.authority_username ? `Authority: ${issue.authority_username}` : 'City Authority'}

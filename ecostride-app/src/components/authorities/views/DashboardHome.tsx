@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
-import { apiClient } from '../../../lib/api';
+import { apiClient, resolveImageUrl } from '../../../lib/api';
 import { useAuthStore } from '../../../stores/useAuthStore';
 import { useUserStore } from '../../../stores/useUserStore';
 import { Calendar as CalendarIcon, CheckCircle, Clock, AlertCircle, X, ChevronLeft, ChevronRight, Edit2, TrendingUp, BarChart2, Briefcase, Plus, CalendarDays, Activity, ClipboardList, Radio, Map, Network, Layers, Sparkles } from 'lucide-react';
@@ -398,7 +398,7 @@ export function DashboardHome() {
                       </p>
                       {coverPhoto && (
                         <div className="relative w-full h-32 rounded-[16px] overflow-hidden mb-4 bg-[#F3F7F4] shrink-0 z-10">
-                          <img src={coverPhoto} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                          <img src={resolveImageUrl(coverPhoto)} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                         </div>
                       )}
                       <div className="flex items-center justify-between mt-auto relative z-10">
@@ -827,7 +827,7 @@ export function DashboardHome() {
                           </p>
                           {coverPhoto && (
                             <div className="relative w-full h-32 rounded-[16px] overflow-hidden mb-4 bg-[#F3F7F4] shrink-0 z-10">
-                              <img src={coverPhoto} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                              <img src={resolveImageUrl(coverPhoto)} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                             </div>
                           )}
                           <div className="flex items-center justify-between mt-auto relative z-10">
@@ -926,19 +926,35 @@ export function DashboardHome() {
                   criticalReports.map(report => {
                     const timeAgo = Math.floor((Date.now() - report.created_at) / (1000 * 60 * 60));
                     const timeStr = timeAgo < 24 ? `${timeAgo} hours ago` : `${Math.floor(timeAgo/24)} days ago`;
+                    let photos: string[] = [];
+                    try {
+                      if (report.photos && typeof report.photos === 'string') {
+                        photos = JSON.parse(report.photos);
+                      } else if (Array.isArray(report.photos)) {
+                        photos = report.photos;
+                      }
+                    } catch (e) {}
+                    const coverPhoto = photos.length > 0 ? photos[0] : null;
+
                           return (
-                        <div key={report.id} onClick={() => navigate('/authorities/issues')} className="p-5 rounded-[24px] bg-white border border-[#EAF0EC] shadow-[0_2px_10px_-4px_rgba(34,76,49,0.1)] hover:-translate-y-1 hover:shadow-[0_8px_20px_-6px_rgba(34,76,49,0.15)] transition-all duration-300 cursor-pointer group flex flex-col relative h-full overflow-hidden">
+                        <div key={report.id} onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate('/authorities/issues', { state: { openIssue: report } }); }} className="p-5 rounded-[24px] bg-white border border-[#EAF0EC] shadow-[0_2px_10px_-4px_rgba(34,76,49,0.1)] hover:-translate-y-1 hover:shadow-[0_8px_20px_-6px_rgba(34,76,49,0.15)] transition-all duration-300 cursor-pointer group flex flex-col relative overflow-hidden">
                           <div className="absolute -top-10 -right-10 w-32 h-32 bg-gradient-to-br from-[#FB7185]/10 to-transparent rounded-full blur-2xl pointer-events-none group-hover:scale-125 transition-transform duration-700"></div>
                           <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-[#FFE4E6] to-transparent rounded-tr-[24px] rounded-bl-[100px] pointer-events-none"></div>
                           <h4 className="text-[15px] font-black text-[#1E432B] line-clamp-2 mb-1 group-hover:text-[#E11D48] transition-colors z-10 pr-2">{report.title}</h4>
                           
+                          {coverPhoto && (
+                            <div className="relative w-full aspect-video rounded-[16px] overflow-hidden mb-3 bg-[#F3F7F4] shrink-0 z-10">
+                              <img src={resolveImageUrl(coverPhoto)} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                            </div>
+                          )}
+
                           {(report.ai_summary || report.description) && (
                             <p className="text-[12px] font-medium text-slate-600 line-clamp-2 mb-3 z-10">
                               {report.ai_summary || report.description}
                             </p>
                           )}
 
-                          <div className="flex justify-between items-center text-[12px] font-bold text-[#738F7C] mb-4 flex-1 z-10">
+                          <div className="flex justify-between items-center text-[12px] font-bold text-[#738F7C] mb-4 z-10">
                             <span className="flex items-center gap-1.5"><Clock size={12} /> {timeStr}</span>
                           </div>
   
@@ -966,7 +982,7 @@ export function DashboardHome() {
               
               {criticalReports.length > 0 && (
                 <div className="pt-4 mt-2 border-t border-[#E1EAE4] z-10">
-                  <button className="w-full py-3 rounded-2xl text-sm font-black text-[#738F7C] hover:bg-[#F3F7F4] hover:text-[#1E432B] transition-colors">
+                  <button onClick={() => navigate('/authorities/issues')} className="w-full py-3 rounded-2xl text-sm font-black text-[#738F7C] hover:bg-[#F3F7F4] hover:text-[#1E432B] transition-colors">
                     View All Critical Cases
                   </button>
                 </div>

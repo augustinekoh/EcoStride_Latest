@@ -173,7 +173,8 @@ export class AuthorityCopilotDO extends DurableObject {
     const placeholders = reportIds.map(() => "?").join(",");
     const query = `
       SELECT id, title, description, specific_location, lat, lng, severity, status,
-             ai_refined_description, ai_summary, ai_recommendation
+             ai_refined_description, ai_summary, ai_recommendation,
+             takedown_status, takedown_reason, resolved_at
       FROM infrastructure_reports
       WHERE id IN (${placeholders})
         AND deleted_at IS NULL
@@ -191,8 +192,16 @@ export class AuthorityCopilotDO extends DurableObject {
       context += `[REPORT ID: ${r.id}]\n`;
       context += `  Title: ${r.title}\n`;
       context += `  Location: ${r.specific_location || "N/A"} (${r.lat}, ${r.lng})\n`;
-      context += `  Severity: ${r.severity || "Minor"} | Status: ${r.status}\n`;
-      if (r.ai_summary) context += `  AI Summary: ${r.ai_summary}\n`;
+      context += `  Severity: ${r.severity || "Minor"}\n`;
+      context += `\n  REPORT STATUS:\n  ${r.status}\n`;
+      
+      if (r.takedown_status === 'taken-down') {
+        context += `\n  TAKEDOWN STATUS:\n  Taken down\n`;
+        context += `\n  TAKEDOWN REASON:\n  ${r.takedown_reason || "No takedown reason was recorded."}\n`;
+        context += `\n  RESOLUTION:\n  This report was resolved as a result of the takedown action.\n`;
+      }
+      
+      if (r.ai_summary) context += `\n  AI Summary: ${r.ai_summary}\n`;
       if (r.ai_refined_description) context += `  Standardized Description: ${r.ai_refined_description}\n`;
       if (r.ai_recommendation) context += `  Public Works Recommendation: ${r.ai_recommendation}\n`;
       context += `  Citizen Description: ${r.description || "N/A"}\n\n`;
