@@ -438,6 +438,9 @@ function HeroSection({ navigate }) {
               <button className="btn-glass" onClick={() => navigate('/features')}>
                 Explore Features <Icon name="arrow" size={15} />
               </button>
+              <a href="https://youtu.be/6Lo63UVp0us" target="_blank" rel="noopener noreferrer" className="btn-glass" style={{ textDecoration: 'none', color: 'inherit' }}>
+                <Icon name="externalLink" size={15} /> Watch Demo
+              </a>
             </div>
             {/* Mini stat bar */}
             <div style={{
