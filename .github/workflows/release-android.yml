@@ -103,11 +103,12 @@ jobs:
 
       # ── 8. Decode Keystore & Google Services ───────────────────
       - name: Decode signing keystore and Google Services
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ecostride-app/android/app/ecostride.keystore
-          cat << 'EOF' > ecostride-app/android/app/google-services.json
-          ${{ secrets.GOOGLE_SERVICES_JSON }}
-          EOF
+          echo "$KEYSTORE_BASE64" | base64 --decode -i > ecostride-app/android/app/ecostride.keystore
+          echo "$GOOGLE_SERVICES_JSON" > ecostride-app/android/app/google-services.json
 
       # ── 9. Make Gradlew executable ─────────────────────────────
       - name: Set Gradle wrapper permissions
@@ -117,12 +118,16 @@ jobs:
       # ── 10. Build Signed Release APK ───────────────────────────
       - name: Build signed release APK
         working-directory: ecostride-app/android
+        env:
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           ./gradlew assembleRelease \
             -Pandroid.injected.signing.store.file=${{ github.workspace }}/ecostride-app/android/app/ecostride.keystore \
-            -Pandroid.injected.signing.store.password=${{ secrets.KEY_STORE_PASSWORD }} \
-            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
-            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+            -Pandroid.injected.signing.store.password="$KEY_STORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
 
       # ── 11. Locate APK ─────────────────────────────────────────
       - name: Locate APK file

@@ -30,7 +30,7 @@ interface Guild {
 export function CommunityDashboard() {
   const { guildId, setGuildId } = useUserStore();
   const activeGuildId = guildId || 'guild_test_123';
-  
+
   const [guild, setGuild] = useState<Guild | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -65,7 +65,7 @@ export function CommunityDashboard() {
 
   const handleLeave = async () => {
     if (!auth.currentUser) return;
-    
+
     const isSoleMember = members.length === 1;
     if (isAdmin && !isSoleMember) {
       alert("You must transfer ownership to another member before leaving.");
@@ -74,7 +74,7 @@ export function CommunityDashboard() {
 
     const actionText = (isAdmin && isSoleMember) ? 'delete this community' : 'leave this community';
     if (!confirm(`Are you sure you want to ${actionText}?`)) return;
-    
+
     setIsLeaving(true);
     try {
       if (isAdmin && isSoleMember) {
@@ -155,18 +155,18 @@ export function CommunityDashboard() {
 
   return (
     <div className="w-full pb-24" onClick={() => { setActiveMenuId(null); setMuteMenuId(null); }}>
-      
+
       {/* Hero Section */}
       <div className="relative pt-8 pb-10 px-6">
         <div className="flex flex-col items-center text-center">
           <div className="w-28 h-28 rounded-full bg-gradient-to-tr from-[#5496a2] to-[#80abb1] p-1 shadow-[0_12px_40px_rgba(84,150,162,0.3)] mb-6 relative">
-            <div 
+            <div
               className="w-full h-full bg-white rounded-full flex items-center justify-center relative overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
               onClick={(e) => { e.stopPropagation(); setIsAvatarExpanded(true); }}
             >
               <div className="absolute inset-0 bg-[#5496a2]/5" />
               {guild?.icon ? (
-                (String(guild.icon).startsWith('http') || String(guild.icon).startsWith('/')) ? (
+                (guild.icon.startsWith('http') || guild.icon.startsWith('/')) ? (
                   <img src={resolveImageUrl(guild.icon)} alt={guild.name} className="w-full h-full object-cover" />
                 ) : (
                   <span className="text-5xl">{guild.icon}</span>
@@ -179,7 +179,7 @@ export function CommunityDashboard() {
               <TreeDeciduous size={18} className="text-emerald-500" />
             </div>
             {isAdmin && (
-              <button 
+              <button
                 onClick={(e) => { e.stopPropagation(); setIsEditingCommunity(true); }}
                 className="absolute top-0 right-0 bg-white rounded-full p-2.5 border border-black/5 shadow-md hover:bg-slate-50 transition-colors"
                 title="Edit Community Settings"
@@ -194,19 +194,19 @@ export function CommunityDashboard() {
           <p className="text-slate-400 text-[10px] font-bold tracking-widest uppercase mb-4">
             ID: {guild?.id || '---'}
           </p>
-          
+
           <p className="text-slate-500 text-sm max-w-xs mb-8 leading-relaxed">
             {isLoading ? 'Fetching details...' : guild?.description || 'Join us in making the world a greener place, one step at a time.'}
           </p>
 
           <div className="flex gap-4 w-full max-w-sm">
             <div className="flex-1 glass-card rounded-[1.5rem] py-4 flex flex-col items-center shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-              <span className="text-2xl font-black text-[var(--color-text-main)] mb-0.5">{(members || []).length}</span>
+              <span className="text-2xl font-black text-[var(--color-text-main)] mb-0.5">{members.length}</span>
               <span className="text-[10px] text-[var(--color-text-muted)] font-bold uppercase tracking-widest">Members</span>
             </div>
             <div className="flex-1 glass-card rounded-[1.5rem] py-4 flex flex-col items-center shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-emerald-50/20">
               <span className="text-2xl font-black text-emerald-500 mb-0.5">
-                {(members || []).reduce((acc, m) => acc + (m.total_trees_planted || 0), 0)}
+                {members.reduce((acc, m) => acc + (m.total_trees_planted || 0), 0)}
               </span>
               <span className="text-[10px] text-emerald-400/80 font-bold uppercase tracking-widest">Trees</span>
             </div>
@@ -220,35 +220,34 @@ export function CommunityDashboard() {
           <span className="flex items-center">
             Top Contributors <Trophy size={18} className="ml-2 text-yellow-500" />
           </span>
-          <span className="text-xs font-normal text-[var(--color-text-muted)]">{(members || []).length}/75 Members</span>
+          <span className="text-xs font-normal text-[var(--color-text-muted)]">{members.length}/75 Members</span>
         </h2>
-        
+
         <div className="glass-card rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-visible relative">
           {isLoading ? (
             <div className="animate-pulse space-y-4 p-4">
-              {[1,2,3].map(i => (
+              {[1, 2, 3].map(i => (
                 <div key={i} className="h-14 bg-slate-100 dark:bg-slate-700/50 rounded-xl" />
               ))}
             </div>
           ) : (
-            (members || []).map((member, index) => (
-              <div 
-                key={member.id} 
+            members.map((member, index) => (
+              <div
+                key={member.id}
                 onClick={() => setSelectedProfile(member)}
                 className={`flex items-center p-4 cursor-pointer hover:bg-slate-500/10 transition-colors relative border-b border-black/5 dark:border-white/5 last:border-b-0 ${activeMenuId === member.id ? 'z-50' : 'z-0'}`}
               >
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0 mr-3 ${
-                  index === 0 ? 'bg-yellow-100 text-yellow-600' :
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0 mr-3 ${index === 0 ? 'bg-yellow-100 text-yellow-600' :
                   index === 1 ? 'bg-slate-200 text-slate-600' :
-                  index === 2 ? 'bg-orange-100 text-orange-600' :
-                  'bg-slate-50 text-slate-400'
-                }`}>
+                    index === 2 ? 'bg-orange-100 text-orange-600' :
+                      'bg-slate-50 text-slate-400'
+                  }`}>
                   {index + 1}
                 </div>
 
                 <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
                   {member.avatar ? (
-                    (String(member.avatar).startsWith('http') || String(member.avatar).startsWith('/')) ? (
+                    (member.avatar.startsWith('http') || member.avatar.startsWith('/')) ? (
                       <img src={resolveImageUrl(member.avatar)} alt={member.username} className="w-full h-full object-cover" />
                     ) : (
                       <span className="text-xl">{member.avatar}</span>
@@ -257,7 +256,7 @@ export function CommunityDashboard() {
                     <UserIcon size={20} className="text-slate-400" />
                   )}
                 </div>
-                
+
                 <div className="ml-3 flex-1 min-w-0 text-left">
                   <div className="flex items-center justify-start">
                     <h3 className="font-bold text-[var(--color-text-main)] truncate text-left">{member.username || 'User'}</h3>
@@ -268,7 +267,7 @@ export function CommunityDashboard() {
                     )}
                   </div>
                 </div>
-                
+
                 <div className="text-right mr-2 shrink-0">
                   <span className="block font-bold text-[var(--color-teal-dark)]">{member.total_trees_planted || 0}</span>
                   <span className="block text-[10px] text-slate-400 uppercase">Trees</span>
@@ -277,7 +276,7 @@ export function CommunityDashboard() {
                 {/* Admin Actions Button */}
                 {isAdmin && member.id !== currentUserId && (
                   <div className="relative">
-                    <button 
+                    <button
                       onClick={(e) => {
                         e.stopPropagation();
                         setActiveMenuId(activeMenuId === member.id ? null : member.id);
@@ -329,20 +328,19 @@ export function CommunityDashboard() {
           )}
         </div>
 
-        <button 
+        <button
           onClick={handleLeave}
           disabled={isLeaving || (isAdmin && members.length > 1)}
-          className={`w-full mt-6 py-4 rounded-[1.5rem] font-bold transition-all text-[15px] ${
-            (isAdmin && members.length > 1) 
-              ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
-              : 'bg-white text-red-500 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:bg-red-50 active:scale-[0.98]'
-          }`}
+          className={`w-full mt-6 py-4 rounded-[1.5rem] font-bold transition-all text-[15px] ${(isAdmin && members.length > 1)
+            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+            : 'bg-white text-red-500 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:bg-red-50 active:scale-[0.98]'
+            }`}
         >
           {isLeaving ? 'Processing...' : (isAdmin && members.length > 1) ? 'Transfer admin to leave' : (isAdmin && members.length === 1) ? 'Delete Community' : 'Leave Community'}
         </button>
 
         {isAdmin && (
-          <button 
+          <button
             onClick={() => setIsReportModalOpen(true)}
             className="w-full mt-4 py-4 rounded-[1.5rem] font-bold transition-all text-[15px] bg-slate-900 text-white shadow-[0_8px_30px_rgb(0,0,0,0.08)] hover:bg-black active:scale-[0.98] flex items-center justify-center"
           >
@@ -352,15 +350,15 @@ export function CommunityDashboard() {
       </div>
 
       {/* Profile Modal */}
-      <UserProfileModal 
-        isOpen={!!selectedProfile} 
-        onClose={() => setSelectedProfile(null)} 
-        player={selectedProfile ? { ...selectedProfile, guildName: guild?.name } : null} 
+      <UserProfileModal
+        isOpen={!!selectedProfile}
+        onClose={() => setSelectedProfile(null)}
+        player={selectedProfile ? { ...selectedProfile, guildName: guild?.name } : null}
       />
 
       {/* Edit Community Modal */}
       {isEditingCommunity && guild && (
-        <EditCommunityModal 
+        <EditCommunityModal
           guild={guild}
           onClose={() => setIsEditingCommunity(false)}
           onUpdated={() => {
@@ -372,19 +370,19 @@ export function CommunityDashboard() {
 
       {/* Full Screen Avatar Preview Popup */}
       {isAvatarExpanded && guild?.icon && (
-        <div 
+        <div
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md px-4 animate-in fade-in duration-200"
           onClick={() => setIsAvatarExpanded(false)}
         >
           <div className="relative max-w-sm w-full">
-            <button 
+            <button
               className="absolute -top-12 right-0 p-2 text-white hover:bg-white/20 rounded-full transition-colors"
               onClick={() => setIsAvatarExpanded(false)}
             >
               <X size={28} />
             </button>
             <div className="w-full aspect-square rounded-full border-4 border-[#1d3539] overflow-hidden bg-white/10 shadow-comic flex items-center justify-center text-9xl">
-              {(String(guild.icon).startsWith('http') || String(guild.icon).startsWith('/')) ? (
+              {(guild.icon.startsWith('http') || guild.icon.startsWith('/')) ? (
                 <img src={resolveImageUrl(guild.icon)} alt="community full" className="w-full h-full object-cover" />
               ) : (
                 guild.icon
@@ -395,10 +393,10 @@ export function CommunityDashboard() {
       )}
 
       {/* GHG Report Modal */}
-      <GHGReportModal 
-        isOpen={isReportModalOpen} 
-        onClose={() => setIsReportModalOpen(false)} 
-        guildId={activeGuildId} 
+      <GHGReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        guildId={activeGuildId}
       />
     </div>
   );

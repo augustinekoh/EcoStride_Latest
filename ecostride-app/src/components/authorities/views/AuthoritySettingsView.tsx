@@ -116,7 +116,7 @@ export function AuthoritySettingsView() {
   };
 
   return (
-    <div className="w-full min-h-full bg-[#224C31] p-4 md:p-6 lg:p-12 pb-24 md:pb-12 relative overflow-hidden">
+    <div className="w-full min-h-full bg-[#224C31] p-4 md:p-6 lg:p-12 pb-24 md:pb-12 relative overflow-y-auto">
       {/* Background Artwork matching other tabs */}
       <div className="absolute inset-0 z-0 pointer-events-none opacity-20">
         <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">

@@ -29,11 +29,6 @@ export const BottomNavBar: React.FC = () => {
 
   return (
     <>
-
-
-      {/* Background fill — covers the gap between nav pill & screen bottom edge on mobile */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 h-[72px] bg-white/40 backdrop-blur-md z-[99] pointer-events-none" />
-
       <div className={`fixed bottom-4 md:absolute md:bottom-8 left-1/2 -translate-x-1/2 z-[100] w-[95%] sm:w-[90%] md:max-w-md transition-all duration-500 ease-out origin-bottom ${(activeView === 'merchant_dashboard' || activeView === 'merchant_onboarding') ? 'max-md:hidden' : ''} ${showBar ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-12 scale-90 pointer-events-none'}`}>
         <div className="glass-pill rounded-full border-2 pb-2 pt-2 px-1 sm:px-2 flex items-center justify-between shadow-2xl max-md:bg-white/60 max-md:backdrop-blur-lg md:bg-white/80">
           {navItems.map((item) => {
